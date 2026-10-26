@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>UBS Conecta — Protótipo</title>
+<meta name="description" content="Protótipo de média fidelidade: consulta de estoque de medicamentos nas UBS próximas, rastreamento e lista de desejos.">
+<meta name="theme-color" content="#0f766e">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230f766e'/%3E%3Cpath d='M16 26s-7-6-7-12a7 7 0 1 1 14 0c0 6-7 12-7 12z' fill='white'/%3E%3Cpath d='M16 10v8M12 14h8' stroke='%230f766e' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<div class="stage">
+  <aside class="notes" aria-label="Sobre o protótipo">
+    <span class="tag">Protótipo · média fidelidade</span>
+    <h1>UBS Conecta</h1>
+    <p>Consulta de estoque de medicamentos nas UBS próximas, com rastreamento da remessa e lista de desejos vinculada à UBS de referência.</p>
+
+    <h2>Telas</h2>
+    <ol id="screen-index">
+      <li><a href="#/boas-vindas">Boas-vindas e localização</a></li>
+      <li><a href="#/">Início</a></li>
+      <li><a href="#/mapa">Mapa de UBS próximas</a></li>
+      <li><a href="#/ubs/u1">Estoque de uma UBS</a></li>
+      <li><a href="#/buscar">Buscar medicamento</a></li>
+      <li><a href="#/med/metformina">Rastrear medicamento</a></li>
+      <li><a href="#/lista">Minha lista (desejos)</a></li>
+      <li><a href="#/alertas">Avisos</a></li>
+      <li><a href="#/perfil">Perfil e modo offline</a></li>
+      <li><a href="#/gestor">Painel da gestão</a></li>
+    </ol>
+
+    <h2>Personas</h2>
+    <div class="persona"><span></span><div><b>Dona Rita</b>, 65 anos — diabetes e hipertensão. Quer saber onde tem o remédio antes de pegar o ônibus.</div></div>
+    <div class="persona"><span></span><div><b>Seu Carlos</b> — farmácia da UBS. Precisa de visibilidade do estoque e da demanda.</div></div>
+
+    <p class="fine">Dados fictícios para demonstração. Na versão real, viriam das APIs da BNAFAR / e-SUS AF, identificados por CATMAT, CNES e RENAME.</p>
+  </aside>
+
+  <div class="phone">
+    <div class="screen" id="screen">
+      <div class="statusbar">
+        <span id="clock">9:41</span>
+        <span class="notch"></span>
+        <span class="sys" id="sys"></span>
+      </div>
+      <div id="offline-banner"></div>
+      <main id="view" tabindex="-1"></main>
+      <nav class="tabbar" id="tabbar"></nav>
+      <div id="toast" role="status" aria-live="polite"></div>
+    </div>
+  </div>
+</div>
+
+<noscript><p style="text-align:center">Ative o JavaScript para navegar no protótipo.</p></noscript>
+
+<script src="js/data.js"></script>
+<script src="js/state.js"></script>
+<script src="js/views.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
