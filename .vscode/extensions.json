@@ -1,0 +1,11 @@
+{
+  "recommendations": [
+    "angular.ng-template",
+    "bradlc.vscode-tailwindcss",
+    "esbenp.prettier-vscode",
+    "editorconfig.editorconfig",
+    "fwcd.kotlin",
+    "vscjava.vscode-gradle",
+    "ms-azuretools.vscode-docker"
+  ]
+}

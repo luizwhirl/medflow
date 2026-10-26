@@ -1,0 +1,15 @@
+# Ambiente
+.env
+*.log
+
+# IDEs
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.DS_Store
+Thumbs.db
+
+# Ferramentas locais
+.claude/
