@@ -4,15 +4,16 @@ PostgreSQL 17, versionado com Flyway em `backend/src/main/resources/db/`.
 
 ```
 db/migration/   schema (todos os ambientes)       V1__schema_inicial.sql, V2__..., ...
-db/seed/        dados fictícios (só perfil dev)   V1000__dados_exemplo.sql
+db/seed/        dados fictícios (só perfil dev)   V1000__dados_exemplo.sql, V1001__lotes_exemplo.sql
 ```
 
 ## Modelo
 
 ```
 ubs 1───* item_estoque *───1 medicamento
- │                                 │
- └───* item_lista_desejo *─────────┘
+ │             │ 1               │
+ │             * lote_estoque    │
+ └───* item_lista_desejo *───────┘
 ```
 
 | Tabela | Conteúdo | Chave natural |
@@ -20,6 +21,7 @@ ubs 1───* item_estoque *───1 medicamento
 | `ubs` | Unidades de saúde, localização e última sincronização | `cnes` |
 | `medicamento` | Itens da RENAME/REMUME | `catmat` |
 | `item_estoque` | Status e quantidade de um medicamento numa UBS | (`ubs_id`, `medicamento_id`) |
+| `lote_estoque` | Lotes de um item de estoque, com validade (a soma dos lotes é `item_estoque.quantidade`) | (`item_estoque_id`, `numero_lote`) |
 | `item_lista_desejo` | Medicamentos que o cidadão quer ser avisado quando chegarem | (`cidadao_cns`, `ubs_id`, `medicamento_id`) |
 
 ## Regras para migrations
