@@ -16,5 +16,25 @@ interface MedicamentoRepository : JpaRepository<Medicamento, Long> {
     )
     fun buscar(@Param("termo") termo: String): List<Medicamento>
 
+    @Query(
+        """
+        select m from Medicamento m
+        where lower(m.categoria) = lower(:categoria)
+        order by m.nome
+        """,
+    )
+    fun buscarPorCategoria(
+        @Param("categoria") categoria: String,
+    ): List<Medicamento>
+
+    @Query(
+        """
+        select distinct m.categoria from Medicamento m
+        where m.categoria is not null
+        order by m.categoria
+        """,
+    )
+    fun listarCategorias(): List<String>
+
     fun findAllByOrderByNomeAsc(): List<Medicamento>
 }

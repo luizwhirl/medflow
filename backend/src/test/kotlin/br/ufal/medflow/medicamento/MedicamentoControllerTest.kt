@@ -58,4 +58,71 @@ class MedicamentoControllerTest(@Autowired private val mockMvc: MockMvc) {
             jsonPath("$.title") { value("Recurso não encontrado") }
         }
     }
+
+
+    @Test
+    fun `filtra medicamentos por categoria`() {
+        given(medicamentoRepository.buscarPorCategoria("Diabetes"))
+            .willReturn(listOf(metformina))
+
+        mockMvc.get("/api/medicamentos") {
+            param("categoria", "Diabetes")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.length()") { value(1) }
+            jsonPath("$[0].nome") { value("Metformina") }
+            jsonPath("$[0].categoria") { value("Diabetes") }
+        }
+
+        verify(medicamentoRepository).buscarPorCategoria("Diabetes")
+    }
+
+    @Test
+    fun `combina busca textual com categoria`() {
+        given(medicamentoRepository.buscar("metformina"))
+            .willReturn(listOf(metformina))
+
+        mockMvc.get("/api/medicamentos") {
+            param("busca", "metformina")
+            param("categoria", "Diabetes")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.length()") { value(1) }
+            jsonPath("$[0].nome") { value("Metformina") }
+            jsonPath("$[0].categoria") { value("Diabetes") }
+        }
+
+        verify(medicamentoRepository).buscar("metformina")
+    }
+
+    @Test
+    fun `categoria inexistente retorna lista vazia`() {
+        given(medicamentoRepository.buscarPorCategoria("Hipertensão"))
+            .willReturn(emptyList())
+
+        mockMvc.get("/api/medicamentos") {
+            param("categoria", "Hipertensão")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.length()") { value(0) }
+        }
+
+        verify(medicamentoRepository).buscarPorCategoria("Hipertensão")
+    }
+
+    @Test
+    fun `lista categorias distintas`() {
+        given(medicamentoRepository.listarCategorias())
+            .willReturn(listOf("Diabetes", "Hipertensão"))
+
+        mockMvc.get("/api/medicamentos/categorias").andExpect {
+            status { isOk() }
+            jsonPath("$.length()") { value(2) }
+            jsonPath("$[0]") { value("Diabetes") }
+            jsonPath("$[1]") { value("Hipertensão") }
+        }
+
+        verify(medicamentoRepository).listarCategorias()
+    }
+
 }
