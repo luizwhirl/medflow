@@ -1,4 +1,3 @@
-
 package br.ufal.medflow.medicamento
 
 import br.ufal.medflow.common.RecursoNaoEncontradoException
@@ -32,9 +31,10 @@ class MedicamentoController(
 
         val resultado = when {
             termo.isNotEmpty() && categoriaFiltrada.isNotEmpty() ->
-                medicamentoRepository.buscar(termo).filter {
-                    it.categoria.equals(categoriaFiltrada, ignoreCase = true)
-                }
+                medicamentoRepository.buscarPorCategoriaETermo(
+                    termo,
+                    categoriaFiltrada,
+                )
 
             categoriaFiltrada.isNotEmpty() ->
                 medicamentoRepository.buscarPorCategoria(categoriaFiltrada)
