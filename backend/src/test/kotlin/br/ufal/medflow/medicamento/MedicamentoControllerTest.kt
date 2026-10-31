@@ -121,17 +121,17 @@ class MedicamentoControllerTest(@Autowired private val mockMvc: MockMvc) {
 
     @Test
     fun `categoria inexistente retorna lista vazia`() {
-        given(medicamentoRepository.buscarPorCategoria("Hipertensão"))
+        given(medicamentoRepository.buscarPorCategoria("Inexistente"))
             .willReturn(emptyList())
 
         mockMvc.get("/api/medicamentos") {
-            param("categoria", "Hipertensão")
+            param("categoria", "Inexistente")
         }.andExpect {
             status { isOk() }
             jsonPath("$.length()") { value(0) }
         }
 
-        verify(medicamentoRepository).buscarPorCategoria("Hipertensão")
+        verify(medicamentoRepository).buscarPorCategoria("Inexistente")
     }
 
     @Test
