@@ -6,7 +6,7 @@ Base: `http://localhost:8080/api`. A documentação interativa fica em `/swagger
 | --- | --- | --- |
 | GET | `/ubs` | Lista as unidades, ordenadas por nome |
 | GET | `/ubs/{id}` | Detalhe de uma unidade |
-| GET | `/ubs/{id}/estoque` | Estoque da farmácia da unidade |
+| GET | `/ubs/{id}/estoque` | Resumo do estoque da UBS, com contagens por status e filtro opcional |
 | GET | `/medicamentos?busca=` | Lista medicamentos; `busca` filtra por nome ou categoria |
 | GET | `/medicamentos?categoria=` | Filtra medicamentos por categoria; pode ser combinado com `busca` |
 | GET | `/medicamentos/categorias` | Lista as categorias distintas dos medicamentos cadastrados |
@@ -30,6 +30,31 @@ Listar as categorias disponíveis:
 A categoria é filtrada sem diferenciar letras maiúsculas de minúsculas. Se nenhuma categoria corresponder, a listagem de medicamentos retorna uma lista vazia.
 
 Status de estoque: `DISPONIVEL`, `RESERVADO`, `EM_FALTA`.
+
+## Resumo do estoque da UBS
+
+Consultar o estoque completo de uma UBS:
+
+`GET /api/ubs/{id}/estoque`
+
+A resposta contém:
+
+- `disponivel`: quantidade de itens com status `DISPONIVEL`.
+- `reservado`: quantidade de itens com status `RESERVADO`.
+- `emFalta`: quantidade de itens com status `EM_FALTA`.
+- `itens`: lista dos medicamentos no estoque, incluindo status, quantidade e data de atualização.
+
+Filtrar os itens do estoque por status:
+
+`GET /api/ubs/{id}/estoque?status=DISPONIVEL`
+
+O parâmetro `status` é opcional e aceita os valores `DISPONIVEL`, `RESERVADO` e `EM_FALTA`.
+
+Sem o parâmetro, todos os itens do estoque são retornados.
+
+As contagens sempre representam o estoque completo da UBS, mesmo quando o filtro por status é aplicado à lista `itens`.
+
+Se a UBS informada não existir, a API retorna `404` no padrão `application/problem+json`.
 
 ## Exemplos
 

@@ -4,6 +4,12 @@ import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 
+/** Contagem de itens agrupados por status. */
+data class ContagemEstoquePorStatus(
+    val status: StatusEstoque,
+    val total: Long,
+)
+
 interface ItemEstoqueRepository : JpaRepository<ItemEstoque, Long> {
 
     @Query(
@@ -14,6 +20,31 @@ interface ItemEstoqueRepository : JpaRepository<ItemEstoque, Long> {
         """,
     )
     fun findByUbs(@Param("ubsId") ubsId: Long): List<ItemEstoque>
+
+    @Query(
+        """
+        select i from ItemEstoque i join fetch i.medicamento m
+        where i.ubs.id = :ubsId
+          and i.status = :status
+        order by m.nome
+        """,
+    )
+    fun findByUbsEStatus(
+        @Param("ubsId") ubsId: Long,
+        @Param("status") status: StatusEstoque,
+    ): List<ItemEstoque>
+
+    @Query(
+        """
+        select new br.ufal.medflow.estoque.ContagemEstoquePorStatus(i.status, count(i))
+        from ItemEstoque i
+        where i.ubs.id = :ubsId
+        group by i.status
+        """,
+    )
+    fun contarPorStatusDaUbs(
+        @Param("ubsId") ubsId: Long,
+    ): List<ContagemEstoquePorStatus>
 
     @Query(
         """
