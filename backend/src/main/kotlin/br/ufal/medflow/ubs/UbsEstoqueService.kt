@@ -1,7 +1,9 @@
 package br.ufal.medflow.ubs
 
 import br.ufal.medflow.common.RecursoNaoEncontradoException
+import br.ufal.medflow.estoque.ItemEstoque
 import br.ufal.medflow.estoque.ItemEstoqueRepository
+import br.ufal.medflow.estoque.ItemEstoqueResponse
 import br.ufal.medflow.estoque.ResumoEstoqueUbsResponse
 import br.ufal.medflow.estoque.StatusEstoque
 import br.ufal.medflow.estoque.toItemResponse
@@ -15,22 +17,26 @@ class UbsEstoqueService(
     private val itemEstoqueRepository: ItemEstoqueRepository,
 ) {
 
+    fun listarItens(
+        ubsId: Long,
+        status: StatusEstoque?,
+    ): List<ItemEstoqueResponse> {
+        verificarUbs(ubsId)
+
+        return buscarItens(ubsId, status)
+            .map { it.toItemResponse() }
+    }
+
     fun obterResumo(
         ubsId: Long,
         status: StatusEstoque?,
     ): ResumoEstoqueUbsResponse {
-        if (!ubsRepository.existsById(ubsId)) {
-            throw RecursoNaoEncontradoException("UBS", ubsId)
-        }
+        verificarUbs(ubsId)
 
         val contagens = itemEstoqueRepository.contarPorStatusDaUbs(ubsId)
             .associate { it.status to it.total.toInt() }
 
-        val itens = if (status == null) {
-            itemEstoqueRepository.findByUbs(ubsId)
-        } else {
-            itemEstoqueRepository.findByUbsEStatus(ubsId, status)
-        }
+        val itens = buscarItens(ubsId, status)
 
         return ResumoEstoqueUbsResponse(
             disponivel = contagens[StatusEstoque.DISPONIVEL] ?: 0,
@@ -39,4 +45,20 @@ class UbsEstoqueService(
             itens = itens.map { it.toItemResponse() },
         )
     }
+
+    private fun verificarUbs(ubsId: Long) {
+        if (!ubsRepository.existsById(ubsId)) {
+            throw RecursoNaoEncontradoException("UBS", ubsId)
+        }
+    }
+
+    private fun buscarItens(
+        ubsId: Long,
+        status: StatusEstoque?,
+    ): List<ItemEstoque> =
+        if (status == null) {
+            itemEstoqueRepository.findByUbs(ubsId)
+        } else {
+            itemEstoqueRepository.findByUbsEStatus(ubsId, status)
+        }
 }

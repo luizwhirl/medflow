@@ -151,4 +151,61 @@ class UbsEstoqueServiceTest {
 
         verifyNoInteractions(itemEstoqueRepository)
     }
+
+    @Test
+    fun `listagem sem filtro retorna todos os itens`() {
+        given(ubsRepository.existsById(1L)).willReturn(true)
+        given(itemEstoqueRepository.findByUbs(1L))
+            .willReturn(itens)
+
+        val resultado = service.listarItens(1L, null)
+
+        assertEquals(4, resultado.size)
+        assertEquals(
+            listOf(
+                "Medicamento A",
+                "Medicamento B",
+                "Medicamento C",
+                "Medicamento D",
+            ),
+            resultado.map { it.medicamento.nome },
+        )
+
+        verify(itemEstoqueRepository).findByUbs(1L)
+        verify(itemEstoqueRepository, never()).contarPorStatusDaUbs(1L)
+    }
+
+    @Test
+    fun `listagem com filtro consulta apenas o status informado`() {
+        given(ubsRepository.existsById(1L)).willReturn(true)
+        given(
+            itemEstoqueRepository.findByUbsEStatus(
+                1L,
+                StatusEstoque.DISPONIVEL,
+            ),
+        ).willReturn(itens.take(2))
+
+        val resultado = service.listarItens(1L, StatusEstoque.DISPONIVEL)
+
+        assertEquals(2, resultado.size)
+        assertTrue(resultado.all { it.status == StatusEstoque.DISPONIVEL })
+
+        verify(itemEstoqueRepository).findByUbsEStatus(
+            1L,
+            StatusEstoque.DISPONIVEL,
+        )
+        verify(itemEstoqueRepository, never()).findByUbs(1L)
+        verify(itemEstoqueRepository, never()).contarPorStatusDaUbs(1L)
+    }
+
+    @Test
+    fun `listagem de UBS inexistente retorna excecao`() {
+        given(ubsRepository.existsById(999L)).willReturn(false)
+
+        assertThrows<RecursoNaoEncontradoException> {
+            service.listarItens(999L, null)
+        }
+
+        verifyNoInteractions(itemEstoqueRepository)
+    }
 }

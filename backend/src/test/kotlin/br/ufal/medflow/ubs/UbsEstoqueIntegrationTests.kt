@@ -1,6 +1,7 @@
 package br.ufal.medflow.ubs
 
 import br.ufal.medflow.TestcontainersConfiguration
+import br.ufal.medflow.estoque.StatusEstoque
 import org.hamcrest.Matchers.equalTo
 import org.hamcrest.Matchers.everyItem
 import org.junit.jupiter.api.Test
@@ -12,33 +13,94 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
+import org.springframework.transaction.annotation.Transactional
 import org.testcontainers.junit.jupiter.Testcontainers
 
-/** Testes do estoque da UBS com PostgreSQL e dados do seed. */
+/** Testes do estoque da UBS com PostgreSQL e dados próprios. */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("dev")
 @Import(TestcontainersConfiguration::class)
 @Testcontainers(disabledWithoutDocker = true)
+@Transactional
 class UbsEstoqueIntegrationTests(
     @Autowired private val mockMvc: MockMvc,
     @Autowired private val jdbc: JdbcTemplate,
 ) {
 
-    private fun idUbsBeneditoBentes(): Long =
-        requireNotNull(
+    private fun criarEstoqueTeste(): Long {
+        val ubsId = requireNotNull(
             jdbc.queryForObject(
-                "SELECT id FROM ubs WHERE cnes = ?",
+                """
+                insert into ubs (
+                    cnes, nome, tipo, bairro, endereco,
+                    codigo_ibge_municipio, latitude, longitude
+                )
+                values (?, ?, ?, ?, ?, ?, ?, ?)
+                returning id
+                """.trimIndent(),
                 Long::class.java,
-                "9000101",
+                "7999901",
+                "UBS Teste Integracao",
+                "UBS",
+                "Centro",
+                "Rua Teste, 100",
+                "2704302",
+                -9.66,
+                -35.73,
             ),
         )
 
-    @Test
-    fun `resumo do estoque confere com os dados do seed`() {
-        val ubsId = idUbsBeneditoBentes()
+        val statusItens = listOf(
+            StatusEstoque.DISPONIVEL,
+            StatusEstoque.DISPONIVEL,
+            StatusEstoque.DISPONIVEL,
+            StatusEstoque.RESERVADO,
+            StatusEstoque.EM_FALTA,
+        )
 
-        mockMvc.get("/api/ubs/$ubsId/estoque").andExpect {
+        statusItens.forEachIndexed { indice, status ->
+            val medicamentoId = requireNotNull(
+                jdbc.queryForObject(
+                    """
+                    insert into medicamento (
+                        catmat, nome, concentracao,
+                        forma_farmaceutica, categoria
+                    )
+                    values (?, ?, ?, ?, ?)
+                    returning id
+                    """.trimIndent(),
+                    Long::class.java,
+                    "TESTEF2${indice + 1}",
+                    "Medicamento Teste ${indice + 1}",
+                    "500 mg",
+                    "comprimido",
+                    "Teste",
+                ),
+            )
+
+            jdbc.update(
+                """
+                insert into item_estoque (
+                    ubs_id, medicamento_id, status, quantidade
+                )
+                values (?, ?, ?, ?)
+                """.trimIndent(),
+                ubsId,
+                medicamentoId,
+                status.name,
+                if (status == StatusEstoque.EM_FALTA) 0 else 10,
+            )
+        }
+
+        return ubsId
+    }
+
+    @Test
+    fun `resumo confere com os dados criados pelo teste`() {
+        val ubsId = criarEstoqueTeste()
+
+        mockMvc.get("/api/ubs/$ubsId/estoque/resumo").andExpect {
             status { isOk() }
             jsonPath("$.disponivel") { value(3) }
             jsonPath("$.reservado") { value(1) }
@@ -48,10 +110,10 @@ class UbsEstoqueIntegrationTests(
     }
 
     @Test
-    fun `filtro por status preserva as contagens do estoque`() {
-        val ubsId = idUbsBeneditoBentes()
+    fun `filtro do resumo preserva as contagens do estoque`() {
+        val ubsId = criarEstoqueTeste()
 
-        mockMvc.get("/api/ubs/$ubsId/estoque") {
+        mockMvc.get("/api/ubs/$ubsId/estoque/resumo") {
             param("status", "DISPONIVEL")
         }.andExpect {
             status { isOk() }
@@ -66,8 +128,33 @@ class UbsEstoqueIntegrationTests(
     }
 
     @Test
+    fun `rota original mantem lista e aceita filtro`() {
+        val ubsId = criarEstoqueTeste()
+
+        mockMvc.get("/api/ubs/$ubsId/estoque").andExpect {
+            status { isOk() }
+            jsonPath("$") { isArray() }
+            jsonPath("$.length()") { value(5) }
+        }
+
+        mockMvc.get("/api/ubs/$ubsId/estoque") {
+            param("status", "RESERVADO")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$") { isArray() }
+            jsonPath("$.length()") { value(1) }
+            jsonPath("$[0].status") { value("RESERVADO") }
+        }
+    }
+
+    @Test
     fun `estoque de UBS inexistente retorna 404`() {
-        mockMvc.get("/api/ubs/999999/estoque").andExpect {
+        mockMvc.get("/api/ubs/-1/estoque").andExpect {
+            status { isNotFound() }
+            jsonPath("$.title") { value("Recurso não encontrado") }
+        }
+
+        mockMvc.get("/api/ubs/-1/estoque/resumo").andExpect {
             status { isNotFound() }
             jsonPath("$.title") { value("Recurso não encontrado") }
         }

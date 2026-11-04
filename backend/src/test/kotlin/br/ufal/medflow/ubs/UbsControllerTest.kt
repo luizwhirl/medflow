@@ -6,6 +6,7 @@ import br.ufal.medflow.estoque.StatusEstoque
 import org.junit.jupiter.api.Test
 import org.mockito.BDDMockito.given
 import org.mockito.Mockito.verify
+import org.mockito.Mockito.verifyNoInteractions
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
 import org.springframework.test.context.bean.override.mockito.MockitoBean
@@ -23,7 +24,39 @@ class UbsControllerTest(@Autowired private val mockMvc: MockMvc) {
     private lateinit var ubsEstoqueService: UbsEstoqueService
 
     @Test
-    fun `estoque retorna resumo com contagens por status`() {
+    fun `estoque mantem retorno em lista`() {
+        given(ubsEstoqueService.listarItens(1L, null))
+            .willReturn(emptyList())
+
+        mockMvc.get("/api/ubs/1/estoque").andExpect {
+            status { isOk() }
+            jsonPath("$") { isArray() }
+            jsonPath("$.length()") { value(0) }
+        }
+
+        verify(ubsEstoqueService).listarItens(1L, null)
+    }
+
+    @Test
+    fun `estoque aceita filtro por status`() {
+        given(ubsEstoqueService.listarItens(1L, StatusEstoque.DISPONIVEL))
+            .willReturn(emptyList())
+
+        mockMvc.get("/api/ubs/1/estoque") {
+            param("status", "DISPONIVEL")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$") { isArray() }
+        }
+
+        verify(ubsEstoqueService).listarItens(
+            1L,
+            StatusEstoque.DISPONIVEL,
+        )
+    }
+
+    @Test
+    fun `resumo do estoque retorna contagens por status`() {
         given(ubsEstoqueService.obterResumo(1L, null))
             .willReturn(
                 ResumoEstoqueUbsResponse(
@@ -34,7 +67,7 @@ class UbsControllerTest(@Autowired private val mockMvc: MockMvc) {
                 ),
             )
 
-        mockMvc.get("/api/ubs/1/estoque").andExpect {
+        mockMvc.get("/api/ubs/1/estoque/resumo").andExpect {
             status { isOk() }
             jsonPath("$.disponivel") { value(2) }
             jsonPath("$.reservado") { value(1) }
@@ -46,7 +79,7 @@ class UbsControllerTest(@Autowired private val mockMvc: MockMvc) {
     }
 
     @Test
-    fun `estoque aceita filtro por status`() {
+    fun `resumo aceita filtro por status sem alterar contagens`() {
         given(ubsEstoqueService.obterResumo(1L, StatusEstoque.DISPONIVEL))
             .willReturn(
                 ResumoEstoqueUbsResponse(
@@ -57,7 +90,7 @@ class UbsControllerTest(@Autowired private val mockMvc: MockMvc) {
                 ),
             )
 
-        mockMvc.get("/api/ubs/1/estoque") {
+        mockMvc.get("/api/ubs/1/estoque/resumo") {
             param("status", "DISPONIVEL")
         }.andExpect {
             status { isOk() }
@@ -74,12 +107,29 @@ class UbsControllerTest(@Autowired private val mockMvc: MockMvc) {
 
     @Test
     fun `estoque de UBS inexistente retorna 404`() {
-        given(ubsEstoqueService.obterResumo(999L, null))
+        given(ubsEstoqueService.listarItens(999L, null))
             .willThrow(RecursoNaoEncontradoException("UBS", 999L))
 
         mockMvc.get("/api/ubs/999/estoque").andExpect {
             status { isNotFound() }
             jsonPath("$.title") { value("Recurso não encontrado") }
         }
+    }
+
+    @Test
+    fun `status invalido retorna 400 nas duas rotas`() {
+        mockMvc.get("/api/ubs/1/estoque") {
+            param("status", "XYZ")
+        }.andExpect {
+            status { isBadRequest() }
+        }
+
+        mockMvc.get("/api/ubs/1/estoque/resumo") {
+            param("status", "XYZ")
+        }.andExpect {
+            status { isBadRequest() }
+        }
+
+        verifyNoInteractions(ubsEstoqueService)
     }
 }

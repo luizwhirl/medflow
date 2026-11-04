@@ -1,6 +1,7 @@
 package br.ufal.medflow.ubs
 
 import br.ufal.medflow.common.RecursoNaoEncontradoException
+import br.ufal.medflow.estoque.ItemEstoqueResponse
 import br.ufal.medflow.estoque.ResumoEstoqueUbsResponse
 import br.ufal.medflow.estoque.StatusEstoque
 import org.springframework.data.repository.findByIdOrNull
@@ -28,6 +29,13 @@ class UbsController(
 
     @GetMapping("/{id}/estoque")
     fun estoque(
+        @PathVariable id: Long,
+        @RequestParam(required = false) status: StatusEstoque?,
+    ): List<ItemEstoqueResponse> =
+        ubsEstoqueService.listarItens(id, status)
+
+    @GetMapping("/{id}/estoque/resumo")
+    fun resumoEstoque(
         @PathVariable id: Long,
         @RequestParam(required = false) status: StatusEstoque?,
     ): ResumoEstoqueUbsResponse =
