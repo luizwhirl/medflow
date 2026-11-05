@@ -48,6 +48,16 @@ interface ItemEstoqueRepository : JpaRepository<ItemEstoque, Long> {
 
     @Query(
         """
+        select count(i) from ItemEstoque i
+        where i.medicamento.id = :medicamentoId
+        """,
+    )
+    fun contarUnidadesComItem(
+        @Param("medicamentoId") medicamentoId: Long,
+    ): Long
+
+    @Query(
+        """
         select i from ItemEstoque i join fetch i.ubs u
         where i.medicamento.id = :medicamentoId
         order by case i.status when 'DISPONIVEL' then 0 when 'RESERVADO' then 1 else 2 end, u.nome

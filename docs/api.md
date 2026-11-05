@@ -13,6 +13,7 @@ Base: `http://localhost:8080/api`. A documentação interativa fica em `/swagger
 | GET | `/medicamentos/categorias` | Lista as categorias distintas dos medicamentos cadastrados |
 | GET | `/medicamentos/{id}` | Detalhe de um medicamento |
 | GET | `/medicamentos/{id}/disponibilidade` | Unidades com o medicamento (disponíveis primeiro) |
+| GET | `/medicamentos/{id}/disponibilidade/resumo` | Total de unidades e quantidade de unidades com registro do medicamento |
 
 ## Filtro por categoria
 
@@ -77,6 +78,34 @@ Sem o parâmetro, todos os itens do estoque são retornados.
 No endpoint `/estoque/resumo`, as contagens sempre representam o estoque completo da UBS, mesmo quando o filtro por status é aplicado à lista `itens`.
 
 Se a UBS informada não existir, a API retorna `404` no padrão `application/problem+json`. Um status inválido retorna `400`.
+
+## Resumo de disponibilidade do medicamento
+
+Consultar o resumo de disponibilidade de um medicamento nas unidades de saúde:
+
+`GET /api/medicamentos/{id}/disponibilidade/resumo`
+
+A resposta contém:
+
+- `totalUnidades`: quantidade total de unidades de saúde cadastradas.
+- `unidadesComItem`: quantidade de unidades que possuem um registro de estoque do medicamento, independentemente do status.
+
+Exemplo de resposta para a Metformina, conforme o seed de desenvolvimento:
+
+```json
+{
+  "totalUnidades": 7,
+  "unidadesComItem": 6
+}
+```
+
+A contagem `unidadesComItem` inclui registros com status `DISPONIVEL`, `RESERVADO` e `EM_FALTA`. Portanto, não representa apenas as unidades com estoque disponível para retirada.
+
+As contagens são realizadas diretamente no banco de dados.
+
+A informação sobre a unidade mais próxima com estoque será adicionada após a implementação da L5.
+
+Se o medicamento informado não existir, a API retorna `404` no padrão `application/problem+json`.
 
 ## Exemplos
 
