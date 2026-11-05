@@ -1,6 +1,8 @@
 package br.ufal.medflow.medicamento
 
+import br.ufal.medflow.common.RecursoNaoEncontradoException
 import br.ufal.medflow.estoque.ItemEstoqueRepository
+import br.ufal.medflow.estoque.ResumoDisponibilidadeResponse
 import org.junit.jupiter.api.Test
 import org.mockito.BDDMockito.given
 import org.mockito.Mockito.verify
@@ -19,6 +21,9 @@ class MedicamentoControllerTest(@Autowired private val mockMvc: MockMvc) {
 
     @MockitoBean
     private lateinit var itemEstoqueRepository: ItemEstoqueRepository
+
+    @MockitoBean
+    private lateinit var medicamentoDisponibilidadeService: MedicamentoDisponibilidadeService
 
     private val metformina = Medicamento(
         catmat = "BR0267690",
@@ -147,5 +152,37 @@ class MedicamentoControllerTest(@Autowired private val mockMvc: MockMvc) {
         }
 
         verify(medicamentoRepository).listarCategorias()
+    }
+
+    @Test
+    fun `resumo de disponibilidade retorna contagens das unidades`() {
+        given(medicamentoDisponibilidadeService.obterResumo(1L))
+            .willReturn(
+                ResumoDisponibilidadeResponse(
+                    totalUnidades = 7L,
+                    unidadesComItem = 6L,
+                ),
+            )
+
+        mockMvc.get("/api/medicamentos/1/disponibilidade/resumo").andExpect {
+            status { isOk() }
+            jsonPath("$.totalUnidades") { value(7) }
+            jsonPath("$.unidadesComItem") { value(6) }
+        }
+
+        verify(medicamentoDisponibilidadeService).obterResumo(1L)
+    }
+
+    @Test
+    fun `resumo de medicamento inexistente retorna 404`() {
+        given(medicamentoDisponibilidadeService.obterResumo(42L))
+            .willThrow(RecursoNaoEncontradoException("Medicamento", 42L))
+
+        mockMvc.get("/api/medicamentos/42/disponibilidade/resumo").andExpect {
+            status { isNotFound() }
+            jsonPath("$.title") { value("Recurso não encontrado") }
+        }
+
+        verify(medicamentoDisponibilidadeService).obterResumo(42L)
     }
 }
