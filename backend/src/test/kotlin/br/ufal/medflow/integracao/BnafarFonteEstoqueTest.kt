@@ -203,6 +203,40 @@ class BnafarFonteEstoqueTest {
     }
 
     @Test
+    fun `municipio fora da regra do digito verificador sai com o codigo oficial`() {
+        val quixaba = fixture("pagina-final.json").replace("\"codigo_municipio\": 270240", "\"codigo_municipio\": 261153")
+        val fonte = fonte(props()) {
+            it.pagina("$base?codigo_municipio=270240&limit=2&offset=0", quixaba)
+        }
+
+        assertEquals("2611533", fonte.buscarPosicoes("270240").single().codigoIbgeMunicipio)
+    }
+
+    @Test
+    fun `registro com municipio de 5 digitos e descartado sem derrubar a busca`() {
+        val curto = fixture("pagina-cheia.json")
+            .replaceFirst("\"codigo_municipio\": 270240", "\"codigo_municipio\": 27024")
+        val fonte = fonte(props()) {
+            it.pagina("$base?codigo_municipio=270240&limit=2&offset=0", curto)
+            it.pagina("$base?codigo_municipio=270240&limit=2&offset=2", fixture("pagina-vazia.json"))
+        }
+
+        assertEquals(listOf("BR0267663U0042"), fonte.buscarPosicoes("270240").map { it.catmat })
+    }
+
+    @Test
+    fun `registro com municipio de 8 digitos e descartado sem derrubar a busca`() {
+        val longo = fixture("pagina-cheia.json")
+            .replaceFirst("\"codigo_municipio\": 270240", "\"codigo_municipio\": 27024000")
+        val fonte = fonte(props()) {
+            it.pagina("$base?codigo_municipio=270240&limit=2&offset=0", longo)
+            it.pagina("$base?codigo_municipio=270240&limit=2&offset=2", fixture("pagina-vazia.json"))
+        }
+
+        assertEquals(listOf("BR0267663U0042"), fonte.buscarPosicoes("270240").map { it.catmat })
+    }
+
+    @Test
     fun `falha em vez de truncar quando passa do limite de paginas`() {
         val fonte = fonte(props(maxPaginas = 2)) {
             it.pagina("$base?codigo_municipio=270240&limit=2&offset=0", fixture("pagina-cheia.json"))

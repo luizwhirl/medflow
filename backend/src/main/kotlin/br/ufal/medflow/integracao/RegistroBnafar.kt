@@ -32,16 +32,18 @@ data class RegistroBnafar(
     @JsonProperty("longitude") val longitude: Double? = null,
 )
 
-/** Converte para o formato interno; devolve null se faltar algo essencial (CNES, CATMAT, quantidade, data). */
+/** Converte para o formato interno; devolve null se faltar algo essencial (município, CNES, CATMAT, quantidade, data). */
 fun RegistroBnafar.toPosicao(): PosicaoEstoque? {
-    val municipio = codigoMunicipio ?: return null
+    val ibge = codigoMunicipio
+        ?.let { runCatching { CodigoIbge.paraSeteDigitos(it.toString()) }.getOrNull() }
+        ?: return null
     val cnes = codigoCnes ?: return null
     val catmat = codigoCatmat?.trim()?.takeIf { it.isNotEmpty() } ?: return null
     val quantidade = quantidadeEstoque ?: return null
     val dataPosicao = dataPosicaoEstoque.paraData() ?: return null
 
     return PosicaoEstoque(
-        codigoIbgeMunicipio = CodigoIbge.paraSeteDigitos(municipio.toString()),
+        codigoIbgeMunicipio = ibge,
         cnes = cnes.toString().padStart(7, '0'),
         nomeUnidade = nomeFantasia ?: razaoSocial,
         logradouro = logradouro,

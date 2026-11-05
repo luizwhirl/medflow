@@ -5,9 +5,26 @@ object CodigoIbge {
 
     private val PESOS = intArrayOf(1, 2, 1, 2, 1, 2)
 
+    /**
+     * Municípios cujo dígito verificador não segue a regra (6 dígitos -> 7 dígitos).
+     * Conferido contra a lista de municípios do IBGE em 05/11/2026 (5571 municípios, só estes 9 fogem).
+     */
+    private val EXCECOES = mapOf(
+        "220191" to "2201919",
+        "220198" to "2201988",
+        "220225" to "2202251",
+        "261153" to "2611533",
+        "311783" to "3117836",
+        "315213" to "3152131",
+        "430587" to "4305871",
+        "520393" to "5203939",
+        "520396" to "5203962",
+    )
+
     fun paraSeteDigitos(codigo: String): String {
         val limpo = validar(codigo)
-        return if (limpo.length == 7) limpo else limpo + digitoVerificador(limpo)
+        if (limpo.length == 7) return limpo
+        return EXCECOES[limpo] ?: (limpo + digitoVerificador(limpo))
     }
 
     fun paraSeisDigitos(codigo: String): String = validar(codigo).take(6)
