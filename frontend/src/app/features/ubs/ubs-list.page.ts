@@ -13,26 +13,26 @@ type Estado = { carregando: true } | { carregando: false; ubs: Ubs[]; erro: bool
   selector: 'app-ubs-list-page',
   imports: [RouterLink, SyncIndicator],
   template: `
-    <h1 class="mb-3 text-xl font-bold">Unidades de saúde</h1>
+    <h1 class="page-title mb-3">Unidades de saúde</h1>
     @let e = estado();
     @if (e.carregando) {
-      <p class="text-slate-500">Carregando unidades…</p>
+      <p class="body-muted">Carregando unidades…</p>
     } @else if (e.erro) {
-      <p class="rounded-xl bg-red-50 p-4 text-sm text-red-800">
+      <p class="feedback-error">
         Não foi possível carregar as unidades. Verifique se o backend está rodando.
       </p>
     } @else {
-      <ul class="divide-y divide-slate-200 overflow-hidden rounded-2xl bg-white shadow-sm">
+      <ul class="surface-list">
         @for (u of e.ubs; track u.id) {
           <li>
-            <a [routerLink]="['/ubs', u.id]" class="block px-4 py-3 hover:bg-slate-50">
+            <a [routerLink]="['/ubs', u.id]" class="interactive-row px-4 py-3">
               <div class="font-semibold">{{ u.nome }}</div>
-              <div class="text-sm text-slate-500">{{ u.endereco }} · {{ u.bairro }}</div>
+              <div class="body-muted">{{ u.endereco }} · {{ u.bairro }}</div>
               <app-sync-indicator class="mt-1 block" [em]="u.ultimaSincronizacao" />
             </a>
           </li>
         } @empty {
-          <li class="p-4 text-slate-500">Nenhuma unidade cadastrada.</li>
+          <li class="body-muted p-4">Nenhuma unidade cadastrada.</li>
         }
       </ul>
     }
