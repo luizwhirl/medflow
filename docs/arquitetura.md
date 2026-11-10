@@ -51,7 +51,7 @@ Regras:
 | Decisão | Motivo |
 | --- | --- |
 | Identificadores oficiais (CNES, CATMAT) como chaves únicas | Integração futura com BNAFAR / e-SUS AF sem tabelas de-para. |
-| Status do estoque derivado da quantidade (`RegraStatusEstoque`) | A BNAFAR só informa quantidade. "Reservado" é regra nossa: saldo até `app.estoque.limite-reservado` ou que não cobre a demanda da lista de desejos. |
+| Status do estoque derivado da quantidade (`RegraStatusEstoque`) | A BNAFAR só informa quantidade. "Reservado" é regra nossa: saldo até `app.estoque.limite-reservado` ou saldo igual ou menor que a demanda da lista de desejos (já comprometido com quem espera). |
 | `ultima_sincronizacao` por UBS exposta na API | Transparência: o cidadão vê quão atual é o dado (unidades rurais sincronizam com atraso). |
 | Dados de exemplo só no perfil `dev` (`db/seed`) | Produção nunca recebe dados fictícios. |
 | Testcontainers nos testes de integração | Testa contra PostgreSQL real, não H2. |

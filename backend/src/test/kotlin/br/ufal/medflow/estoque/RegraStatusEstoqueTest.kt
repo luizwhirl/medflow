@@ -30,13 +30,13 @@ class RegraStatusEstoqueTest {
     }
 
     @Test
-    fun `saldo que nao cobre a demanda e reservado`() {
+    fun `saldo menor ou igual a demanda e reservado`() {
         assertEquals(StatusEstoque.RESERVADO, regra.calcular(50, demanda = 51))
         assertEquals(StatusEstoque.RESERVADO, regra.calcular(50, demanda = 50))
     }
 
     @Test
-    fun `saldo que cobre a demanda continua disponivel`() {
+    fun `saldo maior que a demanda continua disponivel`() {
         assertEquals(StatusEstoque.DISPONIVEL, regra.calcular(50, demanda = 49))
         assertEquals(StatusEstoque.DISPONIVEL, regra.calcular(50, demanda = 0))
         assertEquals(StatusEstoque.DISPONIVEL, regra.calcular(50, demanda = null))
