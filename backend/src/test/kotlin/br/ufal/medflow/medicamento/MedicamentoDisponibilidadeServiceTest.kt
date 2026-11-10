@@ -2,6 +2,7 @@ package br.ufal.medflow.medicamento
 
 import br.ufal.medflow.common.RecursoNaoEncontradoException
 import br.ufal.medflow.estoque.ItemEstoqueRepository
+import br.ufal.medflow.estoque.StatusEstoque
 import br.ufal.medflow.ubs.UbsRepository
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -25,32 +26,69 @@ class MedicamentoDisponibilidadeServiceTest {
     )
 
     @Test
-    fun `resumo retorna contagens das unidades`() {
+    fun `resumo retorna apenas unidades com estoque disponivel`() {
         given(medicamentoRepository.existsById(1L)).willReturn(true)
         given(ubsRepository.count()).willReturn(7L)
-        given(itemEstoqueRepository.contarUnidadesComItem(1L))
-            .willReturn(6L)
+        given(
+            itemEstoqueRepository.contarUnidadesDisponiveis(
+                1L,
+                StatusEstoque.DISPONIVEL,
+            ),
+        ).willReturn(3L)
 
         val resumo = service.obterResumo(1L)
 
         assertEquals(7L, resumo.totalUnidades)
-        assertEquals(6L, resumo.unidadesComItem)
+        assertEquals(3L, resumo.unidadesDisponiveis)
 
         verify(ubsRepository).count()
-        verify(itemEstoqueRepository).contarUnidadesComItem(1L)
+        verify(itemEstoqueRepository).contarUnidadesDisponiveis(
+            1L,
+            StatusEstoque.DISPONIVEL,
+        )
     }
 
     @Test
-    fun `medicamento sem registros retorna contagem zero`() {
+    fun `resumo filtra unidades pelo municipio`() {
+        given(medicamentoRepository.existsById(1L)).willReturn(true)
+        given(ubsRepository.countByCodigoIbgeMunicipio("2704302"))
+            .willReturn(5L)
+        given(
+            itemEstoqueRepository.contarUnidadesDisponiveisPorMunicipio(
+                1L,
+                "2704302",
+                StatusEstoque.DISPONIVEL,
+            ),
+        ).willReturn(2L)
+
+        val resumo = service.obterResumo(1L, "2704302")
+
+        assertEquals(5L, resumo.totalUnidades)
+        assertEquals(2L, resumo.unidadesDisponiveis)
+
+        verify(ubsRepository).countByCodigoIbgeMunicipio("2704302")
+        verify(itemEstoqueRepository).contarUnidadesDisponiveisPorMunicipio(
+            1L,
+            "2704302",
+            StatusEstoque.DISPONIVEL,
+        )
+    }
+
+    @Test
+    fun `medicamento sem estoque disponivel retorna zero`() {
         given(medicamentoRepository.existsById(2L)).willReturn(true)
         given(ubsRepository.count()).willReturn(7L)
-        given(itemEstoqueRepository.contarUnidadesComItem(2L))
-            .willReturn(0L)
+        given(
+            itemEstoqueRepository.contarUnidadesDisponiveis(
+                2L,
+                StatusEstoque.DISPONIVEL,
+            ),
+        ).willReturn(0L)
 
         val resumo = service.obterResumo(2L)
 
         assertEquals(7L, resumo.totalUnidades)
-        assertEquals(0L, resumo.unidadesComItem)
+        assertEquals(0L, resumo.unidadesDisponiveis)
     }
 
     @Test

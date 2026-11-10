@@ -77,6 +77,7 @@ class MedicamentoController(
     @GetMapping("/{id}/disponibilidade/resumo")
     fun resumoDisponibilidade(
         @PathVariable id: Long,
+        @RequestParam(required = false) ibge: String?,
     ): ResumoDisponibilidadeResponse =
-        medicamentoDisponibilidadeService.obterResumo(id)
+        medicamentoDisponibilidadeService.obterResumo(id, ibge)
 }

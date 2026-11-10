@@ -13,7 +13,7 @@ Base: `http://localhost:8080/api`. A documentação interativa fica em `/swagger
 | GET | `/medicamentos/categorias` | Lista as categorias distintas dos medicamentos cadastrados |
 | GET | `/medicamentos/{id}` | Detalhe de um medicamento |
 | GET | `/medicamentos/{id}/disponibilidade` | Unidades com o medicamento (disponíveis primeiro) |
-| GET | `/medicamentos/{id}/disponibilidade/resumo` | Total de unidades e quantidade de unidades com registro do medicamento |
+| GET | `/medicamentos/{id}/disponibilidade/resumo` | Total de unidades e unidades com estoque disponível, com filtro opcional por município |
 
 ## Filtro por categoria
 
@@ -85,21 +85,27 @@ Consultar o resumo de disponibilidade de um medicamento nas unidades de saúde:
 
 `GET /api/medicamentos/{id}/disponibilidade/resumo`
 
+Filtrar as unidades por município, usando o código IBGE:
+
+`GET /api/medicamentos/{id}/disponibilidade/resumo?ibge=2704302`
+
 A resposta contém:
 
-- `totalUnidades`: quantidade total de unidades de saúde cadastradas.
-- `unidadesComItem`: quantidade de unidades que possuem um registro de estoque do medicamento, independentemente do status.
+- `totalUnidades`: quantidade total de unidades de saúde consideradas na consulta.
+- `unidadesDisponiveis`: quantidade de unidades com o medicamento em status `DISPONIVEL` e quantidade maior que zero.
 
 Exemplo de resposta para a Metformina, conforme o seed de desenvolvimento:
 
 ```json
 {
   "totalUnidades": 7,
-  "unidadesComItem": 6
+  "unidadesDisponiveis": 3
 }
 ```
 
-A contagem `unidadesComItem` inclui registros com status `DISPONIVEL`, `RESERVADO` e `EM_FALTA`. Portanto, não representa apenas as unidades com estoque disponível para retirada.
+O parâmetro `ibge` é opcional. Sem ele, o resumo considera todas as unidades cadastradas. Quando informado, as duas contagens consideram apenas as unidades do município indicado.
+
+Unidades com medicamento `RESERVADO`, `EM_FALTA` ou quantidade zero não entram em `unidadesDisponiveis`.
 
 As contagens são realizadas diretamente no banco de dados.
 

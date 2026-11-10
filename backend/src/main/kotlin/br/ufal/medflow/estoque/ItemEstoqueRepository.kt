@@ -50,10 +50,28 @@ interface ItemEstoqueRepository : JpaRepository<ItemEstoque, Long> {
         """
         select count(i) from ItemEstoque i
         where i.medicamento.id = :medicamentoId
+          and i.status = :status
+          and i.quantidade > 0
         """,
     )
-    fun contarUnidadesComItem(
+    fun contarUnidadesDisponiveis(
         @Param("medicamentoId") medicamentoId: Long,
+        @Param("status") status: StatusEstoque,
+    ): Long
+
+    @Query(
+        """
+        select count(i) from ItemEstoque i
+        where i.medicamento.id = :medicamentoId
+          and i.ubs.codigoIbgeMunicipio = :ibge
+          and i.status = :status
+          and i.quantidade > 0
+        """,
+    )
+    fun contarUnidadesDisponiveisPorMunicipio(
+        @Param("medicamentoId") medicamentoId: Long,
+        @Param("ibge") ibge: String,
+        @Param("status") status: StatusEstoque,
     ): Long
 
     @Query(

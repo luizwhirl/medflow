@@ -25,7 +25,7 @@ data class ResumoEstoqueUbsResponse(
 /** Resumo da disponibilidade de um medicamento nas UBS. */
 data class ResumoDisponibilidadeResponse(
     val totalUnidades: Long,
-    val unidadesComItem: Long,
+    val unidadesDisponiveis: Long,
 )
 
 /** Disponibilidade de um medicamento em uma UBS (GET /api/medicamentos/{id}/disponibilidade). */

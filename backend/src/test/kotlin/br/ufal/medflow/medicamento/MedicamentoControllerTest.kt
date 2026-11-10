@@ -155,27 +155,48 @@ class MedicamentoControllerTest(@Autowired private val mockMvc: MockMvc) {
     }
 
     @Test
-    fun `resumo de disponibilidade retorna contagens das unidades`() {
-        given(medicamentoDisponibilidadeService.obterResumo(1L))
+    fun `resumo retorna unidades com estoque disponivel`() {
+        given(medicamentoDisponibilidadeService.obterResumo(1L, null))
             .willReturn(
                 ResumoDisponibilidadeResponse(
                     totalUnidades = 7L,
-                    unidadesComItem = 6L,
+                    unidadesDisponiveis = 3L,
                 ),
             )
 
         mockMvc.get("/api/medicamentos/1/disponibilidade/resumo").andExpect {
             status { isOk() }
             jsonPath("$.totalUnidades") { value(7) }
-            jsonPath("$.unidadesComItem") { value(6) }
+            jsonPath("$.unidadesDisponiveis") { value(3) }
         }
 
-        verify(medicamentoDisponibilidadeService).obterResumo(1L)
+        verify(medicamentoDisponibilidadeService).obterResumo(1L, null)
+    }
+
+    @Test
+    fun `resumo aceita filtro por municipio`() {
+        given(medicamentoDisponibilidadeService.obterResumo(1L, "2704302"))
+            .willReturn(
+                ResumoDisponibilidadeResponse(
+                    totalUnidades = 7L,
+                    unidadesDisponiveis = 3L,
+                ),
+            )
+
+        mockMvc.get("/api/medicamentos/1/disponibilidade/resumo") {
+            param("ibge", "2704302")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.totalUnidades") { value(7) }
+            jsonPath("$.unidadesDisponiveis") { value(3) }
+        }
+
+        verify(medicamentoDisponibilidadeService).obterResumo(1L, "2704302")
     }
 
     @Test
     fun `resumo de medicamento inexistente retorna 404`() {
-        given(medicamentoDisponibilidadeService.obterResumo(42L))
+        given(medicamentoDisponibilidadeService.obterResumo(42L, null))
             .willThrow(RecursoNaoEncontradoException("Medicamento", 42L))
 
         mockMvc.get("/api/medicamentos/42/disponibilidade/resumo").andExpect {
@@ -183,6 +204,6 @@ class MedicamentoControllerTest(@Autowired private val mockMvc: MockMvc) {
             jsonPath("$.title") { value("Recurso não encontrado") }
         }
 
-        verify(medicamentoDisponibilidadeService).obterResumo(42L)
+        verify(medicamentoDisponibilidadeService).obterResumo(42L, null)
     }
 }
