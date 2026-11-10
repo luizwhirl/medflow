@@ -11,27 +11,27 @@ import { MedicamentoService } from '../../core/services/medicamento.service';
   selector: 'app-medicamento-search-page',
   imports: [FormsModule, RouterLink],
   template: `
-    <h1 class="mb-3 text-xl font-bold">Medicamentos</h1>
+    <h1 class="page-title mb-3">Medicamentos</h1>
     <input
       type="search"
       [ngModel]="termo()"
       (ngModelChange)="termo.set($event)"
       placeholder="Buscar por nome ou categoria"
       aria-label="Buscar medicamento"
-      class="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 outline-none focus:border-brand-500"
+      class="control w-full"
     />
-    <ul class="mt-3 divide-y divide-slate-200 overflow-hidden rounded-2xl bg-white shadow-sm">
+    <ul class="surface-list mt-3">
       @for (m of resultados(); track m.id) {
         <li>
-          <a [routerLink]="['/medicamentos', m.id]" class="block px-4 py-3 hover:bg-slate-50">
+          <a [routerLink]="['/medicamentos', m.id]" class="interactive-row px-4 py-3">
             <div class="font-semibold">{{ m.nome }} {{ m.concentracao }}</div>
-            <div class="text-sm text-slate-500">
+            <div class="body-muted">
               {{ m.formaFarmaceutica }} · {{ m.categoria }} · CATMAT {{ m.catmat }}
             </div>
           </a>
         </li>
       } @empty {
-        <li class="p-4 text-slate-500">Nenhum medicamento encontrado.</li>
+        <li class="body-muted p-4">Nenhum medicamento encontrado.</li>
       }
     </ul>
   `,
