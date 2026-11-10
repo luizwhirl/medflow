@@ -4,6 +4,7 @@ import br.ufal.medflow.common.RecursoNaoEncontradoException
 import br.ufal.medflow.estoque.ItemEstoqueRepository
 import br.ufal.medflow.estoque.ResumoDisponibilidadeResponse
 import br.ufal.medflow.estoque.StatusEstoque
+import br.ufal.medflow.integracao.CodigoIbge
 import br.ufal.medflow.ubs.UbsRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -20,17 +21,19 @@ class MedicamentoDisponibilidadeService(
         medicamentoId: Long,
         ibge: String? = null,
     ): ResumoDisponibilidadeResponse {
+        val ibgeNormalizado = ibge?.let(CodigoIbge::paraSeteDigitos)
+
         if (!medicamentoRepository.existsById(medicamentoId)) {
             throw RecursoNaoEncontradoException("Medicamento", medicamentoId)
         }
 
-        val totalUnidades = if (ibge == null) {
+        val totalUnidades = if (ibgeNormalizado == null) {
             ubsRepository.count()
         } else {
-            ubsRepository.countByCodigoIbgeMunicipio(ibge)
+            ubsRepository.countByCodigoIbgeMunicipio(ibgeNormalizado)
         }
 
-        val unidadesDisponiveis = if (ibge == null) {
+        val unidadesDisponiveis = if (ibgeNormalizado == null) {
             itemEstoqueRepository.contarUnidadesDisponiveis(
                 medicamentoId,
                 StatusEstoque.DISPONIVEL,
@@ -38,7 +41,7 @@ class MedicamentoDisponibilidadeService(
         } else {
             itemEstoqueRepository.contarUnidadesDisponiveisPorMunicipio(
                 medicamentoId,
-                ibge,
+                ibgeNormalizado,
                 StatusEstoque.DISPONIVEL,
             )
         }

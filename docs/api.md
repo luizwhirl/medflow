@@ -85,9 +85,15 @@ Consultar o resumo de disponibilidade de um medicamento nas unidades de saúde:
 
 `GET /api/medicamentos/{id}/disponibilidade/resumo`
 
-Filtrar as unidades por município, usando o código IBGE:
+Filtrar as unidades por município, usando o código IBGE de 7 dígitos:
 
 `GET /api/medicamentos/{id}/disponibilidade/resumo?ibge=2704302`
+
+Também é possível utilizar o código de 6 dígitos, conforme o formato da BNAFAR:
+
+`GET /api/medicamentos/{id}/disponibilidade/resumo?ibge=270430`
+
+O código de 6 dígitos é normalizado para 7 dígitos por `CodigoIbge.paraSeteDigitos()` antes das consultas. Assim, os dois exemplos acima consultam o mesmo município.
 
 A resposta contém:
 
@@ -112,6 +118,10 @@ As contagens são realizadas diretamente no banco de dados.
 A informação sobre a unidade mais próxima com estoque será adicionada após a implementação da L5.
 
 Se o medicamento informado não existir, a API retorna `404` no padrão `application/problem+json`.
+
+Se o parâmetro `ibge` tiver formato inválido (não numérico ou diferente de 6 ou 7 dígitos), a API retorna `400` no padrão `application/problem+json`, com o título `Parâmetro inválido`.
+
+A normalização valida o formato do código IBGE, mas não verifica a existência do município. Portanto, um código com formato válido que não corresponda a nenhuma UBS cadastrada pode resultar em contagens zeradas.
 
 ## Exemplos
 

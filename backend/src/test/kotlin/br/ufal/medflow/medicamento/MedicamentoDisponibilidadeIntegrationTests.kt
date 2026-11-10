@@ -152,6 +152,47 @@ class MedicamentoDisponibilidadeIntegrationTests(
     }
 
     @Test
+    fun `resumo normaliza codigo IBGE de seis digitos`() {
+        val medicamentoId = criarMedicamento()
+
+        val totalInicial = requireNotNull(
+            jdbc.queryForObject(
+                "select count(*) from ubs where codigo_ibge_municipio = ?",
+                Long::class.java,
+                "2704302",
+            ),
+        )
+
+        val ubsId = criarUbs("7983001", "2704302")
+        criarItem(ubsId, medicamentoId, StatusEstoque.DISPONIVEL, 5)
+
+        for (codigo in listOf("270430", "2704302")) {
+            mockMvc.get("/api/medicamentos/$medicamentoId/disponibilidade/resumo") {
+                param("ibge", codigo)
+            }.andExpect {
+                status { isOk() }
+                jsonPath("$.totalUnidades") { value((totalInicial + 1).toInt()) }
+                jsonPath("$.unidadesDisponiveis") { value(1) }
+            }
+        }
+    }
+
+    @Test
+    fun `resumo retorna 400 para codigo IBGE invalido`() {
+        val medicamentoId = criarMedicamento()
+
+        for (codigo in listOf("27043", "abc", "27043022")) {
+            mockMvc.get("/api/medicamentos/$medicamentoId/disponibilidade/resumo") {
+                param("ibge", codigo)
+            }.andExpect {
+                status { isBadRequest() }
+                jsonPath("$.title") { value("Parâmetro inválido") }
+                jsonPath("$.status") { value(400) }
+            }
+        }
+    }
+
+    @Test
     fun `medicamento sem estoque retorna zero unidades disponiveis`() {
         val medicamentoId = criarMedicamento()
         criarUbs("7982001", "9999903")

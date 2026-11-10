@@ -75,6 +75,45 @@ class MedicamentoDisponibilidadeServiceTest {
     }
 
     @Test
+    fun `resumo normaliza codigo IBGE de seis digitos`() {
+        given(medicamentoRepository.existsById(1L)).willReturn(true)
+        given(ubsRepository.countByCodigoIbgeMunicipio("2704302"))
+            .willReturn(7L)
+        given(
+            itemEstoqueRepository.contarUnidadesDisponiveisPorMunicipio(
+                1L,
+                "2704302",
+                StatusEstoque.DISPONIVEL,
+            ),
+        ).willReturn(3L)
+
+        val resumo = service.obterResumo(1L, "270430")
+
+        assertEquals(7L, resumo.totalUnidades)
+        assertEquals(3L, resumo.unidadesDisponiveis)
+
+        verify(ubsRepository).countByCodigoIbgeMunicipio("2704302")
+        verify(itemEstoqueRepository).contarUnidadesDisponiveisPorMunicipio(
+            1L,
+            "2704302",
+            StatusEstoque.DISPONIVEL,
+        )
+    }
+
+    @Test
+    fun `resumo rejeita codigo IBGE invalido`() {
+        assertThrows<IllegalArgumentException> {
+            service.obterResumo(1L, "27043")
+        }
+
+        verifyNoInteractions(
+            medicamentoRepository,
+            ubsRepository,
+            itemEstoqueRepository,
+        )
+    }
+
+    @Test
     fun `medicamento sem estoque disponivel retorna zero`() {
         given(medicamentoRepository.existsById(2L)).willReturn(true)
         given(ubsRepository.count()).willReturn(7L)

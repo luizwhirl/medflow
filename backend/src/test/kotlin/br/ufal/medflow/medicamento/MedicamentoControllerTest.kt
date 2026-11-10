@@ -195,6 +195,29 @@ class MedicamentoControllerTest(@Autowired private val mockMvc: MockMvc) {
     }
 
     @Test
+    fun `resumo retorna 400 para codigo IBGE invalido`() {
+        given(medicamentoDisponibilidadeService.obterResumo(1L, "27043"))
+            .willThrow(
+                IllegalArgumentException(
+                    "Código IBGE inválido (esperado 6 ou 7 dígitos): '27043'",
+                ),
+            )
+
+        mockMvc.get("/api/medicamentos/1/disponibilidade/resumo") {
+            param("ibge", "27043")
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.title") { value("Parâmetro inválido") }
+            jsonPath("$.status") { value(400) }
+            jsonPath("$.detail") {
+                value("Código IBGE inválido (esperado 6 ou 7 dígitos): '27043'")
+            }
+        }
+
+        verify(medicamentoDisponibilidadeService).obterResumo(1L, "27043")
+    }
+
+    @Test
     fun `resumo de medicamento inexistente retorna 404`() {
         given(medicamentoDisponibilidadeService.obterResumo(42L, null))
             .willThrow(RecursoNaoEncontradoException("Medicamento", 42L))
