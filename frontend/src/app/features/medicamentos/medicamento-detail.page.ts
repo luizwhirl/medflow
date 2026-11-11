@@ -19,45 +19,43 @@ type Estado =
   template: `
     @let e = estado();
     @if (e.carregando) {
-      <p class="text-slate-500">Carregando…</p>
+      <p class="body-muted">Carregando…</p>
     } @else if (!e.medicamento) {
-      <p class="rounded-xl bg-red-50 p-4 text-sm text-red-800">Medicamento não encontrado.</p>
+      <p class="feedback-error">Medicamento não encontrado.</p>
     } @else {
-      <section class="rounded-2xl bg-white p-5 shadow-sm">
+      <section class="surface-card p-5">
         <h1 class="text-xl font-bold">{{ e.medicamento.nome }} {{ e.medicamento.concentracao }}</h1>
-        <p class="text-sm text-slate-600">
+        <p class="body-muted">
           {{ e.medicamento.formaFarmaceutica }} · {{ e.medicamento.categoria }}
         </p>
         <div class="mt-2 flex gap-2 text-xs font-semibold">
           @if (e.medicamento.rename) {
             <span class="rounded-md bg-brand-50 px-2 py-1 text-brand-600">RENAME</span>
           }
-          <span class="rounded-md bg-slate-100 px-2 py-1 text-slate-600"
+          <span class="rounded-md bg-canvas px-2 py-1 text-content-muted"
             >CATMAT {{ e.medicamento.catmat }}</span
           >
         </div>
       </section>
 
       <h2 class="mb-2 mt-5 font-bold">Onde encontrar</h2>
-      <ul class="divide-y divide-slate-200 overflow-hidden rounded-2xl bg-white shadow-sm">
+      <ul class="surface-list">
         @for (d of e.disponibilidade; track d.ubs.id) {
           <li>
             <a
               [routerLink]="['/ubs', d.ubs.id]"
-              class="flex items-center gap-3 px-4 py-3 hover:bg-slate-50"
+              class="interactive-row flex items-center gap-3 px-4 py-3"
             >
               <div class="min-w-0 flex-1">
                 <div class="truncate font-semibold">{{ d.ubs.nome }}</div>
-                <div class="text-sm text-slate-500">
-                  {{ d.ubs.bairro }} · {{ d.quantidade }} un.
-                </div>
+                <div class="body-muted">{{ d.ubs.bairro }} · {{ d.quantidade }} un.</div>
                 <app-sync-indicator class="mt-1 block" [em]="d.ubs.ultimaSincronizacao" />
               </div>
               <app-status-badge [status]="d.status" />
             </a>
           </li>
         } @empty {
-          <li class="p-4 text-slate-500">Nenhuma unidade informou estoque deste item.</li>
+          <li class="body-muted p-4">Nenhuma unidade informou estoque deste item.</li>
         }
       </ul>
     }

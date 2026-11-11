@@ -6,8 +6,8 @@ import { Router, RouterLink } from '@angular/router';
   selector: 'app-home-page',
   imports: [RouterLink, FormsModule],
   template: `
-    <section class="rounded-2xl bg-white p-6 shadow-sm">
-      <p class="text-sm text-slate-500">Consulta de estoque nas Unidades Básicas de Saúde</p>
+    <section class="surface-card p-6">
+      <p class="body-muted">Consulta de estoque nas Unidades Básicas de Saúde</p>
       <h1 class="mt-1 text-2xl font-bold tracking-tight">Qual remédio você procura?</h1>
       <form class="mt-5 flex gap-2" (ngSubmit)="buscar()">
         <input
@@ -16,7 +16,7 @@ import { Router, RouterLink } from '@angular/router';
           type="search"
           placeholder="Ex.: Metformina"
           aria-label="Nome do medicamento"
-          class="h-12 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 outline-none focus:border-brand-500"
+          class="control flex-1 bg-canvas"
         />
         <button
           type="submit"
@@ -30,19 +30,17 @@ import { Router, RouterLink } from '@angular/router';
     <section class="mt-4 grid gap-4 sm:grid-cols-2">
       <a
         routerLink="/ubs"
-        class="rounded-2xl bg-white p-5 shadow-sm hover:ring-2 hover:ring-brand-100"
+        class="surface-card p-5 transition-shadow hover:ring-2 hover:ring-brand-100"
       >
         <h2 class="font-bold">UBS perto de você</h2>
-        <p class="mt-1 text-sm text-slate-500">Veja as unidades e o estoque de cada farmácia.</p>
+        <p class="mt-1 body-muted">Veja as unidades e o estoque de cada farmácia.</p>
       </a>
       <a
         routerLink="/medicamentos"
-        class="rounded-2xl bg-white p-5 shadow-sm hover:ring-2 hover:ring-brand-100"
+        class="surface-card p-5 transition-shadow hover:ring-2 hover:ring-brand-100"
       >
         <h2 class="font-bold">Medicamentos</h2>
-        <p class="mt-1 text-sm text-slate-500">
-          Descubra em quais unidades o remédio está disponível.
-        </p>
+        <p class="mt-1 body-muted">Descubra em quais unidades o remédio está disponível.</p>
       </a>
     </section>
   `,
