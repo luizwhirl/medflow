@@ -4,7 +4,7 @@ Base: `http://localhost:8080/api`. A documentação interativa fica em `/swagger
 
 | Método | Rota | Descrição |
 | --- | --- | --- |
-| GET | `/ubs` | Lista as unidades, ordenadas por nome |
+| GET | `/ubs` | Lista as unidades por nome. Com `lat` e `lng`, da mais próxima para a mais distante (veja abaixo) |
 | GET | `/ubs/{id}` | Detalhe de uma unidade |
 | GET | `/ubs/{id}/estoque` | Lista os itens do estoque da UBS, com filtro opcional por status |
 | GET | `/ubs/{id}/estoque/resumo` | Resumo do estoque da UBS, com contagens por status e filtro opcional |
@@ -31,6 +31,34 @@ Listar as categorias disponíveis:
 A categoria é filtrada sem diferenciar letras maiúsculas de minúsculas. Se nenhuma categoria corresponder, a listagem de medicamentos retorna uma lista vazia.
 
 Status de estoque: `DISPONIVEL`, `RESERVADO`, `EM_FALTA`.
+
+## UBS por proximidade
+
+`GET /api/ubs?lat=-9.55&lng=-35.72&raioKm=3&medicamentoId=1`
+
+Sem parâmetros, a rota lista as unidades por nome, como sempre. Com `lat` e `lng`, devolve da unidade mais próxima para a mais distante, com a distância em km (Haversine, calculada no banco, arredondada para 2 casas).
+
+| Parâmetro | Obrigatório | Regra |
+| --- | --- | --- |
+| `lat` | com `lng` | de -90 a 90 |
+| `lng` | com `lat` | de -180 a 180 |
+| `raioKm` | não | maior que zero; só entram unidades até essa distância. Sem ele, não há limite |
+| `medicamentoId` | não | cada unidade que tem o item traz `status` e `quantidade`; as outras continuam na lista, sem esses campos |
+
+`raioKm` e `medicamentoId` exigem `lat` e `lng`. Parâmetro fora da regra, ou só um dos dois, retorna `400`; `medicamentoId` que não existe retorna `404`. Distâncias iguais desempatam pelo nome.
+
+```json
+[
+  {
+    "id": 3, "cnes": "9000103", "nome": "UBS Clima Bom", "tipo": "UBS", "bairro": "Clima Bom",
+    "endereco": "Rua do Posto, 300", "telefone": "(82) 3000-0103", "horario": "Seg a Sex · 7h às 17h",
+    "latitude": -9.56, "longitude": -35.74, "ultimaSincronizacao": "2026-10-26T10:00:00Z",
+    "distanciaKm": 2.35, "status": "DISPONIVEL", "quantidade": 220
+  }
+]
+```
+
+Sem `raioKm`, a resposta traz todas as unidades do banco; a paginação virá com a PDS-22.
 
 ## Resumo do estoque da UBS
 
