@@ -188,6 +188,7 @@ class MedicamentoDisponibilidadeIntegrationTests(
                 status { isBadRequest() }
                 jsonPath("$.title") { value("Parâmetro inválido") }
                 jsonPath("$.status") { value(400) }
+                jsonPath("$.detail") { value("Parâmetro 'ibge' inválido") }
             }
         }
     }

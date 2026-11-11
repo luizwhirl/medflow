@@ -1,5 +1,6 @@
 package br.ufal.medflow.medicamento
 
+import br.ufal.medflow.common.ParametroInvalidoException
 import br.ufal.medflow.common.RecursoNaoEncontradoException
 import br.ufal.medflow.estoque.ItemEstoqueRepository
 import br.ufal.medflow.estoque.StatusEstoque
@@ -102,15 +103,30 @@ class MedicamentoDisponibilidadeServiceTest {
 
     @Test
     fun `resumo rejeita codigo IBGE invalido`() {
-        assertThrows<IllegalArgumentException> {
+        val excecao = assertThrows<ParametroInvalidoException> {
             service.obterResumo(1L, "27043")
         }
+
+        assertEquals("Parâmetro 'ibge' inválido", excecao.message)
 
         verifyNoInteractions(
             medicamentoRepository,
             ubsRepository,
             itemEstoqueRepository,
         )
+    }
+
+    @Test
+    fun `erro interno nao e convertido em parametro invalido`() {
+        given(medicamentoRepository.existsById(1L)).willReturn(true)
+        given(ubsRepository.count())
+            .willThrow(IllegalArgumentException("Falha interna"))
+
+        val excecao = assertThrows<IllegalArgumentException> {
+            service.obterResumo(1L)
+        }
+
+        assertEquals("Falha interna", excecao.message)
     }
 
     @Test

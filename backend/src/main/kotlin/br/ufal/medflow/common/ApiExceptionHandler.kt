@@ -15,8 +15,8 @@ class ApiExceptionHandler {
             title = "Recurso não encontrado"
         }
 
-    @ExceptionHandler(IllegalArgumentException::class)
-    fun argumentoInvalido(ex: IllegalArgumentException): ProblemDetail =
+    @ExceptionHandler(ParametroInvalidoException::class)
+    fun parametroInvalido(ex: ParametroInvalidoException): ProblemDetail =
         ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.message ?: "Parâmetro inválido").apply {
             title = "Parâmetro inválido"
         }

@@ -1,5 +1,6 @@
 package br.ufal.medflow.medicamento
 
+import br.ufal.medflow.common.ParametroInvalidoException
 import br.ufal.medflow.common.RecursoNaoEncontradoException
 import br.ufal.medflow.estoque.ItemEstoqueRepository
 import br.ufal.medflow.estoque.ResumoDisponibilidadeResponse
@@ -21,7 +22,13 @@ class MedicamentoDisponibilidadeService(
         medicamentoId: Long,
         ibge: String? = null,
     ): ResumoDisponibilidadeResponse {
-        val ibgeNormalizado = ibge?.let(CodigoIbge::paraSeteDigitos)
+        val ibgeNormalizado = ibge?.let { codigo ->
+            try {
+                CodigoIbge.paraSeteDigitos(codigo)
+            } catch (ex: IllegalArgumentException) {
+                throw ParametroInvalidoException("ibge")
+            }
+        }
 
         if (!medicamentoRepository.existsById(medicamentoId)) {
             throw RecursoNaoEncontradoException("Medicamento", medicamentoId)

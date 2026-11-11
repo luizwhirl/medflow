@@ -1,5 +1,6 @@
 package br.ufal.medflow.medicamento
 
+import br.ufal.medflow.common.ParametroInvalidoException
 import br.ufal.medflow.common.RecursoNaoEncontradoException
 import br.ufal.medflow.estoque.ItemEstoqueRepository
 import br.ufal.medflow.estoque.ResumoDisponibilidadeResponse
@@ -197,11 +198,7 @@ class MedicamentoControllerTest(@Autowired private val mockMvc: MockMvc) {
     @Test
     fun `resumo retorna 400 para codigo IBGE invalido`() {
         given(medicamentoDisponibilidadeService.obterResumo(1L, "27043"))
-            .willThrow(
-                IllegalArgumentException(
-                    "Código IBGE inválido (esperado 6 ou 7 dígitos): '27043'",
-                ),
-            )
+            .willThrow(ParametroInvalidoException("ibge"))
 
         mockMvc.get("/api/medicamentos/1/disponibilidade/resumo") {
             param("ibge", "27043")
@@ -209,9 +206,7 @@ class MedicamentoControllerTest(@Autowired private val mockMvc: MockMvc) {
             status { isBadRequest() }
             jsonPath("$.title") { value("Parâmetro inválido") }
             jsonPath("$.status") { value(400) }
-            jsonPath("$.detail") {
-                value("Código IBGE inválido (esperado 6 ou 7 dígitos): '27043'")
-            }
+            jsonPath("$.detail") { value("Parâmetro 'ibge' inválido") }
         }
 
         verify(medicamentoDisponibilidadeService).obterResumo(1L, "27043")
