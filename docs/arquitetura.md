@@ -73,7 +73,7 @@ Se o formato da fonte mudar (migração Hórus → e-SUS AF), só essa classe pr
 
 - Fonte: `GET https://apidadosabertos.saude.gov.br/daf/estoque-medicamentos-bnafar-horus` (pública, sem autenticação).
   A `bnafar-api-hom` é só de envio (exige `Authorization`) e não serve para leitura.
-- Filtros: `codigo_municipio` (IBGE de 6 dígitos), `data_posicao_estoque`; paginação por `limit` (até 1000) e `offset`.
+- Filtros: `codigo_municipio` (IBGE de 6 dígitos), `data_posicao_estoque`. Paginação por `limit` e `offset`, onde **`offset` é o número da página** (0, 1, 2...) e não a quantidade de linhas puladas (conferido em 11/11/2026: `limit=2000&offset=1` devolve as linhas 2000 em diante). O cliente falha se duas páginas seguidas se repetirem, para não somar dados em dobro caso isso mude.
 - Cada registro é um lote. O cliente devolve `PosicaoEstoque` com o IBGE em 7 dígitos e o CNES com 7 dígitos.
 - Registros sem CNES, CATMAT, quantidade ou data da posição são descartados (com aviso no log). Validade ausente vira nula.
 - Falha de rede, timeout, erro HTTP ou resposta inválida lançam `FonteEstoqueIndisponivelException`; quem chama decide se tenta de novo.
@@ -107,7 +107,7 @@ Regras de conversão (a BNAFAR é uma base de gestão, não pensada para o cidad
 - **Medicamentos:** a base mistura medicamentos com materiais (agulha, curativo...). Só entra o que tem dose e forma farmacêutica na descrição. Nome, concentração e forma são extraídos do texto (`DescricaoProduto`); a categoria vem do princípio ativo (`CategoriaMedicamento`, heurística do MVP; o resto é "Outros").
 - **CATMAT:** o código vem com a unidade de fornecimento (`BR0267691U0042`, às vezes com `INAT` no fim). O medicamento é só `BR` + 7 dígitos.
 - **Medicamento que já existe não é sobrescrito**, inclusive o do seed.
-- **Item:** quantidade é a soma das posições; o status vem de `RegraStatusEstoque`. Itens que somem da fonte não são alterados.
-- **Lotes:** só viram lote posições com validade e saldo; lotes repetidos no mesmo item somam e ficam com a menor validade. Posição sem validade conta no total do item, mas não vira lote.
+- **Item:** quantidade é a soma das posições da data mais recente do item (se a fonte devolver mais de um dia, os antigos não somam); o status vem de `RegraStatusEstoque`. Item que uma unidade da resposta deixou de informar (o estoque acabou) vai para quantidade 0 e `EM_FALTA` e perde os lotes. Unidade que some inteira da resposta não é tocada: a data de sincronização dela envelhece até aparecer como atrasada.
+- **Lotes:** só viram lote posições com validade e saldo; lotes repetidos no mesmo item somam e ficam com a menor validade. Posição sem validade conta no total do item, mas não vira lote, então **a soma dos lotes pode ser menor que `item_estoque.quantidade`** (o comentário da migration V2 diz que seria igual; ele não foi alterado porque migration aplicada não se edita).
 - **`ultima_sincronizacao` da UBS** é o dia da posição mais recente que a fonte tem para ela (e não a hora da nossa execução). Assim, unidade que não atualiza na fonte aparece como atrasada.
 - Nomes, bairros e endereços vêm em maiúsculas e sem acento; são convertidos para texto legível (`Nomes`).

@@ -5,6 +5,7 @@ import br.ufal.medflow.estoque.ItemEstoqueRepository
 import br.ufal.medflow.estoque.LoteEstoque
 import br.ufal.medflow.estoque.LoteEstoqueRepository
 import br.ufal.medflow.estoque.RegraStatusEstoque
+import br.ufal.medflow.estoque.StatusEstoque
 import br.ufal.medflow.integracao.FonteEstoque
 import br.ufal.medflow.integracao.PosicaoEstoque
 import br.ufal.medflow.medicamento.Medicamento
@@ -70,10 +71,18 @@ class SincronizacaoEstoqueService(
             }
         }
 
+        // Por item vale só a posição mais recente: se a fonte devolver mais de um dia, não soma entre datas.
+        val porItem = validas.groupBy { it.posicao.cnes to it.catmat }.mapValues { (_, lista) ->
+            val maisRecente = lista.maxOf { it.posicao.dataPosicao }
+            lista.filter { it.posicao.dataPosicao == maisRecente }
+        }
+        val referenciaPorUbs = validas.groupBy { it.posicao.cnes }
+            .mapValues { (_, lista) -> lista.maxOf { it.posicao.dataPosicao }.comoInstante() }
+
         val ubsPorCnes = gravarUnidades(validas)
         val medicamentoPorCatmat = gravarMedicamentos(validas)
-        val itens = gravarItens(validas, ubsPorCnes, medicamentoPorCatmat)
-        val lotes = gravarLotes(validas, itens.porChave)
+        val itens = gravarItens(porItem, referenciaPorUbs, ubsPorCnes, medicamentoPorCatmat)
+        val lotes = gravarLotes(porItem, itens.porChave)
 
         return ResultadoSincronizacao(
             codigoIbge = codigoIbge,
@@ -167,19 +176,24 @@ class SincronizacaoEstoqueService(
 
     private class Itens(val porChave: Map<Pair<String, String>, ItemEstoque>, val contagem: Contagem)
 
+    /**
+     * Item que a unidade deixou de informar (o estoque acabou) vai para 0 / EM_FALTA, em vez de ficar com o saldo
+     * antigo. Vale só para as unidades que vieram na resposta: unidade que sumiu inteira não é tocada, e a data de
+     * sincronização dela envelhece até aparecer como atrasada.
+     */
     private fun gravarItens(
-        validas: List<Valida>,
+        porItem: Map<Pair<String, String>, List<Valida>>,
+        referenciaPorUbs: Map<String, Instant>,
         ubsPorCnes: Gravados<String, Ubs>,
         medicamentoPorCatmat: Gravados<String, Medicamento>,
     ): Itens {
-
         val existentes = itemRepository.findDasUbs(ubsPorCnes.porChave.values.map { it.id!! })
             .associateBy { it.ubs.cnes to it.medicamento.catmat }
         val resultado = HashMap<Pair<String, String>, ItemEstoque>()
         val novos = mutableListOf<ItemEstoque>()
         var atualizados = 0
 
-        for ((chave, lista) in validas.groupBy { it.posicao.cnes to it.catmat }) {
+        for ((chave, lista) in porItem) {
             val quantidade = lista.sumOf { it.posicao.quantidadeInteira().toLong() }.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
             val status = regraStatus.calcular(quantidade)
             val atualizadoEm = lista.maxOf { it.posicao.dataPosicao }.comoInstante()
@@ -197,22 +211,38 @@ class SincronizacaoEstoqueService(
                 resultado[chave] = existente
             }
         }
+        for ((chave, existente) in existentes) {
+            if (chave in porItem) continue
+            resultado[chave] = existente
+            if (existente.quantidade != 0 || existente.status != StatusEstoque.EM_FALTA) {
+                existente.quantidade = 0
+                existente.status = regraStatus.calcular(0)
+                existente.atualizadoEm = referenciaPorUbs.getValue(chave.first)
+                atualizados++
+            }
+        }
         itemRepository.saveAll(novos).forEach { resultado[it.ubs.cnes to it.medicamento.catmat] = it }
         return Itens(resultado, Contagem(criados = novos.size, atualizados = atualizados))
     }
 
     private data class LoteDesejado(val validade: LocalDate, val quantidade: Int)
 
-    /** Só vira lote o que tem validade e saldo; lotes repetidos no mesmo item somam e ficam com a menor validade. */
-    private fun gravarLotes(validas: List<Valida>, itens: Map<Pair<String, String>, ItemEstoque>): Contagem {
+    /**
+     * Só vira lote o que tem validade e saldo; lotes repetidos no mesmo item somam e ficam com a menor validade.
+     * Item que sumiu da fonte (já zerado) perde todos os lotes. Por isso a soma dos lotes pode ser menor que a
+     * quantidade do item: posição sem validade conta no total, mas não vira lote.
+     */
+    private fun gravarLotes(
+        porItem: Map<Pair<String, String>, List<Valida>>,
+        itens: Map<Pair<String, String>, ItemEstoque>,
+    ): Contagem {
         val existentes = loteRepository.findDosItens(itens.values.map { it.id!! }).groupBy { it.itemEstoque.id!! }
         val novos = mutableListOf<LoteEstoque>()
         val remover = mutableListOf<LoteEstoque>()
         var atualizados = 0
 
-        for ((chave, lista) in validas.groupBy { it.posicao.cnes to it.catmat }) {
-            val item = itens.getValue(chave)
-            val desejados = lista
+        for ((chave, item) in itens) {
+            val desejados = porItem[chave].orEmpty()
                 .filter { it.posicao.validade != null && it.posicao.quantidadeInteira() > 0 }
                 .groupBy { it.posicao.numeroLote?.trim()?.takeIf(String::isNotEmpty)?.limitar(40) ?: "S/L" }
                 .mapValues { (_, g) ->

@@ -267,6 +267,89 @@ class SincronizacaoEstoqueServiceIntegrationTests(
         assertEquals("UBS Maria Aparecida Lisboa II", jdbc.queryForObject("select nome from ubs", String::class.java))
     }
 
+    private val enalapril = "ENALAPRIL, MALEATO 5 MG COMPRIMIDO"
+
+    @Test
+    fun `item que a unidade deixou de informar vai para zero e em falta e perde os lotes`() {
+        val metformina = listOf(
+            pos(lote = "L1", quantidade = "100"),
+            pos(lote = "L2", quantidade = "50", validade = LocalDate.of(2028, 1, 15)),
+        )
+        val enalaprilDaUnidade = pos(catmat = "BR0267650U0042", descricao = enalapril, quantidade = "30", lote = "E1")
+        fonteDevolve(metformina + enalaprilDaUnidade, listOf(enalaprilDaUnidade), listOf(enalaprilDaUnidade))
+
+        servico.sincronizar(ibge)
+        assertEquals(150, item("BR0267691")["quantidade"])
+        em.clear()
+        val segunda = servico.sincronizar(ibge)
+
+        assertEquals(0, item("BR0267691")["quantidade"])
+        assertEquals(StatusEstoque.EM_FALTA.name, item("BR0267691")["status"])
+        assertEquals(emptyMap(), lotes("BR0267691"))
+        assertEquals(30, item("BR0267650")["quantidade"])
+        assertEquals(mapOf("E1" to 30), lotes("BR0267650"))
+        assertEquals(Contagem(atualizados = 1), segunda.itens)
+        assertEquals(Contagem(removidos = 2), segunda.lotes)
+
+        em.clear()
+        val terceira = servico.sincronizar(ibge)
+        assertFalse(terceira.houveMudanca, "item já zerado não pode mudar de novo: $terceira")
+    }
+
+    @Test
+    fun `item zerado volta quando a unidade volta a informar`() {
+        fonteDevolve(
+            listOf(pos(lote = "L1", quantidade = "100"), pos(catmat = "BR0267650U0042", descricao = enalapril, lote = "E1")),
+            listOf(pos(catmat = "BR0267650U0042", descricao = enalapril, lote = "E1")),
+            listOf(pos(lote = "L1", quantidade = "70"), pos(catmat = "BR0267650U0042", descricao = enalapril, lote = "E1")),
+        )
+
+        servico.sincronizar(ibge)
+        em.clear()
+        servico.sincronizar(ibge)
+        assertEquals(0, item("BR0267691")["quantidade"])
+        em.clear()
+        servico.sincronizar(ibge)
+
+        assertEquals(70, item("BR0267691")["quantidade"])
+        assertEquals(StatusEstoque.DISPONIVEL.name, item("BR0267691")["status"])
+        assertEquals(mapOf("L1" to 70), lotes("BR0267691"))
+    }
+
+    @Test
+    fun `unidade que sumiu inteira da resposta nao e tocada`() {
+        val outra = pos(
+            cnes = "2004763", unidade = "UNIDADE BASICA DE SAUDE DOUTOR ULYSSES LUNA",
+            catmat = "BR0267650U0042", descricao = enalapril, quantidade = "30", lote = "E1",
+        )
+        fonteDevolve(listOf(pos(lote = "L1", quantidade = "100"), outra), listOf(outra))
+
+        servico.sincronizar(ibge)
+        em.clear()
+        servico.sincronizar(ibge)
+
+        assertEquals(100, item("BR0267691")["quantidade"])
+        assertEquals(StatusEstoque.DISPONIVEL.name, item("BR0267691")["status"])
+        assertEquals(mapOf("L1" to 100), lotes("BR0267691"))
+    }
+
+    @Test
+    fun `so a posicao mais recente de cada item conta`() {
+        val ontem = dia.minusDays(1)
+        fonteDevolve(
+            listOf(
+                pos(lote = "L1", quantidade = "100", dataPosicao = ontem),
+                pos(lote = "L1", quantidade = "40", dataPosicao = dia),
+                pos(lote = "L9", quantidade = "60", dataPosicao = ontem),
+            ),
+        )
+
+        servico.sincronizar(ibge)
+
+        assertEquals(40, item("BR0267691")["quantidade"])
+        assertEquals(mapOf("L1" to 40), lotes("BR0267691"))
+    }
+
     @Test
     fun `fonte indisponivel nao grava nada`() {
         given(fonte.buscarPosicoes(ibge, null)).willThrow(FonteEstoqueIndisponivelException("fora do ar"))
