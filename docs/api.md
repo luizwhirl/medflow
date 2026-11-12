@@ -13,6 +13,7 @@ Base: `http://localhost:8080/api`. A documentação interativa fica em `/swagger
 | GET | `/medicamentos/categorias` | Lista as categorias distintas dos medicamentos cadastrados |
 | GET | `/medicamentos/{id}` | Detalhe de um medicamento |
 | GET | `/medicamentos/{id}/disponibilidade` | Unidades com o medicamento (disponíveis primeiro) |
+| GET | `/medicamentos/{id}/disponibilidade/resumo` | Total de unidades e unidades com estoque disponível, com filtro opcional por município |
 
 ## Filtro por categoria
 
@@ -77,6 +78,50 @@ Sem o parâmetro, todos os itens do estoque são retornados.
 No endpoint `/estoque/resumo`, as contagens sempre representam o estoque completo da UBS, mesmo quando o filtro por status é aplicado à lista `itens`.
 
 Se a UBS informada não existir, a API retorna `404` no padrão `application/problem+json`. Um status inválido retorna `400`.
+
+## Resumo de disponibilidade do medicamento
+
+Consultar o resumo de disponibilidade de um medicamento nas unidades de saúde:
+
+`GET /api/medicamentos/{id}/disponibilidade/resumo`
+
+Filtrar as unidades por município, usando o código IBGE de 7 dígitos:
+
+`GET /api/medicamentos/{id}/disponibilidade/resumo?ibge=2704302`
+
+Também é possível utilizar o código de 6 dígitos, conforme o formato da BNAFAR:
+
+`GET /api/medicamentos/{id}/disponibilidade/resumo?ibge=270430`
+
+O código de 6 dígitos é normalizado para 7 dígitos por `CodigoIbge.paraSeteDigitos()` antes das consultas. Assim, os dois exemplos acima consultam o mesmo município.
+
+A resposta contém:
+
+- `totalUnidades`: quantidade total de unidades de saúde consideradas na consulta.
+- `unidadesDisponiveis`: quantidade de unidades com o medicamento em status `DISPONIVEL` e quantidade maior que zero.
+
+Exemplo de resposta para a Metformina, conforme o seed de desenvolvimento:
+
+```json
+{
+  "totalUnidades": 7,
+  "unidadesDisponiveis": 3
+}
+```
+
+O parâmetro `ibge` é opcional. Sem ele, o resumo considera todas as unidades cadastradas. Quando informado, as duas contagens consideram apenas as unidades do município indicado.
+
+Unidades com medicamento `RESERVADO`, `EM_FALTA` ou quantidade zero não entram em `unidadesDisponiveis`.
+
+As contagens são realizadas diretamente no banco de dados.
+
+A informação sobre a unidade mais próxima com estoque será adicionada após a implementação da L5.
+
+Se o medicamento informado não existir, a API retorna `404` no padrão `application/problem+json`.
+
+Se o parâmetro `ibge` tiver formato inválido (não numérico ou diferente de 6 ou 7 dígitos), a API retorna `400` no padrão `application/problem+json`, com o título `Parâmetro inválido`.
+
+A normalização valida o formato do código IBGE, mas não verifica a existência do município. Portanto, um código com formato válido que não corresponda a nenhuma UBS cadastrada pode resultar em contagens zeradas.
 
 ## Exemplos
 
