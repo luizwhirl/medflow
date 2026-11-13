@@ -56,6 +56,7 @@ describe('PreferenciasService', () => {
     expect(JSON.parse(localStorage.getItem('medflow.preferencias')!)).toEqual({
       ubsReferenciaId: 7,
       remediosContinuos: [5],
+      buscasRecentes: [],
     });
   });
 });
@@ -66,7 +67,7 @@ describe('HomePage', () => {
   beforeEach(() => {
     localStorage.setItem(
       'medflow.preferencias',
-      JSON.stringify({ ubsReferenciaId: 2, remediosContinuos: [1] }),
+      JSON.stringify({ ubsReferenciaId: 2, remediosContinuos: [1], buscasRecentes: ['Insulina'] }),
     );
     spyOn(navigator.geolocation, 'getCurrentPosition').and.callFake((_ok, erro) =>
       erro?.({} as GeolocationPositionError),

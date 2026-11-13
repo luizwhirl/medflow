@@ -1,10 +1,12 @@
 import { Injectable, signal } from '@angular/core';
 
 const CHAVE = 'medflow.preferencias';
+const MAX_BUSCAS = 3;
 
 interface Preferencias {
   ubsReferenciaId: number | null;
   remediosContinuos: number[];
+  buscasRecentes: string[];
 }
 
 /**
@@ -17,6 +19,7 @@ export class PreferenciasService {
 
   readonly ubsReferenciaId = () => this.estado().ubsReferenciaId;
   readonly remediosContinuos = () => this.estado().remediosContinuos;
+  readonly buscasRecentes = () => this.estado().buscasRecentes;
 
   definirUbsReferencia(id: number | null): void {
     this.atualizar({ ubsReferenciaId: id });
@@ -27,6 +30,14 @@ export class PreferenciasService {
     this.atualizar({
       remediosContinuos: atuais.includes(id) ? atuais.filter((x) => x !== id) : [...atuais, id],
     });
+  }
+
+  /** Guarda o termo no topo das buscas recentes (sem repetir, no máximo 3). */
+  registrarBusca(termo: string): void {
+    const t = termo.trim();
+    if (!t) return;
+    const outras = this.estado().buscasRecentes.filter((b) => b.toLowerCase() !== t.toLowerCase());
+    this.atualizar({ buscasRecentes: [t, ...outras].slice(0, MAX_BUSCAS) });
   }
 
   private atualizar(parcial: Partial<Preferencias>): void {
@@ -41,14 +52,15 @@ export class PreferenciasService {
   private ler(): Preferencias {
     try {
       const salvo = JSON.parse(localStorage.getItem(CHAVE) ?? 'null') as Partial<Preferencias>;
+      const lista = <T>(v: unknown, tipo: string): T[] =>
+        Array.isArray(v) ? v.filter((x) => typeof x === tipo) : [];
       return {
         ubsReferenciaId: typeof salvo?.ubsReferenciaId === 'number' ? salvo.ubsReferenciaId : null,
-        remediosContinuos: Array.isArray(salvo?.remediosContinuos)
-          ? salvo.remediosContinuos.filter((x) => typeof x === 'number')
-          : [],
+        remediosContinuos: lista<number>(salvo?.remediosContinuos, 'number'),
+        buscasRecentes: lista<string>(salvo?.buscasRecentes, 'string').slice(0, MAX_BUSCAS),
       };
     } catch {
-      return { ubsReferenciaId: null, remediosContinuos: [] };
+      return { ubsReferenciaId: null, remediosContinuos: [], buscasRecentes: [] };
     }
   }
 }
