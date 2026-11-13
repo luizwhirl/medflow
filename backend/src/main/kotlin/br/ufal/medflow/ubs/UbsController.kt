@@ -1,14 +1,15 @@
 package br.ufal.medflow.ubs
 
 import br.ufal.medflow.common.RecursoNaoEncontradoException
-import br.ufal.medflow.estoque.ItemEstoqueRepository
 import br.ufal.medflow.estoque.ItemEstoqueResponse
-import br.ufal.medflow.estoque.toItemResponse
+import br.ufal.medflow.estoque.ResumoEstoqueUbsResponse
+import br.ufal.medflow.estoque.StatusEstoque
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 
 @RestController
@@ -16,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController
 @Transactional(readOnly = true)
 class UbsController(
     private val ubsRepository: UbsRepository,
-    private val itemEstoqueRepository: ItemEstoqueRepository,
+    private val ubsEstoqueService: UbsEstoqueService,
 ) {
 
     @GetMapping
@@ -27,8 +28,16 @@ class UbsController(
         (ubsRepository.findByIdOrNull(id) ?: throw RecursoNaoEncontradoException("UBS", id)).toResponse()
 
     @GetMapping("/{id}/estoque")
-    fun estoque(@PathVariable id: Long): List<ItemEstoqueResponse> {
-        if (!ubsRepository.existsById(id)) throw RecursoNaoEncontradoException("UBS", id)
-        return itemEstoqueRepository.findByUbs(id).map { it.toItemResponse() }
-    }
+    fun estoque(
+        @PathVariable id: Long,
+        @RequestParam(required = false) status: StatusEstoque?,
+    ): List<ItemEstoqueResponse> =
+        ubsEstoqueService.listarItens(id, status)
+
+    @GetMapping("/{id}/estoque/resumo")
+    fun resumoEstoque(
+        @PathVariable id: Long,
+        @RequestParam(required = false) status: StatusEstoque?,
+    ): ResumoEstoqueUbsResponse =
+        ubsEstoqueService.obterResumo(id, status)
 }

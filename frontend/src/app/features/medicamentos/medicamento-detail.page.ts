@@ -1,20 +1,10 @@
-import { Component, inject, input, numberAttribute } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { RouterLink } from '@angular/router';
-import { catchError, forkJoin, map, of, startWith, switchMap } from 'rxjs';
+import { Component, input, numberAttribute } from '@angular/core';
 
-import { Disponibilidade } from '../../core/models/estoque.model';
-import { Medicamento } from '../../core/models/medicamento.model';
-import { MedicamentoService } from '../../core/services/medicamento.service';
-import { StatusBadge } from '../../shared/components/status-badge';
-import { SyncIndicator } from '../../shared/components/sync-indicator';
-
-type Estado =
-  | { carregando: true }
-  | { carregando: false; medicamento: Medicamento | null; disponibilidade: Disponibilidade[] };
+import { RastreioMedicamento } from './rastreio-medicamento';
 
 @Component({
   selector: 'app-medicamento-detail-page',
+<<<<<<< HEAD
   imports: [RouterLink, StatusBadge, SyncIndicator],
   template: `
     @let e = estado();
@@ -60,31 +50,12 @@ type Estado =
       </ul>
     }
   `,
+=======
+  imports: [RastreioMedicamento],
+  template: `<app-rastreio-medicamento [id]="id()" />`,
+>>>>>>> 8398728c03490268b2efa8765da3ee142c40385d
 })
 export class MedicamentoDetailPage {
-  private readonly medicamentoService = inject(MedicamentoService);
-
+  /** Vem do parâmetro de rota `:id` (withComponentInputBinding). */
   readonly id = input.required({ transform: numberAttribute });
-
-  protected readonly estado = toSignal(
-    toObservable(this.id).pipe(
-      switchMap((id) =>
-        forkJoin({
-          medicamento: this.medicamentoService.buscarPorId(id),
-          disponibilidade: this.medicamentoService.disponibilidade(id),
-        }).pipe(
-          map(({ medicamento, disponibilidade }): Estado => ({
-            carregando: false,
-            medicamento,
-            disponibilidade,
-          })),
-          catchError(() =>
-            of<Estado>({ carregando: false, medicamento: null, disponibilidade: [] }),
-          ),
-          startWith<Estado>({ carregando: true }),
-        ),
-      ),
-    ),
-    { initialValue: { carregando: true } as Estado },
-  );
 }

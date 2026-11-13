@@ -1,10 +1,14 @@
-import { Component, inject, input, numberAttribute } from '@angular/core';
+import { Component, computed, inject, input, numberAttribute } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { catchError, forkJoin, map, of, startWith, switchMap } from 'rxjs';
 
 import { ItemEstoque } from '../../core/models/estoque.model';
 import { Ubs } from '../../core/models/ubs.model';
+import { PreferenciasService } from '../../core/services/preferencias.service';
 import { UbsService } from '../../core/services/ubs.service';
+import { Button } from '../../shared/components/button';
+import { Card } from '../../shared/components/card';
+import { List } from '../../shared/components/list';
 import { StatusBadge } from '../../shared/components/status-badge';
 import { SyncIndicator } from '../../shared/components/sync-indicator';
 
@@ -12,7 +16,7 @@ type Estado = { carregando: true } | { carregando: false; ubs: Ubs | null; estoq
 
 @Component({
   selector: 'app-ubs-detail-page',
-  imports: [StatusBadge, SyncIndicator],
+  imports: [StatusBadge, SyncIndicator, Card, List, Button],
   template: `
     @let e = estado();
     @if (e.carregando) {
@@ -20,7 +24,11 @@ type Estado = { carregando: true } | { carregando: false; ubs: Ubs | null; estoq
     } @else if (!e.ubs) {
       <p class="feedback-error">Unidade não encontrada.</p>
     } @else {
+<<<<<<< HEAD
       <section class="surface-card p-5">
+=======
+      <app-card>
+>>>>>>> 8398728c03490268b2efa8765da3ee142c40385d
         <div class="flex flex-wrap gap-2 text-xs font-semibold text-content-muted">
           <span>{{ e.ubs.tipo }}</span
           ><span>CNES {{ e.ubs.cnes }}</span>
@@ -31,10 +39,24 @@ type Estado = { carregando: true } | { carregando: false; ubs: Ubs | null; estoq
           <p class="body-muted">{{ e.ubs.horario }}</p>
         }
         <app-sync-indicator class="mt-2 block" [em]="e.ubs.ultimaSincronizacao" />
-      </section>
+        <button
+          appButton
+          type="button"
+          [variante]="referencia() ? 'primario' : 'secundario'"
+          [attr.aria-pressed]="referencia()"
+          (click)="preferencias.definirUbsReferencia(referencia() ? null : id())"
+          class="mt-4"
+        >
+          {{ referencia() ? 'Minha UBS ✓' : 'Definir como minha UBS' }}
+        </button>
+      </app-card>
 
       <h2 class="mb-2 mt-5 font-bold">Estoque da farmácia</h2>
+<<<<<<< HEAD
       <ul class="surface-list">
+=======
+      <app-list [vazia]="e.estoque.length === 0" vazio="Sem itens de estoque registrados.">
+>>>>>>> 8398728c03490268b2efa8765da3ee142c40385d
         @for (item of e.estoque; track item.medicamento.id) {
           <li class="flex items-center gap-3 px-4 py-3">
             <div class="min-w-0 flex-1">
@@ -47,10 +69,13 @@ type Estado = { carregando: true } | { carregando: false; ubs: Ubs | null; estoq
             </div>
             <app-status-badge [status]="item.status" />
           </li>
+<<<<<<< HEAD
         } @empty {
           <li class="body-muted p-4">Sem itens de estoque registrados.</li>
+=======
+>>>>>>> 8398728c03490268b2efa8765da3ee142c40385d
         }
-      </ul>
+      </app-list>
     }
   `,
 })
@@ -58,7 +83,10 @@ export class UbsDetailPage {
   private readonly ubsService = inject(UbsService);
 
   /** Vem do parâmetro de rota `:id` (withComponentInputBinding). */
+  protected readonly preferencias = inject(PreferenciasService);
+
   readonly id = input.required({ transform: numberAttribute });
+  protected readonly referencia = computed(() => this.preferencias.ubsReferenciaId() === this.id());
 
   protected readonly estado = toSignal(
     toObservable(this.id).pipe(

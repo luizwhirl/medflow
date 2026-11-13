@@ -1,0 +1,31 @@
+{
+  "parametros": [
+    {
+      "codigo_uf": 27,
+      "codigo_municipio": 270240,
+      "codigo_cnes": 9674217,
+      "data_posicao_estoque": "2026-11-03",
+      "codigo_catmat": "BR0267650U0042",
+      "quantidade_estoque": 410.0,
+      "numero_lote": "125064",
+      "data_validade": "2027-12-02 00:00:00-03",
+      "tipo_produto": "B",
+      "sigla_programa_saude": "NI",
+      "descricao_programa_saude": "NÃO INFORMADO",
+      "sigla_sistema_origem": "SI_BNAFAR",
+      "descricao_produto": "ENALAPRIL, MALEATO 5 MG COMPRIMIDO",
+      "municipio": "DELMIRO GOUVEIA",
+      "uf": "AL",
+      "razao_social": "MUNICIPIO DE DELMIRO GOUVEIA",
+      "nome_fantasia": "UBS MARIA APARECIDA LISBOA",
+      "cep": "57480000",
+      "logradouro": "RUA ADAUTO SILVA",
+      "numero_endereco": "S/N",
+      "bairro": "CENTRO",
+      "telefone": null,
+      "latitude": -9.387756,
+      "longitude": -38.000369,
+      "email": null
+    }
+  ]
+}

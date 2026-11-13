@@ -24,8 +24,21 @@ server:
     include-message: always
 
 app:
+  estoque:
+    limite-reservado: 20 # com saldo até esta quantidade o item aparece como RESERVADO
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200}
+  bnafar:
+    base-url: ${BNAFAR_BASE_URL:https://apidadosabertos.saude.gov.br}
+    tamanho-pagina: 1000 # máximo aceito pela API
+    max-paginas: 500
+    timeout-conexao: 5s
+    timeout-leitura: 30s
+  sync:
+    ativo: ${SYNC_ATIVO:false}
+    municipios: ${SYNC_MUNICIPIOS:} # IBGE (6 ou 7 dígitos), separados por vírgula
+    cron: ${SYNC_CRON:0 0 */6 * * *} # a cada 6 horas (fuso de Maceió)
+    executar-ao-iniciar: ${SYNC_AO_INICIAR:false}
 
 management:
   endpoints:

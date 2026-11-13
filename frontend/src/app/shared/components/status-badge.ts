@@ -12,7 +12,7 @@ const CLASSES: Record<StatusEstoque, string> = {
   selector: 'app-status-badge',
   template: `
     <span
-      class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-bold"
+      class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full font-bold"
       [class]="classes()"
     >
       <span class="size-1.5 rounded-full bg-current"></span>
@@ -23,5 +23,9 @@ const CLASSES: Record<StatusEstoque, string> = {
 export class StatusBadge {
   readonly status = input.required<StatusEstoque>();
   protected readonly label = computed(() => STATUS_LABEL[this.status()]);
-  protected readonly classes = computed(() => CLASSES[this.status()]);
+  readonly tamanho = input<'sm' | 'md'>('sm');
+  protected readonly classes = computed(
+    () =>
+      `${CLASSES[this.status()]} ${this.tamanho() === 'md' ? 'px-3 py-1.5 text-sm' : 'px-2.5 py-1 text-xs'}`,
+  );
 }
