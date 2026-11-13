@@ -35,15 +35,9 @@
   --color-status-info: #1d4ed8;
   --color-status-info-subtle: #dbeafe;
 
-<<<<<<< HEAD
-  --radius-control: 0.75rem;
-  --radius-card: 0.875rem;
-  --shadow-card: 0 1px 2px rgb(15 23 42 / 6%), 0 1px 3px rgb(15 23 42 / 8%);
-=======
   --radius-control: 0.625rem;
   --radius-card: 1rem;
   --shadow-card: 0 1px 2px rgb(15 23 42 / 4%);
->>>>>>> 8398728c03490268b2efa8765da3ee142c40385d
 }
 
 @layer base {
@@ -73,25 +67,12 @@
 }
 
 @layer components {
-<<<<<<< HEAD
-  .app-shell {
-    @apply mx-auto flex min-h-dvh w-full max-w-7xl flex-col bg-canvas;
-  }
-
-  .surface-card {
-    @apply rounded-card bg-surface shadow-card;
-  }
-
-  .surface-list {
-    @apply divide-y divide-outline overflow-hidden rounded-card bg-surface shadow-card;
-=======
   .surface-card {
     @apply rounded-card border border-outline bg-surface shadow-card;
   }
 
   .surface-list {
     @apply divide-y divide-outline overflow-hidden rounded-card border border-outline bg-surface shadow-card;
->>>>>>> 8398728c03490268b2efa8765da3ee142c40385d
   }
 
   .page-title {
@@ -103,21 +84,10 @@
   }
 
   .control {
-<<<<<<< HEAD
-    @apply h-12 rounded-control border border-outline bg-surface px-4 text-content outline-none transition-colors placeholder:text-content-subtle focus:border-brand-500;
-=======
     @apply h-12 rounded-control border border-outline bg-surface px-4 text-content outline-none transition-colors placeholder:text-content-muted focus:border-brand-600 focus:ring-1 focus:ring-brand-600;
->>>>>>> 8398728c03490268b2efa8765da3ee142c40385d
   }
 
   .feedback-error {
     @apply rounded-control bg-status-falta-subtle p-4 text-sm text-status-falta;
   }
-<<<<<<< HEAD
-
-  .interactive-row {
-    @apply block transition-colors hover:bg-canvas focus-visible:relative;
-  }
-=======
->>>>>>> 8398728c03490268b2efa8765da3ee142c40385d
 }

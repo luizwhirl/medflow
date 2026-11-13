@@ -24,11 +24,7 @@ type Estado = { carregando: true } | { carregando: false; ubs: Ubs | null; estoq
     } @else if (!e.ubs) {
       <p class="feedback-error">Unidade não encontrada.</p>
     } @else {
-<<<<<<< HEAD
-      <section class="surface-card p-5">
-=======
       <app-card>
->>>>>>> 8398728c03490268b2efa8765da3ee142c40385d
         <div class="flex flex-wrap gap-2 text-xs font-semibold text-content-muted">
           <span>{{ e.ubs.tipo }}</span
           ><span>CNES {{ e.ubs.cnes }}</span>
@@ -52,11 +48,7 @@ type Estado = { carregando: true } | { carregando: false; ubs: Ubs | null; estoq
       </app-card>
 
       <h2 class="mb-2 mt-5 font-bold">Estoque da farmácia</h2>
-<<<<<<< HEAD
-      <ul class="surface-list">
-=======
       <app-list [vazia]="e.estoque.length === 0" vazio="Sem itens de estoque registrados.">
->>>>>>> 8398728c03490268b2efa8765da3ee142c40385d
         @for (item of e.estoque; track item.medicamento.id) {
           <li class="flex items-center gap-3 px-4 py-3">
             <div class="min-w-0 flex-1">
@@ -69,11 +61,6 @@ type Estado = { carregando: true } | { carregando: false; ubs: Ubs | null; estoq
             </div>
             <app-status-badge [status]="item.status" />
           </li>
-<<<<<<< HEAD
-        } @empty {
-          <li class="body-muted p-4">Sem itens de estoque registrados.</li>
-=======
->>>>>>> 8398728c03490268b2efa8765da3ee142c40385d
         }
       </app-list>
     }

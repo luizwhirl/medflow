@@ -34,31 +34,6 @@ interface Resultado {
   selector: 'app-medicamento-search-page',
   imports: [RouterLink, SearchField, Chip, RastreioMedicamento],
   template: `
-<<<<<<< HEAD
-    <h1 class="page-title mb-3">Medicamentos</h1>
-    <input
-      type="search"
-      [ngModel]="termo()"
-      (ngModelChange)="termo.set($event)"
-      placeholder="Buscar por nome ou categoria"
-      aria-label="Buscar medicamento"
-      class="control w-full"
-    />
-    <ul class="surface-list mt-3">
-      @for (m of resultados(); track m.id) {
-        <li>
-          <a [routerLink]="['/medicamentos', m.id]" class="interactive-row px-4 py-3">
-            <div class="font-semibold">{{ m.nome }} {{ m.concentracao }}</div>
-            <div class="body-muted">
-              {{ m.formaFarmaceutica }} · {{ m.categoria }} · CATMAT {{ m.catmat }}
-            </div>
-          </a>
-        </li>
-      } @empty {
-        <li class="body-muted p-4">Nenhum medicamento encontrado.</li>
-      }
-    </ul>
-=======
     <div class="md:-my-8 md:grid md:min-h-dvh md:grid-cols-[21rem_minmax(0,1fr)] xl:-ml-14">
       <section
         class="min-w-0 md:-ml-8 md:border-r md:border-outline md:bg-surface md:px-7 md:py-8 xl:ml-0"
@@ -166,7 +141,6 @@ interface Resultado {
         }
       </section>
     </div>
->>>>>>> 8398728c03490268b2efa8765da3ee142c40385d
   `,
 })
 export class MedicamentoSearchPage {

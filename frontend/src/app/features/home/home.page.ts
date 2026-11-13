@@ -52,23 +52,6 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
     MapaIlustrado,
   ],
   template: `
-<<<<<<< HEAD
-    <section class="surface-card p-6">
-      <p class="body-muted">Consulta de estoque nas Unidades Básicas de Saúde</p>
-      <h1 class="mt-1 text-2xl font-bold tracking-tight">Qual remédio você procura?</h1>
-      <form class="mt-5 flex gap-2" (ngSubmit)="buscar()">
-        <input
-          name="termo"
-          [(ngModel)]="termo"
-          type="search"
-          placeholder="Ex.: Metformina"
-          aria-label="Nome do medicamento"
-          class="control flex-1 bg-canvas"
-        />
-        <button
-          type="submit"
-          class="h-12 rounded-xl bg-brand-600 px-5 font-bold text-white hover:bg-brand-700"
-=======
     <ng-template #pilula>
       <span
         class="grid size-12 shrink-0 place-items-center rounded-control bg-brand-50 text-brand-600"
@@ -81,7 +64,6 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
           stroke-width="2"
           stroke-linecap="round"
           aria-hidden="true"
->>>>>>> 8398728c03490268b2efa8765da3ee142c40385d
         >
           <path [attr.d]="iconePilula" />
         </svg>
@@ -187,24 +169,6 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
       }
     </section>
 
-<<<<<<< HEAD
-    <section class="mt-4 grid gap-4 sm:grid-cols-2">
-      <a
-        routerLink="/ubs"
-        class="surface-card p-5 transition-shadow hover:ring-2 hover:ring-brand-100"
-      >
-        <h2 class="font-bold">UBS perto de você</h2>
-        <p class="mt-1 body-muted">Veja as unidades e o estoque de cada farmácia.</p>
-      </a>
-      <a
-        routerLink="/medicamentos"
-        class="surface-card p-5 transition-shadow hover:ring-2 hover:ring-brand-100"
-      >
-        <h2 class="font-bold">Medicamentos</h2>
-        <p class="mt-1 body-muted">Descubra em quais unidades o remédio está disponível.</p>
-      </a>
-    </section>
-=======
     <div class="mt-8 grid gap-8 xl:grid-cols-[minmax(0,1fr)_23rem]">
       <div class="flex min-w-0 flex-col gap-8">
         <section aria-labelledby="titulo-continuos">
@@ -403,7 +367,6 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
         </section>
       </aside>
     </div>
->>>>>>> 8398728c03490268b2efa8765da3ee142c40385d
   `,
 })
 export class HomePage {
