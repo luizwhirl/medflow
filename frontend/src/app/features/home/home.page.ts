@@ -1,31 +1,27 @@
 import { Component, inject } from '@angular/core';
-import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
+
+import { Button } from '../../shared/components/button';
+import { Card } from '../../shared/components/card';
+import { SearchField } from '../../shared/components/search-field';
 
 @Component({
   selector: 'app-home-page',
-  imports: [RouterLink, FormsModule],
+  imports: [RouterLink, Card, SearchField, Button],
   template: `
-    <section class="surface-card p-6">
+    <app-card pad="lg">
       <p class="body-muted">Consulta de estoque nas Unidades Básicas de Saúde</p>
       <h1 class="mt-1 text-2xl font-bold tracking-tight">Qual remédio você procura?</h1>
-      <form class="mt-5 flex gap-2" (ngSubmit)="buscar()">
-        <input
-          name="termo"
-          [(ngModel)]="termo"
-          type="search"
+      <div class="mt-5 flex gap-2">
+        <app-search-field
+          class="flex-1"
           placeholder="Ex.: Metformina"
-          aria-label="Nome do medicamento"
-          class="control flex-1 bg-canvas"
+          [(valor)]="termo"
+          (buscar)="buscar()"
         />
-        <button
-          type="submit"
-          class="h-12 rounded-xl bg-brand-600 px-5 font-bold text-white hover:bg-brand-700"
-        >
-          Buscar
-        </button>
-      </form>
-    </section>
+        <button appButton type="button" (click)="buscar()">Buscar</button>
+      </div>
+    </app-card>
 
     <section class="mt-4 grid gap-4 sm:grid-cols-2">
       <a

@@ -1,26 +1,28 @@
 import { Component, inject, input, linkedSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { catchError, debounceTime, distinctUntilChanged, of, switchMap } from 'rxjs';
 
 import { Medicamento } from '../../core/models/medicamento.model';
 import { MedicamentoService } from '../../core/services/medicamento.service';
+import { List } from '../../shared/components/list';
+import { SearchField } from '../../shared/components/search-field';
 
 @Component({
   selector: 'app-medicamento-search-page',
-  imports: [FormsModule, RouterLink],
+  imports: [RouterLink, SearchField, List],
   template: `
     <h1 class="page-title mb-3">Medicamentos</h1>
-    <input
-      type="search"
-      [ngModel]="termo()"
-      (ngModelChange)="termo.set($event)"
+    <app-search-field
       placeholder="Buscar por nome ou categoria"
-      aria-label="Buscar medicamento"
-      class="control w-full"
+      [valor]="termo()"
+      (valorChange)="termo.set($event)"
     />
-    <ul class="surface-list mt-3">
+    <app-list
+      class="mt-3 block"
+      [vazia]="resultados().length === 0"
+      vazio="Nenhum medicamento encontrado."
+    >
       @for (m of resultados(); track m.id) {
         <li>
           <a [routerLink]="['/medicamentos', m.id]" class="interactive-row px-4 py-3">
@@ -30,10 +32,8 @@ import { MedicamentoService } from '../../core/services/medicamento.service';
             </div>
           </a>
         </li>
-      } @empty {
-        <li class="body-muted p-4">Nenhum medicamento encontrado.</li>
       }
-    </ul>
+    </app-list>
   `,
 })
 export class MedicamentoSearchPage {
