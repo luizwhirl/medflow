@@ -6,4 +6,6 @@ interface UbsRepository : JpaRepository<Ubs, Long> {
     fun findAllByOrderByNomeAsc(): List<Ubs>
 
     fun findByCnesIn(cnes: Collection<String>): List<Ubs>
+
+    fun countByCodigoIbgeMunicipio(ibge: String): Long
 }
