@@ -5,13 +5,14 @@ import { catchError, map, of, startWith } from 'rxjs';
 
 import { Ubs } from '../../core/models/ubs.model';
 import { UbsService } from '../../core/services/ubs.service';
+import { List } from '../../shared/components/list';
 import { SyncIndicator } from '../../shared/components/sync-indicator';
 
 type Estado = { carregando: true } | { carregando: false; ubs: Ubs[]; erro: boolean };
 
 @Component({
   selector: 'app-ubs-list-page',
-  imports: [RouterLink, SyncIndicator],
+  imports: [RouterLink, SyncIndicator, List],
   template: `
     <h1 class="page-title mb-3">Unidades de saúde</h1>
     @let e = estado();
@@ -22,7 +23,7 @@ type Estado = { carregando: true } | { carregando: false; ubs: Ubs[]; erro: bool
         Não foi possível carregar as unidades. Verifique se o backend está rodando.
       </p>
     } @else {
-      <ul class="surface-list">
+      <app-list [vazia]="e.ubs.length === 0" vazio="Nenhuma unidade cadastrada.">
         @for (u of e.ubs; track u.id) {
           <li>
             <a [routerLink]="['/ubs', u.id]" class="interactive-row px-4 py-3">
@@ -31,10 +32,8 @@ type Estado = { carregando: true } | { carregando: false; ubs: Ubs[]; erro: bool
               <app-sync-indicator class="mt-1 block" [em]="u.ultimaSincronizacao" />
             </a>
           </li>
-        } @empty {
-          <li class="body-muted p-4">Nenhuma unidade cadastrada.</li>
         }
-      </ul>
+      </app-list>
     }
   `,
 })

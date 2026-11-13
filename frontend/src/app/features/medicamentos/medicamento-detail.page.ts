@@ -6,6 +6,8 @@ import { catchError, forkJoin, map, of, startWith, switchMap } from 'rxjs';
 import { Disponibilidade } from '../../core/models/estoque.model';
 import { Medicamento } from '../../core/models/medicamento.model';
 import { MedicamentoService } from '../../core/services/medicamento.service';
+import { Card } from '../../shared/components/card';
+import { List } from '../../shared/components/list';
 import { StatusBadge } from '../../shared/components/status-badge';
 import { SyncIndicator } from '../../shared/components/sync-indicator';
 
@@ -15,7 +17,7 @@ type Estado =
 
 @Component({
   selector: 'app-medicamento-detail-page',
-  imports: [RouterLink, StatusBadge, SyncIndicator],
+  imports: [RouterLink, StatusBadge, SyncIndicator, Card, List],
   template: `
     @let e = estado();
     @if (e.carregando) {
@@ -23,7 +25,7 @@ type Estado =
     } @else if (!e.medicamento) {
       <p class="feedback-error">Medicamento não encontrado.</p>
     } @else {
-      <section class="surface-card p-5">
+      <app-card>
         <h1 class="text-xl font-bold">{{ e.medicamento.nome }} {{ e.medicamento.concentracao }}</h1>
         <p class="body-muted">
           {{ e.medicamento.formaFarmaceutica }} · {{ e.medicamento.categoria }}
@@ -36,10 +38,13 @@ type Estado =
             >CATMAT {{ e.medicamento.catmat }}</span
           >
         </div>
-      </section>
+      </app-card>
 
       <h2 class="mb-2 mt-5 font-bold">Onde encontrar</h2>
-      <ul class="surface-list">
+      <app-list
+        [vazia]="e.disponibilidade.length === 0"
+        vazio="Nenhuma unidade informou estoque deste item."
+      >
         @for (d of e.disponibilidade; track d.ubs.id) {
           <li>
             <a
@@ -54,10 +59,8 @@ type Estado =
               <app-status-badge [status]="d.status" />
             </a>
           </li>
-        } @empty {
-          <li class="body-muted p-4">Nenhuma unidade informou estoque deste item.</li>
         }
-      </ul>
+      </app-list>
     }
   `,
 })

@@ -32,6 +32,6 @@ export class SyncIndicator {
       return { text: 'text-content-muted', dot: 'bg-status-disponivel' };
     if (min !== null && min <= 1440)
       return { text: 'text-content-muted', dot: 'bg-status-reservado' };
-    return { text: 'text-status-falta font-semibold', dot: 'bg-red-600' };
+    return { text: 'text-status-falta font-semibold', dot: 'bg-status-falta' };
   });
 }

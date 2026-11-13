@@ -35,9 +35,9 @@
   --color-status-info: #1d4ed8;
   --color-status-info-subtle: #dbeafe;
 
-  --radius-control: 0.75rem;
-  --radius-card: 0.875rem;
-  --shadow-card: 0 1px 2px rgb(15 23 42 / 6%), 0 1px 3px rgb(15 23 42 / 8%);
+  --radius-control: 0.625rem;
+  --radius-card: 1rem;
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 4%);
 }
 
 @layer base {
@@ -68,11 +68,11 @@
 
 @layer components {
   .surface-card {
-    @apply rounded-card bg-surface shadow-card;
+    @apply rounded-card border border-outline bg-surface shadow-card;
   }
 
   .surface-list {
-    @apply divide-y divide-outline overflow-hidden rounded-card bg-surface shadow-card;
+    @apply divide-y divide-outline overflow-hidden rounded-card border border-outline bg-surface shadow-card;
   }
 
   .page-title {
@@ -84,7 +84,7 @@
   }
 
   .control {
-    @apply h-12 rounded-control border border-outline bg-surface px-4 text-content outline-none transition-colors placeholder:text-content-subtle focus:border-brand-500;
+    @apply h-12 rounded-control border border-outline bg-surface px-4 text-content outline-none transition-colors placeholder:text-content-muted focus:border-brand-600 focus:ring-1 focus:ring-brand-600;
   }
 
   .feedback-error {
