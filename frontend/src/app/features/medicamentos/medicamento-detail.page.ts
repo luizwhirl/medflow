@@ -1,4 +1,4 @@
-import { Component, inject, input, numberAttribute } from '@angular/core';
+import { Component, computed, inject, input, numberAttribute } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { catchError, forkJoin, map, of, startWith, switchMap } from 'rxjs';
@@ -6,6 +6,8 @@ import { catchError, forkJoin, map, of, startWith, switchMap } from 'rxjs';
 import { Disponibilidade } from '../../core/models/estoque.model';
 import { Medicamento } from '../../core/models/medicamento.model';
 import { MedicamentoService } from '../../core/services/medicamento.service';
+import { PreferenciasService } from '../../core/services/preferencias.service';
+import { Button } from '../../shared/components/button';
 import { Card } from '../../shared/components/card';
 import { List } from '../../shared/components/list';
 import { StatusBadge } from '../../shared/components/status-badge';
@@ -17,7 +19,7 @@ type Estado =
 
 @Component({
   selector: 'app-medicamento-detail-page',
-  imports: [RouterLink, StatusBadge, SyncIndicator, Card, List],
+  imports: [RouterLink, StatusBadge, SyncIndicator, Card, List, Button],
   template: `
     @let e = estado();
     @if (e.carregando) {
@@ -38,6 +40,16 @@ type Estado =
             >CATMAT {{ e.medicamento.catmat }}</span
           >
         </div>
+        <button
+          appButton
+          type="button"
+          [variante]="continuo() ? 'primario' : 'secundario'"
+          [attr.aria-pressed]="continuo()"
+          (click)="preferencias.alternarRemedioContinuo(id())"
+          class="mt-4"
+        >
+          {{ continuo() ? 'Uso contínuo ✓' : 'Uso contínuo' }}
+        </button>
       </app-card>
 
       <h2 class="mb-2 mt-5 font-bold">Onde encontrar</h2>
@@ -67,7 +79,12 @@ type Estado =
 export class MedicamentoDetailPage {
   private readonly medicamentoService = inject(MedicamentoService);
 
+  protected readonly preferencias = inject(PreferenciasService);
+
   readonly id = input.required({ transform: numberAttribute });
+  protected readonly continuo = computed(() =>
+    this.preferencias.remediosContinuos().includes(this.id()),
+  );
 
   protected readonly estado = toSignal(
     toObservable(this.id).pipe(

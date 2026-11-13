@@ -1,4 +1,4 @@
-import { Component, inject, input, linkedSignal } from '@angular/core';
+import { Component, computed, inject, input, linkedSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { catchError, debounceTime, distinctUntilChanged, of, switchMap } from 'rxjs';
@@ -41,14 +41,20 @@ export class MedicamentoSearchPage {
 
   /** Query param `?busca=` (withComponentInputBinding). */
   readonly busca = input<string>('');
+  /** Query param `?categoria=` (atalhos da tela inicial). */
+  readonly categoria = input<string>('');
   protected readonly termo = linkedSignal(() => this.busca() ?? '');
 
   protected readonly resultados = toSignal(
-    toObservable(this.termo).pipe(
+    toObservable(
+      computed(() => ({ termo: this.termo().trim(), categoria: this.categoria() ?? '' })),
+    ).pipe(
       debounceTime(250),
-      distinctUntilChanged(),
-      switchMap((t) =>
-        this.medicamentoService.buscar(t.trim()).pipe(catchError(() => of<Medicamento[]>([]))),
+      distinctUntilChanged((a, b) => a.termo === b.termo && a.categoria === b.categoria),
+      switchMap(({ termo, categoria }) =>
+        this.medicamentoService
+          .buscar(termo, categoria)
+          .pipe(catchError(() => of<Medicamento[]>([]))),
       ),
     ),
     { initialValue: [] as Medicamento[] },
