@@ -28,8 +28,9 @@ export function posicaoAtual(): Promise<Coordenadas | null> {
 
 /** "260 m" abaixo de 1 km; "2,4 km" acima. */
 export function formatarDistancia(km: number): string {
-  return km < 1
-    ? `${Math.round((km * 1000) / 10) * 10} m`
+  const metros = Math.round((km * 1000) / 10) * 10;
+  return metros < 1000
+    ? `${metros} m`
     : `${km.toLocaleString('pt-BR', { maximumFractionDigits: 1, minimumFractionDigits: 1 })} km`;
 }
 

@@ -3,7 +3,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 
-import { distanciaKm } from '../../core/geo';
+import { distanciaKm, formatarDistancia } from '../../core/geo';
 import { Medicamento } from '../../core/models/medicamento.model';
 import { Ubs } from '../../core/models/ubs.model';
 import { PreferenciasService } from '../../core/services/preferencias.service';
@@ -39,6 +39,14 @@ describe('distanciaKm', () => {
       111.19,
       1,
     );
+  });
+});
+
+describe('formatarDistancia', () => {
+  it('usa metros abaixo de 1 km e não mostra "1000 m"', () => {
+    expect(formatarDistancia(0.26)).toBe('260 m');
+    expect(formatarDistancia(0.996)).toBe('1,0 km');
+    expect(formatarDistancia(2.43)).toBe('2,4 km');
   });
 });
 
@@ -99,6 +107,28 @@ describe('HomePage', () => {
     expect(texto('titulo-continuos')).toContain('Metformina 850 mg');
     expect(texto('titulo-continuos')).toContain('Em falta');
     expect(texto('titulo-atalhos')).toContain('Hipertensão');
+    http.verify();
+  });
+
+  it('não usa o status de outra UBS na coluna "Na sua UBS" e ignora DISPONIVEL sem quantidade', () => {
+    const fixture = TestBed.createComponent(HomePage);
+    fixture.detectChanges();
+
+    http.expectOne('/api/ubs').flush([ubs(1, 'UBS Centro'), ubs(2, 'UBS Clima Bom')]);
+    http.expectOne('/api/medicamentos/categorias').flush([]);
+    http.expectOne('/api/medicamentos/1').flush(metformina);
+    http
+      .expectOne('/api/medicamentos/1/disponibilidade')
+      .flush([
+        { ubs: ubs(1, 'UBS Centro'), status: 'DISPONIVEL', quantidade: 0, atualizadoEm: '' },
+      ]);
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    const continuos = el.querySelector('[aria-labelledby="titulo-continuos"]')!.textContent!;
+    expect(continuos).toContain('Sem registro na sua UBS');
+    expect(continuos).not.toContain('Disponível');
+    expect(continuos).toContain('Nenhuma UBS com estoque');
     http.verify();
   });
 });
