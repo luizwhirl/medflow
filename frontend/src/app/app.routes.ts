@@ -9,22 +9,22 @@ export const routes: Routes = [
     children: [
       {
         path: '',
-        title: 'MedFlow',
+        title: 'UBS Conecta',
         loadComponent: () => import('./features/home/home.page').then((m) => m.HomePage),
       },
       {
         path: 'ubs',
-        title: 'Unidades · MedFlow',
+        title: 'Unidades · UBS Conecta',
         loadComponent: () => import('./features/ubs/ubs-list.page').then((m) => m.UbsListPage),
       },
       {
         path: 'ubs/:id',
-        title: 'Unidade · MedFlow',
+        title: 'Unidade · UBS Conecta',
         loadComponent: () => import('./features/ubs/ubs-detail.page').then((m) => m.UbsDetailPage),
       },
       {
         path: 'medicamentos',
-        title: 'Medicamentos · MedFlow',
+        title: 'Medicamentos · UBS Conecta',
         loadComponent: () =>
           import('./features/medicamentos/medicamento-search.page').then(
             (m) => m.MedicamentoSearchPage,
@@ -32,24 +32,30 @@ export const routes: Routes = [
       },
       {
         path: 'mapa',
-        title: 'Mapa · MedFlow',
+        title: 'Mapa · UBS Conecta',
         loadComponent: () => import('./features/ubs/ubs-list.page').then((m) => m.UbsListPage),
       },
       {
         path: 'lista',
-        title: 'Minha lista · MedFlow',
+        title: 'Minha lista · UBS Conecta',
         data: { titulo: 'Minha lista' },
         loadComponent: () => import('./features/em-breve/em-breve.page').then((m) => m.EmBrevePage),
       },
       {
+        path: 'avisos',
+        title: 'Avisos · UBS Conecta',
+        data: { titulo: 'Avisos' },
+        loadComponent: () => import('./features/em-breve/em-breve.page').then((m) => m.EmBrevePage),
+      },
+      {
         path: 'perfil',
-        title: 'Perfil · MedFlow',
-        data: { titulo: 'Perfil' },
+        title: 'Perfil · UBS Conecta',
+        data: { titulo: 'Perfil e modo offline' },
         loadComponent: () => import('./features/em-breve/em-breve.page').then((m) => m.EmBrevePage),
       },
       {
         path: 'medicamentos/:id',
-        title: 'Medicamento · MedFlow',
+        title: 'Medicamento · UBS Conecta',
         loadComponent: () =>
           import('./features/medicamentos/medicamento-detail.page').then(
             (m) => m.MedicamentoDetailPage,

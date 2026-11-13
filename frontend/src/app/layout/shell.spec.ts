@@ -4,16 +4,32 @@ import { provideRouter } from '@angular/router';
 import { Shell } from './shell';
 
 describe('Shell', () => {
-  it('renderiza as cinco abas na navegação inferior e na lateral', () => {
+  function montar(): HTMLElement {
     TestBed.configureTestingModule({ providers: [provideRouter([])] });
     const fixture = TestBed.createComponent(Shell);
     fixture.detectChanges();
+    return fixture.nativeElement as HTMLElement;
+  }
 
-    const navs = (fixture.nativeElement as HTMLElement).querySelectorAll('nav');
-    expect(navs.length).toBe(2);
-    navs.forEach((nav) => {
-      const rotulos = Array.from(nav.querySelectorAll('a')).map((a) => a.textContent?.trim());
-      expect(rotulos).toEqual(['Início', 'Mapa', 'Buscar', 'Minha lista', 'Perfil']);
-    });
+  it('menu lateral tem os rótulos completos e curtos das seis abas', () => {
+    const lateral = montar().querySelector('aside nav')!;
+    const completos = Array.from(lateral.querySelectorAll('a span.hidden')).map((s) =>
+      s.textContent?.trim(),
+    );
+    expect(completos).toEqual([
+      'Início',
+      'Mapa de UBS',
+      'Buscar medicamento',
+      'Minha lista',
+      'Avisos',
+      'Perfil e modo offline',
+    ]);
+  });
+
+  it('barra inferior usa os rótulos curtos', () => {
+    const navs = montar().querySelectorAll('nav');
+    const inferior = navs[navs.length - 1];
+    const rotulos = Array.from(inferior.querySelectorAll('a')).map((a) => a.textContent?.trim());
+    expect(rotulos).toEqual(['Início', 'Mapa', 'Buscar', 'Minha lista', 'Avisos', 'Perfil']);
   });
 });

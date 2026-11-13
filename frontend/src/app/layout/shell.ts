@@ -1,82 +1,110 @@
+import { NgTemplateOutlet } from '@angular/common';
 import { Component } from '@angular/core';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 
-import { NAV_ITEMS } from './nav-items';
+import { ICONE_MARCA, NAV_ITEMS } from './nav-items';
 
 /**
- * Casca da aplicação.
+ * Casca da aplicação, conforme o Figma.
  * - Celular (< sm): barra de abas fixa no rodapé.
- * - Tablet retrato (sm): menu lateral compacto, só ícones.
- * - Tablet paisagem / desktop (>= md): menu lateral com rótulos.
+ * - Tablet retrato e paisagem (sm até xl): trilho lateral com ícone e rótulo curto.
+ * - Desktop (>= xl): menu lateral com rótulos completos.
  */
 @Component({
   selector: 'app-shell',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, NgTemplateOutlet],
   template: `
+    <ng-template #icone let-d>
+      <svg
+        class="size-6 shrink-0"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.8"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <path [attr.d]="d" />
+      </svg>
+    </ng-template>
+
     <div class="flex min-h-dvh bg-canvas">
       <aside
-        class="sticky top-0 hidden h-dvh shrink-0 flex-col border-r border-outline bg-surface sm:flex sm:w-20 md:w-60"
+        class="sticky top-0 hidden h-dvh shrink-0 flex-col border-r border-outline bg-surface sm:flex sm:w-24 xl:w-[17rem]"
       >
         <a
           routerLink="/"
-          class="flex items-center gap-2 px-4 py-5 text-lg font-extrabold tracking-tight sm:justify-center md:justify-start"
+          class="flex items-center gap-3 px-4 pb-6 pt-8 sm:justify-center xl:justify-start xl:px-8"
+          aria-label="UBS Conecta, início"
         >
-          <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-brand-600 text-white"
-            >+</span
+          <span
+            class="grid size-12 shrink-0 place-items-center rounded-control bg-brand-600 text-white xl:size-10"
           >
-          <span class="hidden md:inline">MedFlow</span>
+            <svg
+              class="size-6"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              aria-hidden="true"
+            >
+              <path [attr.d]="iconeMarca" />
+            </svg>
+          </span>
+          <span class="hidden text-xl font-bold tracking-tight xl:inline">UBS Conecta</span>
         </a>
-        <nav class="flex flex-1 flex-col gap-1 px-3" aria-label="Principal">
+
+        <nav class="flex flex-1 flex-col gap-2 px-2 xl:gap-1 xl:px-4" aria-label="Principal">
           @for (item of nav; track item.path) {
             <a
               [routerLink]="item.path"
-              routerLinkActive="bg-brand-50 text-brand-600"
+              routerLinkActive="ativo"
               #rla="routerLinkActive"
               [routerLinkActiveOptions]="{ exact: item.exact }"
               [attr.aria-current]="rla.isActive ? 'page' : null"
-              [attr.title]="item.label"
-              class="flex items-center gap-3 rounded-control px-3 py-3 text-sm font-semibold text-content-muted hover:bg-canvas sm:justify-center md:justify-start"
+              class="group flex flex-col items-center gap-1 py-1 text-xs font-medium text-content-muted xl:flex-row xl:gap-3 xl:rounded-control xl:px-4 xl:py-3 xl:text-base xl:font-normal xl:text-content [&.ativo]:text-brand-600 xl:[&.ativo]:bg-brand-50 xl:[&.ativo]:font-semibold"
             >
-              <svg
-                class="size-5 shrink-0"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                aria-hidden="true"
+              <span
+                class="grid h-10 w-16 place-items-center rounded-full group-[.ativo]:bg-brand-100 xl:h-auto xl:w-auto xl:bg-transparent! xl:text-content-muted xl:group-[.ativo]:text-brand-600"
               >
-                <path [attr.d]="item.icon" />
-              </svg>
-              <span class="sm:sr-only md:not-sr-only">{{ item.label }}</span>
+                <ng-container *ngTemplateOutlet="icone; context: { $implicit: item.icon }" />
+              </span>
+              <span class="xl:hidden">{{ item.curto }}</span>
+              <span class="hidden xl:inline">{{ item.label }}</span>
             </a>
           }
         </nav>
-        <p class="hidden px-4 py-4 text-xs text-content-subtle md:block">
-          Dados: BNAFAR / e-SUS AF
-        </p>
       </aside>
 
       <div class="flex min-w-0 flex-1 flex-col">
         <header
           class="sticky top-0 z-10 flex items-center gap-2 border-b border-outline bg-surface px-4 py-3 sm:hidden"
         >
-          <span class="grid size-8 place-items-center rounded-lg bg-brand-600 text-white">+</span>
-          <span class="text-lg font-extrabold tracking-tight">MedFlow</span>
+          <span class="grid size-8 place-items-center rounded-lg bg-brand-600 text-white">
+            <svg
+              class="size-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              aria-hidden="true"
+            >
+              <path [attr.d]="iconeMarca" />
+            </svg>
+          </span>
+          <span class="text-lg font-bold tracking-tight">UBS Conecta</span>
         </header>
 
-        <main class="mx-auto w-full max-w-7xl flex-1 p-4 pb-24 sm:p-6 md:p-8">
+        <main
+          class="mx-auto w-full max-w-[100rem] flex-1 p-4 pb-24 sm:p-8 sm:pb-8 xl:px-14 xl:py-8"
+        >
           <router-outlet />
         </main>
-
-        <footer class="hidden px-4 py-6 text-center text-xs text-content-subtle sm:block md:hidden">
-          Dados: BNAFAR / e-SUS AF · identificadores CNES, CATMAT e RENAME
-        </footer>
       </div>
 
       <nav
-        class="fixed inset-x-0 bottom-0 z-20 grid grid-cols-5 border-t border-outline bg-surface pb-[env(safe-area-inset-bottom)] sm:hidden"
+        class="fixed inset-x-0 bottom-0 z-[1000] grid grid-cols-6 border-t border-outline bg-surface pb-[env(safe-area-inset-bottom)] sm:hidden"
         aria-label="Principal"
       >
         @for (item of nav; track item.path) {
@@ -86,21 +114,10 @@ import { NAV_ITEMS } from './nav-items';
             #rla="routerLinkActive"
             [routerLinkActiveOptions]="{ exact: item.exact }"
             [attr.aria-current]="rla.isActive ? 'page' : null"
-            class="flex min-w-0 flex-col items-center gap-1 px-1 py-2 text-[0.6875rem] font-semibold text-content-muted"
+            class="flex min-w-0 flex-col items-center gap-0.5 px-0.5 py-2 text-[0.625rem] font-medium text-content-muted"
           >
-            <svg
-              class="size-6"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path [attr.d]="item.icon" />
-            </svg>
-            <span class="w-full truncate text-center">{{ item.label }}</span>
+            <ng-container *ngTemplateOutlet="icone; context: { $implicit: item.icon }" />
+            <span class="w-full truncate text-center">{{ item.curto }}</span>
           </a>
         }
       </nav>
@@ -109,4 +126,5 @@ import { NAV_ITEMS } from './nav-items';
 })
 export class Shell {
   protected readonly nav = NAV_ITEMS;
+  protected readonly iconeMarca = ICONE_MARCA;
 }
