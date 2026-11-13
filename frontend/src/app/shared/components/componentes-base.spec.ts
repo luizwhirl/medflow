@@ -65,6 +65,15 @@ describe('componentes base', () => {
     expect(botao.getAttribute('aria-pressed')).toBe('true');
   });
 
+  it('Chip selecionado usa o estilo verde-claro do Figma', () => {
+    const { fixture, el, host } = montar();
+    host.filtro = true;
+    fixture.detectChanges();
+    const botao = el.querySelector('app-chip button')!;
+    expect(botao.classList).toContain('bg-brand-50');
+    expect(botao.classList).toContain('border-brand-600');
+  });
+
   it('Button aplica a variante', () => {
     const botao = montar().el.querySelector('button[appButton]')!;
     expect(botao.classList).toContain('border-outline');
