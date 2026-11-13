@@ -20,13 +20,15 @@ export interface PinoMapa {
   /** Cor de preenchimento (valor CSS). */
   cor: string;
   rotulo: string;
+  /** Número exibido no pino (posição na lista). */
+  numero?: number;
 }
 
-/** Mapa (Leaflet + OpenStreetMap) com pinos circulares e raio opcional. */
+/** Mapa (Leaflet + OpenStreetMap) com pinos numerados e raio opcional. */
 @Component({
   selector: 'app-mapa',
   host: { class: 'block' },
-  template: `<div #alvo class="size-full rounded-card" role="region" aria-label="Mapa"></div>`,
+  template: `<div #alvo class="size-full" role="region" aria-label="Mapa"></div>`,
 })
 export class Mapa {
   readonly pinos = input<PinoMapa[]>([]);
@@ -41,10 +43,11 @@ export class Mapa {
 
   constructor() {
     afterNextRender(() => {
-      this.mapa = L.map(this.alvo().nativeElement, { zoomControl: true }).setView(
+      this.mapa = L.map(this.alvo().nativeElement, { zoomControl: false }).setView(
         [-9.65, -35.73],
         12,
       );
+      L.control.zoom({ position: 'topright' }).addTo(this.mapa);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
         attribution: '&copy; OpenStreetMap',
@@ -64,23 +67,37 @@ export class Mapa {
     if (!this.mapa) return;
 
     this.camada.clearLayers();
+
+    if (centro && raio) {
+      L.circle([centro.latitude, centro.longitude], {
+        radius: raio * 1000,
+        color: '#0f766e',
+        weight: 1,
+        fillOpacity: 0.04,
+      }).addTo(this.camada);
+    }
+
     for (const p of pinos) {
-      L.circleMarker([p.latitude, p.longitude], {
-        radius: p.id === sel ? 11 : 8,
-        color: '#ffffff',
-        weight: p.id === sel ? 3 : 2,
-        fillColor: p.cor,
-        fillOpacity: 1,
+      const tam = p.id === sel ? 44 : 36;
+      L.marker([p.latitude, p.longitude], {
+        title: p.rotulo,
+        zIndexOffset: p.id === sel ? 1000 : 0,
+        icon: L.divIcon({
+          className: '',
+          iconSize: [tam, tam],
+          iconAnchor: [tam / 2, tam / 2],
+          html: `<span style="display:grid;place-items:center;width:${tam}px;height:${tam}px;border-radius:9999px;background:${p.cor};color:#fff;font-weight:700;font-size:15px;border:3px solid #fff;box-shadow:0 1px 4px rgb(15 23 42/25%)">${p.numero ?? ''}</span>`,
+        }),
       })
-        .bindTooltip(p.rotulo)
         .on('click', () => this.selecionar.emit(p.id))
         .addTo(this.camada);
     }
 
     if (centro) {
       L.circleMarker([centro.latitude, centro.longitude], {
-        radius: 6,
-        color: '#1d4ed8',
+        radius: 8,
+        color: '#ffffff',
+        weight: 3,
         fillColor: '#1d4ed8',
         fillOpacity: 1,
       })
@@ -88,19 +105,14 @@ export class Mapa {
         .addTo(this.camada);
     }
 
-    if (centro && raio) {
-      const circulo = L.circle([centro.latitude, centro.longitude], {
-        radius: raio * 1000,
-        color: '#0f766e',
-        weight: 1,
-        fillOpacity: 0.05,
-      }).addTo(this.camada);
-      this.mapa.fitBounds(circulo.getBounds(), { padding: [16, 16] });
-    } else if (pinos.length) {
-      this.mapa.fitBounds(
-        L.latLngBounds(pinos.map((p) => [p.latitude, p.longitude] as L.LatLngTuple)),
-        { padding: [24, 24], maxZoom: 15 },
-      );
+    const pontos = pinos.map((p) => [p.latitude, p.longitude] as L.LatLngTuple);
+    if (centro) pontos.push([centro.latitude, centro.longitude]);
+    if (pontos.length) {
+      this.mapa.fitBounds(L.latLngBounds(pontos), {
+        paddingTopLeft: [32, 32],
+        paddingBottomRight: [32, 260],
+        maxZoom: 15,
+      });
     }
   }
 }
