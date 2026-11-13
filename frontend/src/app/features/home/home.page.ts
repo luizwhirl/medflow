@@ -11,7 +11,7 @@ import {
   linkRota,
   posicaoAtual,
 } from '../../core/geo';
-import { Disponibilidade } from '../../core/models/estoque.model';
+import { Disponibilidade, statusExibido, temEstoque } from '../../core/models/estoque.model';
 import { Medicamento } from '../../core/models/medicamento.model';
 import { StatusEstoque } from '../../core/models/status-estoque';
 import { Ubs } from '../../core/models/ubs.model';
@@ -28,15 +28,13 @@ import { SyncIndicator } from '../../shared/components/sync-indicator';
 interface Remedio {
   medicamento: Medicamento;
   disponibilidade: Disponibilidade[];
-  /** Status na UBS de referência; sem referência, o melhor status entre as unidades. */
-  status: StatusEstoque;
+  /** Status na UBS de referência; `null` sem UBS escolhida ou sem registro do item nela. */
+  status: StatusEstoque | null;
   /** Registro na UBS de referência, se houver. */
   naReferencia: Disponibilidade | null;
   /** Unidade mais próxima com o item disponível (fora a de referência). */
   ondeTem: { ubs: Ubs; distancia: number | null } | null;
 }
-
-const ORDEM_STATUS: StatusEstoque[] = ['DISPONIVEL', 'RESERVADO', 'EM_FALTA'];
 
 /** Ícone de pílula (traço, viewBox 24). */
 const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 1-7 7zM7 10l7 7';
@@ -157,7 +155,11 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
           }
         </div>
         @if (categorias().length) {
-          <div class="mt-2 flex flex-wrap items-center gap-2" aria-labelledby="titulo-atalhos">
+          <div
+            class="mt-2 flex flex-wrap items-center gap-2"
+            role="group"
+            aria-labelledby="titulo-atalhos"
+          >
             <span id="titulo-atalhos" class="text-sm text-content-muted">Por condição:</span>
             @for (c of categorias(); track c) {
               <app-chip variante="sugestao" (selecionadoChange)="porCategoria(c)">{{ c }}</app-chip>
@@ -202,7 +204,13 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
                       <td class="py-5 pr-3 font-semibold">
                         {{ r.medicamento.nome }} {{ r.medicamento.concentracao }}
                       </td>
-                      <td class="px-3 py-5"><app-status-badge [status]="r.status" /></td>
+                      <td class="px-3 py-5">
+                        @if (r.status) {
+                          <app-status-badge [status]="r.status" />
+                        } @else {
+                          <span class="text-sm text-content-muted">{{ semStatus() }}</span>
+                        }
+                      </td>
                       <td class="px-3 py-5 text-sm text-content-muted">{{ previsao(r) }}</td>
                       <td class="px-3 py-5 text-sm font-semibold text-brand-600">
                         {{ ondeTem(r) }}
@@ -213,7 +221,6 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
                           variante="secundario"
                           class="h-11! whitespace-nowrap"
                           [routerLink]="acao(r).link"
-                          [queryParams]="acao(r).query"
                           >{{ acao(r).rotulo }}</a
                         >
                       </td>
@@ -221,6 +228,11 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
                   }
                 </tbody>
               </table>
+              <a
+                routerLink="/medicamentos"
+                class="block border-t border-outline px-7 py-4 font-semibold text-brand-600 hover:bg-canvas"
+                >+ Adicionar remédio</a
+              >
             </div>
           }
 
@@ -229,12 +241,15 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
             @for (r of remedios(); track r.medicamento.id) {
               <a
                 [routerLink]="acao(r).link"
-                [queryParams]="acao(r).query"
                 class="surface-card block p-6 transition-shadow hover:ring-2 hover:ring-brand-100 xl:hidden"
               >
                 <div class="flex items-start justify-between gap-2">
                   <ng-container *ngTemplateOutlet="pilula" />
-                  <app-status-badge [status]="r.status" tamanho="md" />
+                  @if (r.status) {
+                    <app-status-badge [status]="r.status" tamanho="md" />
+                  } @else {
+                    <span class="text-sm text-content-muted">{{ semStatus() }}</span>
+                  }
                 </div>
                 <h3 class="mt-4 text-lg font-bold">
                   {{ r.medicamento.nome }} {{ r.medicamento.concentracao }}
@@ -255,7 +270,8 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
         <section aria-labelledby="titulo-proximas">
           <div class="mb-3 flex items-baseline justify-between gap-2">
             <h2 id="titulo-proximas" class="text-xl font-bold">
-              {{ remedios().length ? 'UBS próximas com seus remédios' : 'UBS próximas' }}
+              {{ posicao() ? 'UBS próximas' : 'Unidades de saúde'
+              }}{{ remedios().length ? ' com seus remédios' : '' }}
             </h2>
             <a routerLink="/mapa" class="font-semibold text-brand-600">Abrir mapa</a>
           </div>
@@ -388,14 +404,9 @@ export class HomePage {
     return pos && u ? distanciaKm(pos, u) : null;
   });
 
-  private readonly chaveRemedios = computed(() => ({
-    ids: this.preferencias.remediosContinuos(),
-    ubsId: this.preferencias.ubsReferenciaId(),
-  }));
-
   private readonly carregados = toSignal(
-    toObservable(this.chaveRemedios).pipe(
-      switchMap(({ ids }) =>
+    toObservable(computed(() => this.preferencias.remediosContinuos())).pipe(
+      switchMap((ids) =>
         ids.length === 0
           ? of([])
           : forkJoin(
@@ -416,15 +427,14 @@ export class HomePage {
     const pos = this.posicao();
     return this.carregados().map(({ medicamento, disponibilidade }) => {
       const naReferencia = disponibilidade.find((d) => d.ubs.id === refId) ?? null;
-      const melhor = ORDEM_STATUS.find((s) => disponibilidade.some((d) => d.status === s));
       const candidatas = disponibilidade
-        .filter((d) => d.status === 'DISPONIVEL' && d.ubs.id !== refId)
+        .filter((d) => temEstoque(d) && d.ubs.id !== refId)
         .map((d) => ({ ubs: d.ubs, distancia: pos ? distanciaKm(pos, d.ubs) : null }))
         .sort((a, b) => (a.distancia ?? 0) - (b.distancia ?? 0));
       return {
         medicamento,
         disponibilidade,
-        status: naReferencia?.status ?? melhor ?? 'EM_FALTA',
+        status: naReferencia ? statusExibido(naReferencia) : null,
         naReferencia,
         ondeTem: candidatas[0] ?? null,
       };
@@ -438,7 +448,7 @@ export class HomePage {
       ubs,
       distancia: pos ? distanciaKm(pos, ubs) : null,
       disponiveis: remedios.filter((r) =>
-        r.disponibilidade.some((d) => d.ubs.id === ubs.id && d.status === 'DISPONIVEL'),
+        r.disponibilidade.some((d) => d.ubs.id === ubs.id && temEstoque(d)),
       ).length,
     }));
     if (pos) lista.sort((a, b) => a.distancia! - b.distancia!);
@@ -450,28 +460,29 @@ export class HomePage {
   }
 
   protected previsao(r: Remedio): string {
-    if (r.naReferencia?.status === 'DISPONIVEL')
+    if (r.naReferencia && temEstoque(r.naReferencia))
       return `~${r.naReferencia.quantidade} un. em estoque`;
     if (r.naReferencia?.status === 'RESERVADO')
       return `${r.naReferencia.quantidade} un. reservadas`;
     return 'Sem previsão de remessa';
   }
 
+  /** Texto da coluna "Na sua UBS" quando não há status para mostrar. */
+  protected semStatus(): string {
+    return this.ubsReferencia() ? 'Sem registro na sua UBS' : 'Escolha sua UBS';
+  }
+
   protected ondeTem(r: Remedio): string {
-    if (r.naReferencia?.status === 'DISPONIVEL') return 'Na sua UBS';
+    if (r.naReferencia && temEstoque(r.naReferencia)) return 'Na sua UBS';
     if (!r.ondeTem) return 'Nenhuma UBS com estoque';
     const d = r.ondeTem.distancia;
     return `${r.ondeTem.ubs.nome}${d !== null ? ' · ' + formatarDistancia(d) : ''}`;
   }
 
-  protected acao(r: Remedio): {
-    rotulo: string;
-    link: unknown[];
-    query: Record<string, unknown> | null;
-  } {
-    return r.naReferencia?.status === 'DISPONIVEL'
-      ? { rotulo: 'Ver estoque', link: ['/ubs', r.naReferencia.ubs.id], query: null }
-      : { rotulo: 'Rastrear', link: ['/medicamentos', r.medicamento.id], query: null };
+  protected acao(r: Remedio): { rotulo: string; link: unknown[] } {
+    return r.naReferencia && temEstoque(r.naReferencia)
+      ? { rotulo: 'Ver estoque', link: ['/ubs', r.naReferencia.ubs.id] }
+      : { rotulo: 'Rastrear', link: ['/medicamentos', r.medicamento.id] };
   }
 
   protected buscar(termo: string): void {

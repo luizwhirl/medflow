@@ -10,7 +10,7 @@ import {
   linkRota,
   posicaoAtual,
 } from '../../core/geo';
-import { Disponibilidade } from '../../core/models/estoque.model';
+import { Disponibilidade, statusExibido, temEstoque } from '../../core/models/estoque.model';
 import { Medicamento } from '../../core/models/medicamento.model';
 import { MedicamentoService } from '../../core/services/medicamento.service';
 import { PreferenciasService } from '../../core/services/preferencias.service';
@@ -97,12 +97,7 @@ const ORDEM = { DISPONIVEL: 0, RESERVADO: 1, EM_FALTA: 2 } as const;
             </svg>
             {{ naLista() ? 'Na minha lista' : 'Adicionar à lista' }}
           </button>
-          <button
-            appButton
-            type="button"
-            disabled
-            title="Os avisos chegam quando a API de notificações estiver pronta"
-          >
+          <button appButton type="button" disabled aria-describedby="aviso-em-breve">
             <svg
               class="size-5"
               viewBox="0 0 24 24"
@@ -116,6 +111,9 @@ const ORDEM = { DISPONIVEL: 0, RESERVADO: 1, EM_FALTA: 2 } as const;
             </svg>
             Avisar quando chegar
           </button>
+          <p id="aviso-em-breve" class="w-full text-right text-xs text-content-muted">
+            Os avisos chegam em breve.
+          </p>
         </div>
       </header>
 
@@ -129,7 +127,7 @@ const ORDEM = { DISPONIVEL: 0, RESERVADO: 1, EM_FALTA: 2 } as const;
             @if (a.alternativa) {
               Enquanto isso, a {{ a.alternativa }} tem estoque.
             } @else {
-              Nenhuma unidade próxima tem estoque agora.
+              Nenhuma unidade tem estoque agora.
             }
           </p>
         </div>
@@ -183,16 +181,16 @@ const ORDEM = { DISPONIVEL: 0, RESERVADO: 1, EM_FALTA: 2 } as const;
                   <span
                     class="whitespace-nowrap rounded-full px-3 py-1 text-sm font-semibold"
                     [class]="
-                      u.d.status === 'DISPONIVEL'
+                      u.status === 'DISPONIVEL'
                         ? 'bg-status-disponivel-subtle text-status-disponivel'
-                        : u.d.status === 'RESERVADO'
+                        : u.status === 'RESERVADO'
                           ? 'bg-status-reservado-subtle text-status-reservado'
                           : 'bg-status-falta-subtle text-status-falta'
                     "
                     >{{
-                      u.d.status === 'EM_FALTA'
+                      u.status === 'EM_FALTA'
                         ? 'Em falta'
-                        : u.d.status === 'RESERVADO'
+                        : u.status === 'RESERVADO'
                           ? 'Reservado'
                           : '~' + u.d.quantidade + ' un.'
                     }}</span
@@ -260,20 +258,19 @@ export class RastreioMedicamento {
     return e.disponibilidade
       .map((d) => ({
         d,
+        status: statusExibido(d),
         distancia: pos ? distanciaKm(pos, d.ubs) : null,
         referencia: d.ubs.id === ref,
       }))
-      .sort(
-        (a, b) => ORDEM[a.d.status] - ORDEM[b.d.status] || (a.distancia ?? 0) - (b.distancia ?? 0),
-      );
+      .sort((a, b) => ORDEM[a.status] - ORDEM[b.status] || (a.distancia ?? 0) - (b.distancia ?? 0));
   });
 
   /** Alerta quando o item está em falta na UBS de referência. */
   protected readonly alerta = computed(() => {
     const lista = this.unidades();
     const ref = lista.find((u) => u.referencia);
-    if (!ref || ref.d.status !== 'EM_FALTA') return null;
-    const alt = lista.find((u) => u.d.status === 'DISPONIVEL');
+    if (!ref || ref.status !== 'EM_FALTA') return null;
+    const alt = lista.find((u) => temEstoque(u.d));
     return {
       ubs: ref.d.ubs.nome,
       alternativa: alt
@@ -284,15 +281,12 @@ export class RastreioMedicamento {
 
   /**
    * A API só informa o estoque nas unidades, não a etapa da remessa.
-   * Disponível na UBS de referência (ou, sem referência, em alguma unidade) = remessa concluída.
+   * Só marcamos a remessa como concluída quando a UBS de referência tem o item em estoque;
+   * sem UBS de referência ou sem registro nela, a etapa fica desconhecida.
    */
   protected readonly etapaAtual = computed(() => {
-    const lista = this.unidades();
-    const ref = lista.find((u) => u.referencia);
-    const chegou = ref
-      ? ref.d.status === 'DISPONIVEL'
-      : lista.some((u) => u.d.status === 'DISPONIVEL');
-    return chegou ? ETAPAS_REMESSA.length - 1 : null;
+    const ref = this.unidades().find((u) => u.referencia);
+    return ref && temEstoque(ref.d) ? ETAPAS_REMESSA.length - 1 : null;
   });
 
   constructor() {
