@@ -67,10 +67,6 @@
 }
 
 @layer components {
-  .app-shell {
-    @apply mx-auto flex min-h-dvh w-full max-w-7xl flex-col bg-canvas;
-  }
-
   .surface-card {
     @apply rounded-card bg-surface shadow-card;
   }
