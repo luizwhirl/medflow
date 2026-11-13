@@ -11,9 +11,15 @@ export class MedicamentoService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = `${environment.apiUrl}/medicamentos`;
 
-  buscar(termo = ''): Observable<Medicamento[]> {
-    const params = termo ? new HttpParams().set('busca', termo) : undefined;
+  buscar(termo = '', categoria = ''): Observable<Medicamento[]> {
+    let params = new HttpParams();
+    if (termo) params = params.set('busca', termo);
+    if (categoria) params = params.set('categoria', categoria);
     return this.http.get<Medicamento[]>(this.baseUrl, { params });
+  }
+
+  categorias(): Observable<string[]> {
+    return this.http.get<string[]>(`${this.baseUrl}/categorias`);
   }
 
   buscarPorId(id: number): Observable<Medicamento> {
