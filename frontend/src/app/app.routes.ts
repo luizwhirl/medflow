@@ -31,6 +31,23 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'mapa',
+        title: 'Mapa · MedFlow',
+        loadComponent: () => import('./features/ubs/ubs-list.page').then((m) => m.UbsListPage),
+      },
+      {
+        path: 'lista',
+        title: 'Minha lista · MedFlow',
+        data: { titulo: 'Minha lista' },
+        loadComponent: () => import('./features/em-breve/em-breve.page').then((m) => m.EmBrevePage),
+      },
+      {
+        path: 'perfil',
+        title: 'Perfil · MedFlow',
+        data: { titulo: 'Perfil' },
+        loadComponent: () => import('./features/em-breve/em-breve.page').then((m) => m.EmBrevePage),
+      },
+      {
         path: 'medicamentos/:id',
         title: 'Medicamento · MedFlow',
         loadComponent: () =>
