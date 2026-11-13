@@ -3,9 +3,9 @@ import { Component, computed, input } from '@angular/core';
 import { STATUS_LABEL, StatusEstoque } from '../../core/models/status-estoque';
 
 const CLASSES: Record<StatusEstoque, string> = {
-  DISPONIVEL: 'bg-green-100 text-status-disponivel',
-  RESERVADO: 'bg-amber-100 text-status-reservado',
-  EM_FALTA: 'bg-red-100 text-status-falta',
+  DISPONIVEL: 'bg-status-disponivel-subtle text-status-disponivel',
+  RESERVADO: 'bg-status-reservado-subtle text-status-reservado',
+  EM_FALTA: 'bg-status-falta-subtle text-status-falta',
 };
 
 @Component({

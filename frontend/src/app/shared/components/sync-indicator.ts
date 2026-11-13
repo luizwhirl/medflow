@@ -28,8 +28,10 @@ export class SyncIndicator {
 
   protected readonly tone = computed(() => {
     const min = this.minutos();
-    if (min !== null && min <= 60) return { text: 'text-slate-600', dot: 'bg-green-600' };
-    if (min !== null && min <= 1440) return { text: 'text-slate-600', dot: 'bg-amber-500' };
+    if (min !== null && min <= 60)
+      return { text: 'text-content-muted', dot: 'bg-status-disponivel' };
+    if (min !== null && min <= 1440)
+      return { text: 'text-content-muted', dot: 'bg-status-reservado' };
     return { text: 'text-status-falta font-semibold', dot: 'bg-red-600' };
   });
 }

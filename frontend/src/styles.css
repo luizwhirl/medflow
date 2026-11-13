@@ -1,8 +1,24 @@
 @import 'tailwindcss';
 
-/* Tokens de design do MedFlow (mesma paleta do protótipo em /front) */
+/*
+ * Design tokens do MedFlow.
+ * Componentes e páginas devem consumir estes nomes semânticos em vez de cores,
+ * sombras ou raios arbitrários no template.
+ */
 @theme {
-  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /* Breakpoints: celular, tablet retrato, tablet paisagem/desktop e desktop largo. */
+  --breakpoint-sm: 48rem;
+  --breakpoint-md: 64rem;
+  --breakpoint-xl: 90rem;
+
+  --color-canvas: #f1f5f9;
+  --color-surface: #ffffff;
+  --color-content: #0f172a;
+  --color-content-muted: #475569;
+  --color-content-subtle: #94a3b8;
+  --color-outline: #e2e8f0;
 
   --color-brand-50: #f0fdfa;
   --color-brand-100: #ccfbf1;
@@ -11,10 +27,71 @@
   --color-brand-700: #115e59;
 
   --color-status-disponivel: #15803d;
+  --color-status-disponivel-subtle: #dcfce7;
   --color-status-reservado: #b45309;
+  --color-status-reservado-subtle: #fef3c7;
   --color-status-falta: #b91c1c;
+  --color-status-falta-subtle: #fee2e2;
+  --color-status-info: #1d4ed8;
+  --color-status-info-subtle: #dbeafe;
+
+  --radius-control: 0.75rem;
+  --radius-card: 0.875rem;
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 6%), 0 1px 3px rgb(15 23 42 / 8%);
 }
 
-body {
-  @apply bg-slate-100 font-sans text-slate-900 antialiased;
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    min-width: 20rem;
+    background: var(--color-canvas);
+  }
+
+  body {
+    @apply m-0 min-h-dvh bg-canvas font-sans text-content antialiased;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand-500;
+  }
+}
+
+@layer components {
+  .surface-card {
+    @apply rounded-card bg-surface shadow-card;
+  }
+
+  .surface-list {
+    @apply divide-y divide-outline overflow-hidden rounded-card bg-surface shadow-card;
+  }
+
+  .page-title {
+    @apply text-xl font-bold tracking-tight text-content;
+  }
+
+  .body-muted {
+    @apply text-sm text-content-muted;
+  }
+
+  .control {
+    @apply h-12 rounded-control border border-outline bg-surface px-4 text-content outline-none transition-colors placeholder:text-content-subtle focus:border-brand-500;
+  }
+
+  .feedback-error {
+    @apply rounded-control bg-status-falta-subtle p-4 text-sm text-status-falta;
+  }
+
+  .interactive-row {
+    @apply block transition-colors hover:bg-canvas focus-visible:relative;
+  }
 }
