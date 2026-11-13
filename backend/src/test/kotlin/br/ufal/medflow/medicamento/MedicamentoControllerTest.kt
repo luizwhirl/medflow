@@ -198,7 +198,7 @@ class MedicamentoControllerTest(@Autowired private val mockMvc: MockMvc) {
     @Test
     fun `resumo retorna 400 para codigo IBGE invalido`() {
         given(medicamentoDisponibilidadeService.obterResumo(1L, "27043"))
-            .willThrow(ParametroInvalidoException("ibge"))
+            .willThrow(ParametroInvalidoException.de("ibge"))
 
         mockMvc.get("/api/medicamentos/1/disponibilidade/resumo") {
             param("ibge", "27043")

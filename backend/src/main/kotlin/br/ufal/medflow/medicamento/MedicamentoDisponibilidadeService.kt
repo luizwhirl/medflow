@@ -26,7 +26,7 @@ class MedicamentoDisponibilidadeService(
             try {
                 CodigoIbge.paraSeteDigitos(codigo)
             } catch (ex: IllegalArgumentException) {
-                throw ParametroInvalidoException("ibge")
+                throw ParametroInvalidoException.de("ibge")
             }
         }
 
