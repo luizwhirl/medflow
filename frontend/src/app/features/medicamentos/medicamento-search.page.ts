@@ -4,7 +4,7 @@ import { Router, RouterLink } from '@angular/router';
 import { catchError, debounceTime, distinctUntilChanged, forkJoin, map, of, switchMap } from 'rxjs';
 
 import { Coordenadas, distanciaKm, posicaoAtual } from '../../core/geo';
-import { Disponibilidade } from '../../core/models/estoque.model';
+import { Disponibilidade, temEstoque } from '../../core/models/estoque.model';
 import { Medicamento } from '../../core/models/medicamento.model';
 import { Ubs } from '../../core/models/ubs.model';
 import { MedicamentoService } from '../../core/services/medicamento.service';
@@ -67,8 +67,9 @@ interface Resultado {
 
         <p class="mt-4 text-sm text-content-muted" aria-live="polite">
           {{ visiveis().length }} {{ visiveis().length === 1 ? 'resultado' : 'resultados' }}
-          @if (raioAtivo()) {
-            até {{ raio }} km de você
+          @if (encontrados().total > encontrados().itens.length) {
+            · mostrando os {{ encontrados().itens.length }} primeiros de {{ encontrados().total }};
+            refine a busca
           }
         </p>
 
@@ -99,7 +100,11 @@ interface Resultado {
                   [class]="r.disponiveis ? 'text-brand-600' : 'text-status-falta'"
                 >
                   @if (r.total === 0) {
-                    Nenhuma UBS informou estoque
+                    {{
+                      raioAtivo()
+                        ? 'Nenhuma UBS a até ' + raio + ' km'
+                        : 'Nenhuma UBS informou estoque'
+                    }}
                   } @else if (r.disponiveis) {
                     Em {{ r.disponiveis }} de {{ r.total }} UBS{{ raioAtivo() ? ' próximas' : '' }}
                   } @else {
@@ -167,7 +172,7 @@ export class MedicamentoSearchPage {
     { initialValue: [] as string[] },
   );
 
-  private readonly encontrados = toSignal(
+  protected readonly encontrados = toSignal(
     toObservable(
       computed(() => ({ termo: this.termo().trim(), categoria: this.categoriaAtual() })),
     ).pipe(
@@ -178,7 +183,7 @@ export class MedicamentoSearchPage {
           catchError(() => of<Medicamento[]>([])),
           switchMap((meds) =>
             meds.length === 0
-              ? of([])
+              ? of({ itens: [], total: 0 })
               : forkJoin(
                   meds.slice(0, MAX_RESULTADOS).map((medicamento) =>
                     this.medicamentoService.disponibilidade(medicamento.id).pipe(
@@ -186,12 +191,17 @@ export class MedicamentoSearchPage {
                       map((disponibilidade) => ({ medicamento, disponibilidade })),
                     ),
                   ),
-                ),
+                ).pipe(map((itens) => ({ itens, total: meds.length }))),
           ),
         ),
       ),
     ),
-    { initialValue: [] as { medicamento: Medicamento; disponibilidade: Disponibilidade[] }[] },
+    {
+      initialValue: {
+        itens: [] as { medicamento: Medicamento; disponibilidade: Disponibilidade[] }[],
+        total: 0,
+      },
+    },
   );
 
   protected readonly visiveis = computed((): Resultado[] => {
@@ -199,12 +209,12 @@ export class MedicamentoSearchPage {
     const filtrarRaio = this.raioAtivo();
     const perto = (u: Ubs) => !filtrarRaio || distanciaKm(pos!, u) <= RAIO_PROXIMAS_KM;
     return this.encontrados()
-      .map(({ medicamento, disponibilidade }) => {
+      .itens.map(({ medicamento, disponibilidade }) => {
         const consideradas = disponibilidade.filter((d) => perto(d.ubs));
         return {
           medicamento,
           total: consideradas.length,
-          disponiveis: consideradas.filter((d) => d.status === 'DISPONIVEL').length,
+          disponiveis: consideradas.filter(temEstoque).length,
         };
       })
       .filter((r) => !this.soDisponiveis() || r.disponiveis > 0);

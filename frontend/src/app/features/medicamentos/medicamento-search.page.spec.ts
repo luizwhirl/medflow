@@ -85,7 +85,7 @@ describe('MedicamentoSearchPage', () => {
     const el = fixture.nativeElement as HTMLElement;
     expect(resultados(el)).toEqual([
       'Metformina 850 mg comprimido Em 1 de 2 UBS próximas',
-      'Glibenclamida 850 mg comprimido Nenhuma UBS informou estoque',
+      'Glibenclamida 850 mg comprimido Nenhuma UBS a até 5 km',
     ]);
 
     const soDisponiveis = Array.from(el.querySelectorAll('app-chip button')).find((b) =>
@@ -152,6 +152,32 @@ describe('MedicamentoSearchPage', () => {
     expect(onde.indexOf('UBS Clima Bom')).toBeLessThan(onde.indexOf('UBS Benedito Bentes I'));
     expect(onde).toContain('~120 un.');
     expect(el.querySelectorAll('app-timeline li').length).toBe(4);
+    http.verify();
+  }));
+
+  it('não conclui a remessa quando o estoque está só em outra UBS', fakeAsync(() => {
+    const fixture = TestBed.createComponent(MedicamentoSearchPage);
+    fixture.componentRef.setInput('id', '1');
+    fixture.detectChanges();
+    flushMicrotasks();
+    http.expectOne('/api/medicamentos/categorias').flush([]);
+    http.expectOne('/api/medicamentos/1').flush(metformina);
+    http
+      .expectOne('/api/medicamentos/1/disponibilidade')
+      .flush([
+        {
+          ubs: ubs(3, 'UBS Clima Bom', 2.4),
+          status: 'DISPONIVEL',
+          quantidade: 120,
+          atualizadoEm: '',
+        },
+      ]);
+    tick(250);
+    http.expectOne('/api/medicamentos').flush([]);
+    fixture.detectChanges();
+
+    const etapas = (fixture.nativeElement as HTMLElement).querySelectorAll('app-timeline li');
+    expect(Array.from(etapas).some((li) => li.textContent!.includes('(concluída)'))).toBeFalse();
     http.verify();
   }));
 });
