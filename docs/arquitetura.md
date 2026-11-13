@@ -22,6 +22,7 @@ br.ufal.medflow
 ├── medicamento/   Medicamento, MedicamentoRepository, MedicamentoController, MedicamentoResponse
 ├── estoque/       ItemEstoque, StatusEstoque, ItemEstoqueRepository, DTOs de estoque/disponibilidade
 ├── integracao/    FonteEstoque e cliente da BNAFAR (BnafarFonteEstoque), PosicaoEstoque, CodigoIbge
+├── sincronizacao/ job que traz o estoque da BNAFAR para o banco (SincronizacaoEstoqueService)
 ├── common/        exceções e ApiExceptionHandler
 └── config/        CORS e configurações web
 ```
@@ -72,7 +73,7 @@ Se o formato da fonte mudar (migração Hórus → e-SUS AF), só essa classe pr
 
 - Fonte: `GET https://apidadosabertos.saude.gov.br/daf/estoque-medicamentos-bnafar-horus` (pública, sem autenticação).
   A `bnafar-api-hom` é só de envio (exige `Authorization`) e não serve para leitura.
-- Filtros: `codigo_municipio` (IBGE de 6 dígitos), `data_posicao_estoque`; paginação por `limit` (até 1000) e `offset`.
+- Filtros: `codigo_municipio` (IBGE de 6 dígitos), `data_posicao_estoque`. Paginação por `limit` e `offset`, onde **`offset` é o número da página** (0, 1, 2...) e não a quantidade de linhas puladas (conferido em 11/11/2026: `limit=2000&offset=1` devolve as linhas 2000 em diante). O cliente falha se duas páginas seguidas se repetirem, para não somar dados em dobro caso isso mude.
 - Cada registro é um lote. O cliente devolve `PosicaoEstoque` com o IBGE em 7 dígitos e o CNES com 7 dígitos.
 - Registros sem CNES, CATMAT, quantidade ou data da posição são descartados (com aviso no log). Validade ausente vira nula.
 - Falha de rede, timeout, erro HTTP ou resposta inválida lançam `FonteEstoqueIndisponivelException`; quem chama decide se tenta de novo.
@@ -82,3 +83,31 @@ Se o formato da fonte mudar (migração Hórus → e-SUS AF), só essa classe pr
 Configuração em `app.bnafar` (`application.yml`): `base-url`, `tamanho-pagina`, `max-paginas`, `timeout-conexao`, `timeout-leitura`.
 
 Os testes usam respostas reais gravadas em `backend/src/test/resources/bnafar` e nunca chamam a API de verdade.
+
+## Sincronização do estoque (`sincronizacao/`)
+
+`SincronizacaoEstoqueService.sincronizar(ibge)` lê as posições da `FonteEstoque` e grava UBS, medicamentos,
+itens de estoque e lotes. Idempotente: com os mesmos dados da fonte, uma nova execução não muda nada.
+A leitura da fonte fica fora da transação; se ela falhar, nada é gravado.
+
+Ligar o job (desligado por padrão), em `app.sync` ou por variável de ambiente:
+
+| Propriedade | Variável | Padrão |
+| --- | --- | --- |
+| `ativo` | `SYNC_ATIVO` | `false` |
+| `municipios` | `SYNC_MUNICIPIOS` | vazio (IBGE de 6 ou 7 dígitos, separados por vírgula) |
+| `cron` | `SYNC_CRON` | `0 0 */6 * * *` (a cada 6 horas, fuso de Maceió) |
+| `executar-ao-iniciar` | `SYNC_AO_INICIAR` | `false` |
+
+Exemplo para desenvolvimento: `SYNC_ATIVO=true SYNC_MUNICIPIOS=270240 SYNC_AO_INICIAR=true ./gradlew bootRun`.
+
+Regras de conversão (a BNAFAR é uma base de gestão, não pensada para o cidadão):
+
+- **Unidades:** só entram UBS, USF/ESF e farmácias da rede. Secretaria, CAF (almoxarifado), CAPS, UPA e hospital ficam de fora. Unidade sem coordenadas também fica de fora (não dá para mostrar no mapa).
+- **Medicamentos:** a base mistura medicamentos com materiais (agulha, curativo...). Só entra o que tem dose e forma farmacêutica na descrição. Nome, concentração e forma são extraídos do texto (`DescricaoProduto`); a categoria vem do princípio ativo (`CategoriaMedicamento`, heurística do MVP; o resto é "Outros").
+- **CATMAT:** o código vem com a unidade de fornecimento (`BR0267691U0042`, às vezes com `INAT` no fim). O medicamento é só `BR` + 7 dígitos.
+- **Medicamento que já existe não é sobrescrito**, inclusive o do seed.
+- **Item:** quantidade é a soma das posições da data mais recente do item (se a fonte devolver mais de um dia, os antigos não somam); o status vem de `RegraStatusEstoque`. Item que uma unidade da resposta deixou de informar (o estoque acabou) vai para quantidade 0 e `EM_FALTA` e perde os lotes. Unidade que some inteira da resposta não é tocada: a data de sincronização dela envelhece até aparecer como atrasada.
+- **Lotes:** só viram lote posições com validade e saldo; lotes repetidos no mesmo item somam e ficam com a menor validade. Posição sem validade conta no total do item, mas não vira lote, então **a soma dos lotes pode ser menor que `item_estoque.quantidade`** (o comentário da migration V2 diz que seria igual; ele não foi alterado porque migration aplicada não se edita).
+- **`ultima_sincronizacao` da UBS** é o dia da posição mais recente que a fonte tem para ela (e não a hora da nossa execução). Assim, unidade que não atualiza na fonte aparece como atrasada.
+- Nomes, bairros e endereços vêm em maiúsculas e sem acento; são convertidos para texto legível (`Nomes`).

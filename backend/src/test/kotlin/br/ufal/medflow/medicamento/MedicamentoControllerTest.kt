@@ -1,6 +1,9 @@
 package br.ufal.medflow.medicamento
 
+import br.ufal.medflow.common.ParametroInvalidoException
+import br.ufal.medflow.common.RecursoNaoEncontradoException
 import br.ufal.medflow.estoque.ItemEstoqueRepository
+import br.ufal.medflow.estoque.ResumoDisponibilidadeResponse
 import org.junit.jupiter.api.Test
 import org.mockito.BDDMockito.given
 import org.mockito.Mockito.verify
@@ -19,6 +22,9 @@ class MedicamentoControllerTest(@Autowired private val mockMvc: MockMvc) {
 
     @MockitoBean
     private lateinit var itemEstoqueRepository: ItemEstoqueRepository
+
+    @MockitoBean
+    private lateinit var medicamentoDisponibilidadeService: MedicamentoDisponibilidadeService
 
     private val metformina = Medicamento(
         catmat = "BR0267690",
@@ -147,5 +153,75 @@ class MedicamentoControllerTest(@Autowired private val mockMvc: MockMvc) {
         }
 
         verify(medicamentoRepository).listarCategorias()
+    }
+
+    @Test
+    fun `resumo retorna unidades com estoque disponivel`() {
+        given(medicamentoDisponibilidadeService.obterResumo(1L, null))
+            .willReturn(
+                ResumoDisponibilidadeResponse(
+                    totalUnidades = 7L,
+                    unidadesDisponiveis = 3L,
+                ),
+            )
+
+        mockMvc.get("/api/medicamentos/1/disponibilidade/resumo").andExpect {
+            status { isOk() }
+            jsonPath("$.totalUnidades") { value(7) }
+            jsonPath("$.unidadesDisponiveis") { value(3) }
+        }
+
+        verify(medicamentoDisponibilidadeService).obterResumo(1L, null)
+    }
+
+    @Test
+    fun `resumo aceita filtro por municipio`() {
+        given(medicamentoDisponibilidadeService.obterResumo(1L, "2704302"))
+            .willReturn(
+                ResumoDisponibilidadeResponse(
+                    totalUnidades = 7L,
+                    unidadesDisponiveis = 3L,
+                ),
+            )
+
+        mockMvc.get("/api/medicamentos/1/disponibilidade/resumo") {
+            param("ibge", "2704302")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.totalUnidades") { value(7) }
+            jsonPath("$.unidadesDisponiveis") { value(3) }
+        }
+
+        verify(medicamentoDisponibilidadeService).obterResumo(1L, "2704302")
+    }
+
+    @Test
+    fun `resumo retorna 400 para codigo IBGE invalido`() {
+        given(medicamentoDisponibilidadeService.obterResumo(1L, "27043"))
+            .willThrow(ParametroInvalidoException.de("ibge"))
+
+        mockMvc.get("/api/medicamentos/1/disponibilidade/resumo") {
+            param("ibge", "27043")
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.title") { value("Parâmetro inválido") }
+            jsonPath("$.status") { value(400) }
+            jsonPath("$.detail") { value("Parâmetro 'ibge' inválido") }
+        }
+
+        verify(medicamentoDisponibilidadeService).obterResumo(1L, "27043")
+    }
+
+    @Test
+    fun `resumo de medicamento inexistente retorna 404`() {
+        given(medicamentoDisponibilidadeService.obterResumo(42L, null))
+            .willThrow(RecursoNaoEncontradoException("Medicamento", 42L))
+
+        mockMvc.get("/api/medicamentos/42/disponibilidade/resumo").andExpect {
+            status { isNotFound() }
+            jsonPath("$.title") { value("Recurso não encontrado") }
+        }
+
+        verify(medicamentoDisponibilidadeService).obterResumo(42L, null)
     }
 }

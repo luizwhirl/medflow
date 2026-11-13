@@ -46,6 +46,43 @@ interface ItemEstoqueRepository : JpaRepository<ItemEstoque, Long> {
         @Param("ubsId") ubsId: Long,
     ): List<ContagemEstoquePorStatus>
 
+    /** Todos os itens das unidades informadas, com UBS e medicamento carregados (usado na sincronização). */
+    @Query(
+        """
+        select i from ItemEstoque i join fetch i.ubs join fetch i.medicamento
+        where i.ubs.id in :ubsIds
+        """,
+    )
+    fun findDasUbs(@Param("ubsIds") ubsIds: Collection<Long>): List<ItemEstoque>
+
+    @Query(
+        """
+        select count(i) from ItemEstoque i
+        where i.medicamento.id = :medicamentoId
+          and i.status = :status
+          and i.quantidade > 0
+        """,
+    )
+    fun contarUnidadesDisponiveis(
+        @Param("medicamentoId") medicamentoId: Long,
+        @Param("status") status: StatusEstoque,
+    ): Long
+
+    @Query(
+        """
+        select count(i) from ItemEstoque i
+        where i.medicamento.id = :medicamentoId
+          and i.ubs.codigoIbgeMunicipio = :ibge
+          and i.status = :status
+          and i.quantidade > 0
+        """,
+    )
+    fun contarUnidadesDisponiveisPorMunicipio(
+        @Param("medicamentoId") medicamentoId: Long,
+        @Param("ibge") ibge: String,
+        @Param("status") status: StatusEstoque,
+    ): Long
+
     @Query(
         """
         select i from ItemEstoque i join fetch i.ubs u

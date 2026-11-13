@@ -7,6 +7,10 @@ import org.springframework.data.repository.query.Param
 interface UbsRepository : JpaRepository<Ubs, Long> {
     fun findAllByOrderByNomeAsc(): List<Ubs>
 
+    fun findByCnesIn(cnes: Collection<String>): List<Ubs>
+
+    fun countByCodigoIbgeMunicipio(ibge: String): Long
+
     /**
      * UBS da mais próxima para a mais distante, a partir de um ponto (fórmula de Haversine, em km, no banco).
      * Se houver estoque do medicamento na unidade, traz o status e a quantidade; senão vêm nulos.
