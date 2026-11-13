@@ -27,7 +27,7 @@ export interface PinoMapa {
 /** Mapa (Leaflet + OpenStreetMap) com pinos numerados e raio opcional. */
 @Component({
   selector: 'app-mapa',
-  host: { class: 'block' },
+  host: { class: 'block isolate' },
   template: `<div #alvo class="size-full" role="region" aria-label="Mapa"></div>`,
 })
 export class Mapa {
@@ -40,6 +40,8 @@ export class Mapa {
   private readonly alvo = viewChild.required<ElementRef<HTMLElement>>('alvo');
   private mapa: L.Map | null = null;
   private readonly camada = L.layerGroup();
+  /** Último conjunto enquadrado; só reenquadra quando pinos, centro ou raio mudam. */
+  private enquadrado = '';
 
   constructor() {
     afterNextRender(() => {
@@ -50,7 +52,8 @@ export class Mapa {
       L.control.zoom({ position: 'topright' }).addTo(this.mapa);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
-        attribution: '&copy; OpenStreetMap',
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       }).addTo(this.mapa);
       this.camada.addTo(this.mapa);
       this.desenhar();
@@ -107,12 +110,19 @@ export class Mapa {
 
     const pontos = pinos.map((p) => [p.latitude, p.longitude] as L.LatLngTuple);
     if (centro) pontos.push([centro.latitude, centro.longitude]);
-    if (pontos.length) {
+    const chave = JSON.stringify([pontos, raio]);
+    if (pontos.length && chave !== this.enquadrado) {
+      this.enquadrado = chave;
+      // No tablet/desktop o cartão da UBS fica sobre o mapa; no celular fica embaixo.
+      const cartaoSobre = window.matchMedia('(min-width: 64rem)').matches;
       this.mapa.fitBounds(L.latLngBounds(pontos), {
         paddingTopLeft: [32, 32],
-        paddingBottomRight: [32, 260],
+        paddingBottomRight: [32, cartaoSobre ? 260 : 32],
         maxZoom: 15,
       });
+    } else {
+      const p = pinos.find((x) => x.id === sel);
+      if (p) this.mapa.panInside([p.latitude, p.longitude], { padding: [48, 48] });
     }
   }
 }

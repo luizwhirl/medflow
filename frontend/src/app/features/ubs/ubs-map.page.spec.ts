@@ -105,4 +105,33 @@ describe('UbsMapPage', () => {
     expect(cartao).toContain('Metformina · ~120 un.');
     http.verify();
   }));
+
+  it('trocar para "Nenhum" desliga o filtro "Com meus remédios"', fakeAsync(() => {
+    preparar([1]);
+    const fixture = TestBed.createComponent(UbsMapPage);
+    fixture.detectChanges();
+    flushMicrotasks();
+    http.expectOne('/api/ubs').flush([ubs(2, 'Perto', 0.5), ubs(3, 'Meio', 2.5)]);
+    http.expectOne('/api/medicamentos').flush([]);
+    http.expectOne('/api/medicamentos/1').flush(med(1, 'Metformina'));
+    http
+      .expectOne('/api/medicamentos/1/disponibilidade')
+      .flush([{ ubs: ubs(3, 'Meio', 2.5), status: 'DISPONIVEL', quantidade: 5, atualizadoEm: '' }]);
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    const chip = Array.from(el.querySelectorAll('app-chip button')).find((b) =>
+      b.textContent!.includes('Com meus remédios'),
+    ) as HTMLButtonElement;
+    chip.click();
+    fixture.detectChanges();
+    expect(linhas(el).length).toBe(1);
+
+    const select = el.querySelector('select')!;
+    select.value = '';
+    select.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+    expect(linhas(el).length).toBe(2);
+    http.verify();
+  }));
 });

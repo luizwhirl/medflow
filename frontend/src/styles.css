@@ -90,8 +90,4 @@
   .feedback-error {
     @apply rounded-control bg-status-falta-subtle p-4 text-sm text-status-falta;
   }
-
-  .interactive-row {
-    @apply block transition-colors hover:bg-canvas focus-visible:relative;
-  }
 }

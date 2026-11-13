@@ -162,16 +162,14 @@ describe('MedicamentoSearchPage', () => {
     flushMicrotasks();
     http.expectOne('/api/medicamentos/categorias').flush([]);
     http.expectOne('/api/medicamentos/1').flush(metformina);
-    http
-      .expectOne('/api/medicamentos/1/disponibilidade')
-      .flush([
-        {
-          ubs: ubs(3, 'UBS Clima Bom', 2.4),
-          status: 'DISPONIVEL',
-          quantidade: 120,
-          atualizadoEm: '',
-        },
-      ]);
+    http.expectOne('/api/medicamentos/1/disponibilidade').flush([
+      {
+        ubs: ubs(3, 'UBS Clima Bom', 2.4),
+        status: 'DISPONIVEL',
+        quantidade: 120,
+        atualizadoEm: '',
+      },
+    ]);
     tick(250);
     http.expectOne('/api/medicamentos').flush([]);
     fixture.detectChanges();

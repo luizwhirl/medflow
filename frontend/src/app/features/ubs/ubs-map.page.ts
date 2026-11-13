@@ -10,7 +10,7 @@ import {
   linkRota,
   posicaoAtual,
 } from '../../core/geo';
-import { Disponibilidade } from '../../core/models/estoque.model';
+import { Disponibilidade, statusExibido, temEstoque } from '../../core/models/estoque.model';
 import { Medicamento } from '../../core/models/medicamento.model';
 import { STATUS_LABEL, StatusEstoque } from '../../core/models/status-estoque';
 import { Ubs } from '../../core/models/ubs.model';
@@ -67,7 +67,9 @@ interface LinhaUbs {
         class="order-2 min-w-0 md:order-1 md:w-[23rem] md:shrink-0 md:overflow-y-auto md:border-r md:border-outline md:bg-surface md:px-7 md:py-8"
         aria-labelledby="titulo-mapa"
       >
-        <h1 id="titulo-mapa" class="text-3xl font-bold tracking-tight">UBS próximas</h1>
+        <h1 id="titulo-mapa" class="text-3xl font-bold tracking-tight">
+          {{ posicao() ? 'UBS próximas' : 'Unidades de saúde' }}
+        </h1>
         <p class="mt-1 text-content-muted">
           @if (referencia(); as r) {
             Perto de {{ r.bairro }} ·
@@ -206,11 +208,7 @@ interface LinhaUbs {
                 @for (i of a.itens; track i.medicamento.id) {
                   <li class="rounded-control bg-canvas px-3 py-1.5 text-sm">
                     {{ i.medicamento.nome }} {{ i.medicamento.concentracao }} ·
-                    {{
-                      i.d.status === 'DISPONIVEL'
-                        ? '~' + i.d.quantidade + ' un.'
-                        : statusLabel[i.d.status]
-                    }}
+                    {{ temEstoque(i.d) ? '~' + i.d.quantidade + ' un.' : statusLabel[i.d.status] }}
                   </li>
                 }
               </ul>
@@ -221,6 +219,14 @@ interface LinhaUbs {
                 >Ver estoque completo</a
               >
             </div>
+            <button
+              type="button"
+              class="mt-3 w-full text-sm font-semibold text-brand-600"
+              [attr.aria-pressed]="a.referencia"
+              (click)="definirReferencia(a.ubs.id)"
+            >
+              {{ a.referencia ? '✓ Esta é a sua UBS' : 'Definir como minha UBS' }}
+            </button>
           </article>
         }
       </div>
@@ -236,6 +242,7 @@ export class UbsMapPage {
   protected readonly cor = COR;
   protected readonly texto = CLASSE_TEXTO;
   protected readonly statusLabel = STATUS_LABEL;
+  protected readonly temEstoque = temEstoque;
   protected readonly distancia = formatarDistancia;
   protected readonly rota = linkRota;
 
@@ -294,7 +301,7 @@ export class UbsMapPage {
           const d = disponibilidade.find((x) => x.ubs.id === ubs.id);
           return d ? [{ medicamento, d }] : [];
         });
-        const disponiveis = itens.filter((i) => i.d.status === 'DISPONIVEL').length;
+        const disponiveis = itens.filter((i) => temEstoque(i.d)).length;
         return {
           ubs,
           distancia: pos ? distanciaKm(pos, ubs) : null,
@@ -305,7 +312,7 @@ export class UbsMapPage {
         };
       })
       .filter((l) => l.distancia === null || raio === null || l.distancia <= raio)
-      .filter((l) => !this.soComRemedios() || l.disponiveis > 0)
+      .filter((l) => !this.soComRemedios() || escolhidos.length === 0 || l.disponiveis > 0)
       .sort((a, b) =>
         a.distancia !== null && b.distancia !== null
           ? a.distancia - b.distancia
@@ -341,6 +348,10 @@ export class UbsMapPage {
     posicaoAtual().then((p) => this.posicao.set(p));
   }
 
+  protected definirReferencia(id: number): void {
+    this.preferencias.definirUbsReferencia(id);
+  }
+
   /** Tom (cor) e texto-resumo da UBS para os remédios escolhidos. */
   private classificar(
     total: number,
@@ -351,9 +362,10 @@ export class UbsMapPage {
     if (total === 1) {
       const d = itens[0]?.d;
       if (!d) return { tom: 'semDado', resumo: 'Sem informação' };
+      const status = statusExibido(d);
       return {
-        tom: TOM_STATUS[d.status],
-        resumo: d.status === 'DISPONIVEL' ? `~${d.quantidade} un.` : STATUS_LABEL[d.status],
+        tom: TOM_STATUS[status],
+        resumo: status === 'DISPONIVEL' ? `~${d.quantidade} un.` : STATUS_LABEL[status],
       };
     }
     const resumo = `${disponiveis} de ${total} remédios`;

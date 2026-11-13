@@ -13,11 +13,6 @@ export const routes: Routes = [
         loadComponent: () => import('./features/home/home.page').then((m) => m.HomePage),
       },
       {
-        path: 'ubs',
-        title: 'Unidades · UBS Conecta',
-        loadComponent: () => import('./features/ubs/ubs-list.page').then((m) => m.UbsListPage),
-      },
-      {
         path: 'ubs/:id',
         title: 'Unidade · UBS Conecta',
         loadComponent: () => import('./features/ubs/ubs-detail.page').then((m) => m.UbsDetailPage),
