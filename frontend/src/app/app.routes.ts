@@ -33,7 +33,7 @@ export const routes: Routes = [
       {
         path: 'mapa',
         title: 'Mapa · UBS Conecta',
-        loadComponent: () => import('./features/ubs/ubs-list.page').then((m) => m.UbsListPage),
+        loadComponent: () => import('./features/ubs/ubs-map.page').then((m) => m.UbsMapPage),
       },
       {
         path: 'lista',
