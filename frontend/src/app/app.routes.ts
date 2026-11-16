@@ -2,7 +2,40 @@ import { Routes } from '@angular/router';
 
 import { Shell } from './layout/shell';
 
+const emBreve = () => import('./features/em-breve/em-breve.page').then((m) => m.EmBrevePage);
+
 export const routes: Routes = [
+  {
+    // Área da farmácia (gestão), com menu próprio. TODO(L6): restringir ao papel GESTOR.
+    path: 'gestao',
+    loadComponent: () => import('./layout/gestao-shell').then((m) => m.GestaoShell),
+    children: [
+      {
+        path: '',
+        title: 'Painel da gestão · UBS Conecta',
+        loadComponent: () =>
+          import('./features/gestao/painel-gestao.page').then((m) => m.PainelGestaoPage),
+      },
+      {
+        path: 'estoque',
+        title: 'Estoque · Gestão · UBS Conecta',
+        data: { titulo: 'Estoque' },
+        loadComponent: emBreve,
+      },
+      {
+        path: 'remessas',
+        title: 'Remessas · Gestão · UBS Conecta',
+        data: { titulo: 'Remessas' },
+        loadComponent: emBreve,
+      },
+      {
+        path: 'demanda',
+        title: 'Demanda dos pacientes · Gestão · UBS Conecta',
+        data: { titulo: 'Demanda dos pacientes' },
+        loadComponent: emBreve,
+      },
+    ],
+  },
   {
     path: '',
     component: Shell,
