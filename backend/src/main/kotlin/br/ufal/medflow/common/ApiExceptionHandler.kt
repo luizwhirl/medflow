@@ -2,6 +2,7 @@ package br.ufal.medflow.common
 
 import br.ufal.medflow.auth.CredenciaisInvalidasException
 import br.ufal.medflow.auth.EmailJaCadastradoException
+import br.ufal.medflow.listadesejo.ItemListaDesejoDuplicadoException
 import org.springframework.http.HttpStatus
 import org.springframework.http.ProblemDetail
 import org.springframework.web.bind.annotation.ExceptionHandler
@@ -33,5 +34,11 @@ class ApiExceptionHandler {
     fun emailJaCadastrado(ex: EmailJaCadastradoException): ProblemDetail =
         ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.message ?: "E-mail já cadastrado").apply {
             title = "E-mail já cadastrado"
+        }
+
+    @ExceptionHandler(ItemListaDesejoDuplicadoException::class)
+    fun itemListaDesejoDuplicado(ex: ItemListaDesejoDuplicadoException): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.message ?: "Item já cadastrado").apply {
+            title = "Item já cadastrado"
         }
 }

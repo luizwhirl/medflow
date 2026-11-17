@@ -14,10 +14,14 @@ Base: `http://localhost:8080/api`. A documentação interativa fica em `/swagger
 | GET | `/medicamentos/{id}` | Detalhe de um medicamento |
 | GET | `/medicamentos/{id}/disponibilidade` | Unidades com o medicamento (disponíveis primeiro) |
 | GET | `/medicamentos/{id}/disponibilidade/resumo` | Total de unidades e unidades com estoque disponível, com filtro opcional por município |
+| GET | `/lista-desejos` | Lista os medicamentos desejados pelo cidadão autenticado |
+| POST | `/lista-desejos` | Adiciona um medicamento à lista de desejos |
+| PATCH | `/lista-desejos/{id}` | Ativa ou desativa a notificação de um item |
+| DELETE | `/lista-desejos/{id}` | Remove um item da lista de desejos |
 
 ## Autenticação
 
-A leitura de UBS e medicamentos (`GET /api/ubs/**` e `GET /api/medicamentos/**`), a saúde (`/actuator/health`) e a documentação (Swagger) são públicas. Todo o resto exige login, e o prefixo `/api/gestao` é só do papel `GESTOR`. Rota que não existe também responde `401` sem token.
+A leitura de UBS e medicamentos (`GET /api/ubs/**` e `GET /api/medicamentos/**`), a saúde (`/actuator/health`) e a documentação (Swagger) são públicas. Todo o resto exige login. O prefixo `/api/gestao` é só do papel `GESTOR`, enquanto `/api/lista-desejos` e suas subrotas são exclusivos do papel `CIDADAO`. Rota que não existe também responde `401` sem token.
 
 | Método | Rota | Quem | Descrição |
 | --- | --- | --- | --- |
@@ -38,7 +42,7 @@ Nas demais chamadas, envie `Authorization: Bearer <token>`. O token é um JWT as
 | Situação | Resposta |
 | --- | --- |
 | Sem token, token inválido, adulterado ou expirado | `401` com `title: "Não autenticado"` e cabeçalho `WWW-Authenticate` |
-| Papel sem permissão (cidadão em `/api/gestao`) | `403` com `title: "Acesso negado"` |
+| Papel sem permissão (cidadão em `/api/gestao` ou gestor em `/api/lista-desejos`) | `403` com `title: "Acesso negado"` |
 | Login com e-mail ou senha errados | `401` com `title: "Credenciais inválidas"` (a mesma resposta nos dois casos) |
 | Cadastro com e-mail que já existe (a caixa não importa) | `409` com `title: "E-mail já cadastrado"` |
 | Corpo inválido (campo vazio, e-mail ruim, senha curta) | `400` |
@@ -46,6 +50,118 @@ Nas demais chamadas, envie `Authorization: Bearer <token>`. O token é um JWT as
 Todos os erros seguem o padrão `application/problem+json`. O CORS libera o cabeçalho `Authorization` para as origens de `CORS_ALLOWED_ORIGINS`.
 
 No perfil `dev` existem duas contas de exemplo, com a senha `medflow-dev-123`: `rita@medflow.local` (cidadã) e `carlos@medflow.local` (gestor). Elas nunca são criadas em produção.
+
+## Lista de desejos
+
+A lista de desejos permite que um cidadão acompanhe medicamentos em uma UBS de referência e escolha se deseja receber avisos de disponibilidade.
+
+Todas as rotas exigem um JWT válido com o papel `CIDADAO`. O proprietário é identificado automaticamente pela claim `sub` do token; não é necessário informar o ID do usuário na requisição.
+
+### Listar desejos
+
+`GET /api/lista-desejos`
+
+Retorna os itens cadastrados pelo cidadão autenticado, ordenados do mais recente para o mais antigo.
+
+Exemplo de resposta (`200`):
+
+```json
+[
+  {
+    "id": 10,
+    "ubsId": 1,
+    "ubsNome": "UBS Centro",
+    "medicamentoId": 3,
+    "medicamentoNome": "Metformina",
+    "notificar": true,
+    "criadoEm": "2026-11-17T15:00:00Z"
+  }
+]
+```
+
+Se o cidadão não possuir itens, a resposta será uma lista vazia (`[]`).
+
+### Adicionar medicamento
+
+`POST /api/lista-desejos`
+
+Corpo da requisição:
+
+```json
+{
+  "ubsId": 1,
+  "medicamentoId": 3,
+  "notificar": true
+}
+```
+
+| Campo | Obrigatório | Regra |
+| --- | --- | --- |
+| `ubsId` | sim | ID positivo de uma UBS existente |
+| `medicamentoId` | sim | ID positivo de um medicamento existente |
+| `notificar` | não | `true` ou `false`; padrão `true` |
+
+A resposta retorna `201 Created` com os dados do item cadastrado, no mesmo formato apresentado na listagem.
+
+O mesmo cidadão não pode cadastrar duas vezes o mesmo medicamento para a mesma UBS. A unicidade é garantida pela constraint `uk_item_lista_desejo`, baseada em `(usuario_id, ubs_id, medicamento_id)`.
+
+Uma tentativa de cadastro duplicado retorna `409 Conflict` no padrão `application/problem+json`:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Item já cadastrado",
+  "status": 409,
+  "detail": "Medicamento já cadastrado na lista de desejos para esta UBS"
+}
+```
+
+Cidadãos diferentes podem adicionar o mesmo medicamento para a mesma UBS, pois cada lista pertence ao respectivo usuário.
+
+### Ativar ou desativar notificações
+
+`PATCH /api/lista-desejos/{id}`
+
+Corpo da requisição:
+
+```json
+{
+  "notificar": false
+}
+```
+
+O campo `notificar` é obrigatório e deve ser `true` ou `false`.
+
+A resposta retorna `200 OK` com os dados atualizados do item.
+
+Essa operação modifica apenas a preferência de notificação. O item permanece na lista de desejos.
+
+### Remover medicamento
+
+`DELETE /api/lista-desejos/{id}`
+
+Remove o item indicado da lista do cidadão autenticado.
+
+Em caso de sucesso, retorna `204 No Content`, sem corpo na resposta.
+
+### Segurança e tratamento de erros
+
+Cada cidadão pode listar, atualizar e remover somente os próprios itens.
+
+As consultas de propriedade são filtradas diretamente no banco de dados pelo ID do usuário autenticado. Se um cidadão tentar atualizar ou remover um item que pertence a outro usuário, a API retorna `404`, sem revelar os dados do proprietário.
+
+| Situação | Resposta |
+| --- | --- |
+| Requisição sem token ou com token inválido | `401 Unauthorized` |
+| Usuário com papel `GESTOR` | `403 Forbidden` |
+| IDs inválidos ou corpo inválido | `400 Bad Request` |
+| UBS ou medicamento inexistente no cadastro | `404 Not Found` |
+| Item inexistente ou pertencente a outro usuário no PATCH/DELETE | `404 Not Found` |
+| Medicamento já cadastrado para a mesma UBS e usuário | `409 Conflict` |
+
+Os erros de domínio utilizam o padrão RFC 9457 (`application/problem+json`).
+
+O campo `notificar` controla a preferência de aviso. O envio efetivo das notificações será implementado na F5.
 
 ## Filtro por categoria
 
