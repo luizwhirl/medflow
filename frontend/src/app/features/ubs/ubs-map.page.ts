@@ -1,19 +1,13 @@
 import { Component, computed, inject, linkedSignal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { catchError, forkJoin, map, of, switchMap } from 'rxjs';
+import { catchError, filter, forkJoin, map, Observable, of, switchMap } from 'rxjs';
 
-import {
-  Coordenadas,
-  distanciaKm,
-  formatarDistancia,
-  linkRota,
-  posicaoAtual,
-} from '../../core/geo';
+import { Coordenadas, formatarDistancia, linkRota, posicaoAtual } from '../../core/geo';
 import { Disponibilidade, statusExibido, temEstoque } from '../../core/models/estoque.model';
 import { Medicamento } from '../../core/models/medicamento.model';
 import { STATUS_LABEL, StatusEstoque } from '../../core/models/status-estoque';
-import { Ubs } from '../../core/models/ubs.model';
+import { Ubs, UbsProxima } from '../../core/models/ubs.model';
 import { MedicamentoService } from '../../core/services/medicamento.service';
 import { PreferenciasService } from '../../core/services/preferencias.service';
 import { UbsService } from '../../core/services/ubs.service';
@@ -248,14 +242,28 @@ export class UbsMapPage {
 
   protected readonly raioKm = signal<number | null>(6);
   protected readonly soComRemedios = signal(false);
-  protected readonly posicao = signal<Coordenadas | null>(null);
+  /** `undefined` enquanto o navegador não respondeu; `null` se a localização foi negada. */
+  private readonly localizacao = signal<Coordenadas | null | undefined>(undefined);
+  protected readonly posicao = computed(() => this.localizacao() ?? null);
   protected readonly meusIds = this.preferencias.remediosContinuos;
   /** 'meus' = remédios de uso contínuo; '' = nenhum; ou o id de um medicamento. */
   protected readonly escolha = linkedSignal(() => (this.meusIds().length ? 'meus' : ''));
 
-  private readonly unidades = toSignal(this.ubsService.listar().pipe(catchError(() => of([]))), {
-    initialValue: [] as Ubs[],
-  });
+  /**
+   * Com localização, a API devolve só as UBS do raio, já com a distância e em ordem; uma chamada
+   * por raio escolhido (sem raio, a API usa 20 km). Sem localização, todas as UBS por nome.
+   */
+  private readonly unidades = toSignal(
+    toObservable(computed(() => ({ pos: this.localizacao(), raio: this.raioKm() }))).pipe(
+      filter(({ pos }) => pos !== undefined),
+      switchMap(({ pos, raio }): Observable<(Ubs | UbsProxima)[]> =>
+        (pos ? this.ubsService.proximas(pos, { raioKm: raio }) : this.ubsService.listar()).pipe(
+          catchError(() => of([])),
+        ),
+      ),
+    ),
+    { initialValue: [] as (Ubs | UbsProxima)[] },
+  );
 
   protected readonly medicamentos = toSignal(
     this.medicamentoService.buscar().pipe(catchError(() => of([]))),
@@ -291,8 +299,6 @@ export class UbsMapPage {
   );
 
   protected readonly linhas = computed((): LinhaUbs[] => {
-    const pos = this.posicao();
-    const raio = this.raioKm();
     const escolhidos = this.escolhidos();
     const refId = this.preferencias.ubsReferenciaId();
     return this.unidades()
@@ -304,20 +310,14 @@ export class UbsMapPage {
         const disponiveis = itens.filter((i) => temEstoque(i.d)).length;
         return {
           ubs,
-          distancia: pos ? distanciaKm(pos, ubs) : null,
+          distancia: 'distanciaKm' in ubs ? ubs.distanciaKm : null,
           referencia: ubs.id === refId,
           itens,
           disponiveis,
           ...this.classificar(escolhidos.length, itens, disponiveis),
         };
       })
-      .filter((l) => l.distancia === null || raio === null || l.distancia <= raio)
       .filter((l) => !this.soComRemedios() || escolhidos.length === 0 || l.disponiveis > 0)
-      .sort((a, b) =>
-        a.distancia !== null && b.distancia !== null
-          ? a.distancia - b.distancia
-          : a.ubs.nome.localeCompare(b.ubs.nome),
-      )
       .map((l, i) => ({ ...l, numero: i + 1 }));
   });
 
@@ -345,7 +345,7 @@ export class UbsMapPage {
   );
 
   constructor() {
-    posicaoAtual().then((p) => this.posicao.set(p));
+    posicaoAtual().then((p) => this.localizacao.set(p));
   }
 
   protected definirReferencia(id: number): void {

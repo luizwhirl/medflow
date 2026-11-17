@@ -3,15 +3,10 @@ export interface Coordenadas {
   longitude: number;
 }
 
-/** Distância em km entre dois pontos (fórmula de Haversine). */
-export function distanciaKm(a: Coordenadas, b: Coordenadas): number {
-  const rad = (g: number) => (g * Math.PI) / 180;
-  const dLat = rad(b.latitude - a.latitude);
-  const dLng = rad(b.longitude - a.longitude);
-  const h =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(rad(a.latitude)) * Math.cos(rad(b.latitude)) * Math.sin(dLng / 2) ** 2;
-  return 2 * 6371 * Math.asin(Math.sqrt(h));
+/** Ordena por distância crescente; quem não tem distância (fora do raio da API) vai para o fim. */
+export function compararDistancia(a: number | null, b: number | null): number {
+  if (a === null || b === null) return a === b ? 0 : a === null ? 1 : -1;
+  return a - b;
 }
 
 /** Posição atual do navegador, ou `null` se negada/indisponível. */

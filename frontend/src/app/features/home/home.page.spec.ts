@@ -1,9 +1,9 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { TestBed } from '@angular/core/testing';
+import { TestBed, fakeAsync, flushMicrotasks } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 
-import { distanciaKm, formatarDistancia } from '../../core/geo';
+import { compararDistancia, formatarDistancia } from '../../core/geo';
 import { Medicamento } from '../../core/models/medicamento.model';
 import { Ubs } from '../../core/models/ubs.model';
 import { PreferenciasService } from '../../core/services/preferencias.service';
@@ -33,12 +33,9 @@ const metformina: Medicamento = {
   rename: true,
 };
 
-describe('distanciaKm', () => {
-  it('1 grau de latitude vale cerca de 111,19 km', () => {
-    expect(distanciaKm({ latitude: 0, longitude: 0 }, { latitude: 1, longitude: 0 })).toBeCloseTo(
-      111.19,
-      1,
-    );
+describe('compararDistancia', () => {
+  it('ordena da mais perto para a mais longe e deixa sem distância no fim', () => {
+    expect([3.2, null, 0.4, null, 1].sort(compararDistancia)).toEqual([0.4, 1, 3.2, null, null]);
   });
 });
 
@@ -131,4 +128,44 @@ describe('HomePage', () => {
     expect(continuos).toContain('Nenhuma UBS com estoque');
     http.verify();
   });
+
+  it('com localização, usa as distâncias da API na referência, em "Onde tem" e nas UBS próximas', fakeAsync(() => {
+    (navigator.geolocation.getCurrentPosition as jasmine.Spy).and.callFake((ok) =>
+      ok({ coords: { latitude: -9.6, longitude: -35.7 } } as GeolocationPosition),
+    );
+    const fixture = TestBed.createComponent(HomePage);
+    fixture.detectChanges();
+    flushMicrotasks();
+    fixture.detectChanges();
+
+    http.expectOne('/api/ubs').flush([ubs(1, 'UBS Centro'), ubs(2, 'UBS Clima Bom')]);
+    http.expectOne('/api/medicamentos/categorias').flush([]);
+    http.expectOne('/api/medicamentos/1').flush(metformina);
+    http.expectOne('/api/medicamentos/1/disponibilidade').flush([
+      { ubs: ubs(3, 'UBS Longe'), status: 'DISPONIVEL', quantidade: 4, atualizadoEm: '' },
+      { ubs: ubs(1, 'UBS Centro'), status: 'DISPONIVEL', quantidade: 10, atualizadoEm: '' },
+      { ubs: ubs(2, 'UBS Clima Bom'), status: 'EM_FALTA', quantidade: 0, atualizadoEm: '' },
+    ]);
+    // Todas as UBS têm a mesma coordenada: as distâncias só podem ter vindo da API.
+    http.expectOne('/api/ubs?lat=-9.6&lng=-35.7').flush([
+      { ...ubs(2, 'UBS Clima Bom'), distanciaKm: 0.8 },
+      { ...ubs(1, 'UBS Centro'), distanciaKm: 3.21 },
+    ]);
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    const texto = (id: string) =>
+      el.querySelector(`[aria-labelledby="${id}"]`)!.textContent!.replace(/\s+/g, ' ');
+    expect(texto('titulo-referencia')).toContain('~800 m de você');
+    expect(texto('titulo-continuos')).toContain('UBS Centro · 3,2 km');
+    const cartoes = Array.from(
+      el.querySelectorAll('[aria-labelledby="titulo-proximas"] a[href^="/ubs"]'),
+    );
+    expect(cartoes.map((a) => a.querySelector('h3')!.textContent!.trim())).toEqual([
+      'UBS Clima Bom',
+      'UBS Centro',
+    ]);
+    expect(cartoes[0].textContent).toContain('800 m');
+    http.verify();
+  }));
 });
