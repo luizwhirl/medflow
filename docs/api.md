@@ -43,7 +43,7 @@ Sem parâmetros, a rota lista as unidades por nome, como sempre. Com `lat` e `ln
 | --- | --- | --- |
 | `lat` | com `lng` | de -90 a 90 |
 | `lng` | com `lat` | de -180 a 180 |
-| `raioKm` | não | maior que zero; só entram unidades até essa distância. Sem ele, não há limite |
+| `raioKm` | não | maior que zero; só entram unidades até essa distância. Sem ele, usa 20 km |
 | `medicamentoId` | não | cada unidade que tem o item traz `status` e `quantidade`; as outras continuam na lista, sem esses campos |
 
 `raioKm` e `medicamentoId` exigem `lat` e `lng`. Parâmetro fora da regra, ou só um dos dois, retorna `400`; `medicamentoId` que não existe retorna `404`. Distâncias iguais desempatam pelo nome.
@@ -59,7 +59,7 @@ Sem parâmetros, a rota lista as unidades por nome, como sempre. Com `lat` e `ln
 ]
 ```
 
-Sem `raioKm`, a resposta traz todas as unidades do banco; a paginação virá com a PDS-22.
+Sem `raioKm` a busca usa 20 km, para não varrer todas as unidades do banco. A caixa de latitude/longitude (índice `idx_ubs_localizacao`) descarta as unidades distantes antes da conta de distância. Para raios grandes a resposta pode ser longa; a paginação virá com a PDS-22.
 
 ## Resumo do estoque da UBS
 

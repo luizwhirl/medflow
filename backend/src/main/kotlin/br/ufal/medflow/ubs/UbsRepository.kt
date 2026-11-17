@@ -7,9 +7,18 @@ import org.springframework.data.repository.query.Param
 interface UbsRepository : JpaRepository<Ubs, Long> {
     fun findAllByOrderByNomeAsc(): List<Ubs>
 
+    fun findByCnesIn(cnes: Collection<String>): List<Ubs>
+
+    fun countByCodigoIbgeMunicipio(ibge: String): Long
+
     /**
      * UBS da mais próxima para a mais distante, a partir de um ponto (fórmula de Haversine, em km, no banco).
-     * Se houver estoque do medicamento na unidade, traz o status e a quantidade; senão vêm nulos.
+     * Se houver estoque do medicamento na unidade, traz o status e a quantidade; senão vêm nulos
+     * (com [medicamentoId] nulo, o join não casa com nada).
+     *
+     * A caixa de latitude/longitude ([CaixaGeografica]) descarta as unidades distantes pela comparação simples,
+     * com apoio do índice `idx_ubs_localizacao`, antes da conta de distância.
+     *
      * Cada linha é `[Ubs, distanciaKm, status, quantidade]`. O ponto entra já em radianos (e o cosseno da
      * latitude), para a conta ficar só sobre as colunas.
      */
@@ -17,7 +26,9 @@ interface UbsRepository : JpaRepository<Ubs, Long> {
         """
         select u, $DISTANCIA_KM as distanciaKm, i.status, i.quantidade
         from Ubs u left join ItemEstoque i on i.ubs = u and i.medicamento.id = :medicamentoId
-        where $DISTANCIA_KM <= :raioKm
+        where u.latitude between :latMin and :latMax
+          and u.longitude between :lngMin and :lngMax
+          and $DISTANCIA_KM <= :raioKm
         order by distanciaKm, u.nome
         """,
     )
@@ -26,7 +37,11 @@ interface UbsRepository : JpaRepository<Ubs, Long> {
         @Param("lngRad") lngRad: Double,
         @Param("cosLat") cosLat: Double,
         @Param("raioKm") raioKm: Double,
-        @Param("medicamentoId") medicamentoId: Long,
+        @Param("latMin") latMin: Double,
+        @Param("latMax") latMax: Double,
+        @Param("lngMin") lngMin: Double,
+        @Param("lngMax") lngMax: Double,
+        @Param("medicamentoId") medicamentoId: Long?,
     ): List<Array<Any?>>
 
     companion object {
@@ -38,8 +53,4 @@ interface UbsRepository : JpaRepository<Ubs, Long> {
                 "power(sin((radians(u.latitude) - :latRad) / 2), 2) + " +
                 ":cosLat * cos(radians(u.latitude)) * power(sin((radians(u.longitude) - :lngRad) / 2), 2)))))"
     }
-
-    fun findByCnesIn(cnes: Collection<String>): List<Ubs>
-
-    fun countByCodigoIbgeMunicipio(ibge: String): Long
 }

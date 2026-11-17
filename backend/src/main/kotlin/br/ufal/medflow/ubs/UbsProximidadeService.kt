@@ -16,7 +16,7 @@ class UbsProximidadeService(
 ) {
 
     /**
-     * UBS ordenadas pela distância de ([lat], [lng]). [raioKm] limita a distância (sem ele, devolve todas).
+     * UBS ordenadas pela distância de ([lat], [lng]), até [raioKm] (sem ele, [RAIO_PADRAO_KM]).
      * Com [medicamentoId], cada UBS que tem o item vem com o status e a quantidade dele.
      *
      * @throws RecursoNaoEncontradoException se o medicamento não existir
@@ -26,13 +26,19 @@ class UbsProximidadeService(
             throw RecursoNaoEncontradoException("Medicamento", medicamentoId)
         }
 
+        val raio = raioKm ?: RAIO_PADRAO_KM
+        val caixa = CaixaGeografica.em(lat, lng, raio)
         val latRad = Math.toRadians(lat)
         val linhas = ubsRepository.buscarProximas(
             latRad = latRad,
             lngRad = Math.toRadians(lng),
             cosLat = cos(latRad),
-            raioKm = raioKm ?: SEM_LIMITE_KM,
-            medicamentoId = medicamentoId ?: SEM_MEDICAMENTO, // nenhum item tem esse id: o status vem nulo
+            raioKm = raio,
+            latMin = caixa.latMin,
+            latMax = caixa.latMax,
+            lngMin = caixa.lngMin,
+            lngMax = caixa.lngMax,
+            medicamentoId = medicamentoId,
         )
 
         return linhas.map { linha ->
@@ -44,9 +50,8 @@ class UbsProximidadeService(
         }
     }
 
-    private companion object {
-        /** Maior que metade da circunferência da Terra (20.015 km): equivale a não ter raio. */
-        const val SEM_LIMITE_KM = 20_100.0
-        const val SEM_MEDICAMENTO = -1L
+    companion object {
+        /** Raio usado quando o cliente não informa `raioKm`, para não varrer todas as UBS do banco. */
+        const val RAIO_PADRAO_KM = 20.0
     }
 }

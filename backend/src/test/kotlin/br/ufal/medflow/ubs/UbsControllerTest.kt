@@ -68,6 +68,7 @@ class UbsControllerTest(@Autowired private val mockMvc: MockMvc) {
         mockMvc.get("/api/ubs") { param("lat", "-9.5") }.andExpect {
             status { isBadRequest() }
             jsonPath("$.title") { value("Parâmetro inválido") }
+            jsonPath("$.detail") { value("Informe lat e lng juntos") }
         }
         mockMvc.get("/api/ubs") { param("lng", "-35.7") }.andExpect { status { isBadRequest() } }
 
