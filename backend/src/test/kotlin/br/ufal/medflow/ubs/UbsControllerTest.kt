@@ -9,9 +9,11 @@ import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
+import org.springframework.http.MediaType
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
+import java.util.Optional
 
 /** Testes da API de UBS, sem banco de dados. */
 @WebMvcTest(UbsController::class)
@@ -102,6 +104,35 @@ class UbsControllerTest(@Autowired private val mockMvc: MockMvc) {
     }
 
     @Test
+    fun `erro de bean validation segue RFC 9457`() {
+        mockMvc.get("/api/ubs") {
+            param("lat", "91")
+            param("lng", "0")
+        }.andExpect {
+            status { isBadRequest() }
+            content { contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON) }
+            jsonPath("$.status") { value(400) }
+            jsonPath("$.title") { exists() }
+        }
+
+        verifyNoInteractions(ubsProximidadeService)
+    }
+
+    @Test
+    fun `erro de conversao de status segue RFC 9457`() {
+        mockMvc.get("/api/ubs/1/estoque") {
+            param("status", "XYZ")
+        }.andExpect {
+            status { isBadRequest() }
+            content { contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON) }
+            jsonPath("$.status") { value(400) }
+            jsonPath("$.title") { exists() }
+        }
+
+        verifyNoInteractions(ubsEstoqueService)
+    }
+
+    @Test
     fun `coordenadas nos limites do intervalo sao aceitas`() {
         given(ubsProximidadeService.buscar(90.0, 180.0, null, null)).willReturn(emptyList())
 
@@ -121,6 +152,51 @@ class UbsControllerTest(@Autowired private val mockMvc: MockMvc) {
             param("lng", "0")
             param("medicamentoId", "99")
         }.andExpect { status { isNotFound() } }
+    }
+
+    @Test
+    fun `busca UBS existente por id`() {
+        val ubs = Ubs(
+            cnes = "9000101",
+            nome = "UBS Teste",
+            tipo = TipoUnidade.UBS,
+            bairro = "Centro",
+            endereco = "Rua A, 1",
+            codigoIbgeMunicipio = "2704302",
+            latitude = -9.5,
+            longitude = -35.7,
+            id = 1L,
+        )
+
+        given(ubsRepository.findById(1L)).willReturn(Optional.of(ubs))
+
+        mockMvc.get("/api/ubs/1").andExpect {
+            status { isOk() }
+            jsonPath("$.id") { value(1) }
+            jsonPath("$.cnes") { value("9000101") }
+            jsonPath("$.nome") { value("UBS Teste") }
+            jsonPath("$.tipo") { value("UBS") }
+            jsonPath("$.bairro") { value("Centro") }
+            jsonPath("$.endereco") { value("Rua A, 1") }
+            jsonPath("$.latitude") { value(-9.5) }
+            jsonPath("$.longitude") { value(-35.7) }
+        }
+
+        verify(ubsRepository).findById(1L)
+    }
+
+    @Test
+    fun `busca UBS inexistente retorna 404`() {
+        given(ubsRepository.findById(999L)).willReturn(Optional.empty())
+
+        mockMvc.get("/api/ubs/999").andExpect {
+            status { isNotFound() }
+            content { contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON) }
+            jsonPath("$.status") { value(404) }
+            jsonPath("$.title") { value("Recurso não encontrado") }
+        }
+
+        verify(ubsRepository).findById(999L)
     }
 
     @Test
@@ -214,6 +290,21 @@ class UbsControllerTest(@Autowired private val mockMvc: MockMvc) {
             status { isNotFound() }
             jsonPath("$.title") { value("Recurso não encontrado") }
         }
+    }
+
+    @Test
+    fun `resumo de estoque de UBS inexistente retorna 404`() {
+        given(ubsEstoqueService.obterResumo(999L, null))
+            .willThrow(RecursoNaoEncontradoException("UBS", 999L))
+
+        mockMvc.get("/api/ubs/999/estoque/resumo").andExpect {
+            status { isNotFound() }
+            content { contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON) }
+            jsonPath("$.status") { value(404) }
+            jsonPath("$.title") { value("Recurso não encontrado") }
+        }
+
+        verify(ubsEstoqueService).obterResumo(999L, null)
     }
 
     @Test

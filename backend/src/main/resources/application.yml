@@ -3,6 +3,9 @@ spring:
     name: medflow-api
   profiles:
     default: dev
+  mvc:
+    problemdetails:
+      enabled: true
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/medflow}
     username: ${DB_USER:medflow}
