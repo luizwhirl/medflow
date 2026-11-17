@@ -1,5 +1,6 @@
 package br.ufal.medflow.ubs
 
+import br.ufal.medflow.auth.SecurityConfig
 import br.ufal.medflow.common.RecursoNaoEncontradoException
 import br.ufal.medflow.estoque.ResumoEstoqueUbsResponse
 import br.ufal.medflow.estoque.StatusEstoque
@@ -10,6 +11,7 @@ import org.mockito.Mockito.verifyNoInteractions
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
 import org.springframework.http.MediaType
+import org.springframework.context.annotation.Import
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
@@ -17,6 +19,7 @@ import java.util.Optional
 
 /** Testes da API de UBS, sem banco de dados. */
 @WebMvcTest(UbsController::class)
+@Import(SecurityConfig::class) // a segurança real: leitura pública, como em produção
 class UbsControllerTest(@Autowired private val mockMvc: MockMvc) {
 
     @MockitoBean

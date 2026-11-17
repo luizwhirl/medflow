@@ -44,7 +44,9 @@ No Windows use `gradlew.bat` (ou `./gradlew` no Git Bash).
 Perfis:
 
 - `dev` (padrão): carrega `db/migration` + `db/seed` (dados fictícios), log DEBUG.
-- `prod`: só `db/migration`, Swagger desligado. Ative com `SPRING_PROFILES_ACTIVE=prod`.
+- `prod`: só `db/migration`, Swagger desligado. Ative com `SPRING_PROFILES_ACTIVE=prod` (é o padrão da imagem Docker do backend; o `docker-compose.yml` troca para `dev`). **Exige `JWT_SECRET`** (pelo menos 32 caracteres); sem ele a aplicação não sobe.
+
+Contas de exemplo no perfil `dev` (senha `medflow-dev-123`): `rita@medflow.local` (cidadã) e `carlos@medflow.local` (gestor). Veja [api.md](api.md#autenticação).
 
 ## 4. Frontend
 
