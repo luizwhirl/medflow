@@ -2,7 +2,7 @@
 
 ## Fluxo de trabalho
 
-1. Crie uma branch a partir da `main` atualizada:
+1. Crie uma branch a partir da `develop` atualizada:
    - `feat/<descricao>` para funcionalidade
    - `fix/<descricao>` para correção
    - `docs/<descricao>`, `chore/<descricao>`, `refactor/<descricao>`
