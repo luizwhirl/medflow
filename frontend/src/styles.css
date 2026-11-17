@@ -19,6 +19,13 @@
   --color-content-muted: #475569;
   --color-content-subtle: #94a3b8;
   --color-outline: #e2e8f0;
+  --color-outline-strong: #cbd5e1;
+  --color-surface-muted: #f8fafc;
+
+  /* Menu escuro da área de gestão (farmácia). */
+  --color-sidebar: #0f172a;
+  --color-sidebar-ativo: #1e293b;
+  --color-sidebar-texto: #cbd5e1;
 
   --color-brand-50: #f0fdfa;
   --color-brand-100: #ccfbf1;
@@ -32,6 +39,9 @@
   --color-status-reservado-subtle: #fef3c7;
   --color-status-falta: #b91c1c;
   --color-status-falta-subtle: #fee2e2;
+  /* Alerta de gestão (abaixo do mínimo): âmbar mais escuro que o "reservado". */
+  --color-status-alerta: #92400e;
+  --color-status-alerta-subtle: #fef3c7;
   --color-status-info: #1d4ed8;
   --color-status-info-subtle: #dbeafe;
 
