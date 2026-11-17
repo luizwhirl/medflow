@@ -15,6 +15,38 @@ Base: `http://localhost:8080/api`. A documentação interativa fica em `/swagger
 | GET | `/medicamentos/{id}/disponibilidade` | Unidades com o medicamento (disponíveis primeiro) |
 | GET | `/medicamentos/{id}/disponibilidade/resumo` | Total de unidades e unidades com estoque disponível, com filtro opcional por município |
 
+## Autenticação
+
+A leitura de UBS e medicamentos (`GET /api/ubs/**` e `GET /api/medicamentos/**`), a saúde (`/actuator/health`) e a documentação (Swagger) são públicas. Todo o resto exige login, e o prefixo `/api/gestao` é só do papel `GESTOR`. Rota que não existe também responde `401` sem token.
+
+| Método | Rota | Quem | Descrição |
+| --- | --- | --- | --- |
+| POST | `/api/auth/login` | público | E-mail e senha, devolve o token |
+| POST | `/api/auth/cadastro` | público | Cria uma conta de **cidadão** |
+| GET | `/api/auth/eu` | logado | Dados da conta do token |
+
+`POST /api/auth/login` com `{"email": "rita@medflow.local", "senha": "..."}`:
+
+```json
+{ "token": "eyJhbGciOiJIUzI1NiJ9...", "tipo": "Bearer", "expiraEmSegundos": 28800, "papel": "CIDADAO" }
+```
+
+Nas demais chamadas, envie `Authorization: Bearer <token>`. O token é um JWT assinado com HS256, vale 8 horas (`JWT_EXPIRACAO`) e leva o id da conta (`sub`), o `email` e o `papel` (`CIDADAO` ou `GESTOR`).
+
+`POST /api/auth/cadastro` com `{"nome": "...", "email": "...", "senha": "..."}` (senha de 8 a 72 caracteres) devolve `201` com `id`, `nome`, `email` e `papel`. O papel **não** pode ser escolhido: toda conta criada por aqui é `CIDADAO`. Conta de `GESTOR` só é criada direto no banco, com a senha em BCrypt.
+
+| Situação | Resposta |
+| --- | --- |
+| Sem token, token inválido, adulterado ou expirado | `401` com `title: "Não autenticado"` e cabeçalho `WWW-Authenticate` |
+| Papel sem permissão (cidadão em `/api/gestao`) | `403` com `title: "Acesso negado"` |
+| Login com e-mail ou senha errados | `401` com `title: "Credenciais inválidas"` (a mesma resposta nos dois casos) |
+| Cadastro com e-mail que já existe (a caixa não importa) | `409` com `title: "E-mail já cadastrado"` |
+| Corpo inválido (campo vazio, e-mail ruim, senha curta) | `400` |
+
+Todos os erros seguem o padrão `application/problem+json`. O CORS libera o cabeçalho `Authorization` para as origens de `CORS_ALLOWED_ORIGINS`.
+
+No perfil `dev` existem duas contas de exemplo, com a senha `medflow-dev-123`: `rita@medflow.local` (cidadã) e `carlos@medflow.local` (gestor). Elas nunca são criadas em produção.
+
 ## Filtro por categoria
 
 Filtrar medicamentos pela categoria:
