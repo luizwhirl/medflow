@@ -4,11 +4,11 @@ import { TestBed, fakeAsync, flushMicrotasks } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 
 import { Medicamento } from '../../core/models/medicamento.model';
-import { Ubs } from '../../core/models/ubs.model';
+import { UbsProxima } from '../../core/models/ubs.model';
 import { UbsMapPage } from './ubs-map.page';
 
-/** UBS a `km` quilômetros ao norte da origem (1° de latitude ≈ 111,19 km). */
-const ubs = (id: number, nome: string, km: number): Ubs => ({
+/** UBS como a busca por proximidade devolve, a `km` quilômetros da origem. */
+const ubs = (id: number, nome: string, km: number): UbsProxima => ({
   id,
   cnes: `${id}`,
   nome,
@@ -20,20 +20,26 @@ const ubs = (id: number, nome: string, km: number): Ubs => ({
   latitude: km / 111.19,
   longitude: 0,
   ultimaSincronizacao: null,
+  distanciaKm: km,
 });
+
+/** Busca por proximidade a partir da posição dos testes (0, 0). */
+const proximas = (raioKm: number) => `/api/ubs?lat=0&lng=0&raioKm=${raioKm}`;
 
 const med = (id: number, nome: string) => ({ id, nome, concentracao: '' }) as Medicamento;
 
 describe('UbsMapPage', () => {
   let http: HttpTestingController;
 
-  function preparar(remediosContinuos: number[]) {
+  function preparar(remediosContinuos: number[], localizacao = true) {
     localStorage.setItem(
       'medflow.preferencias',
       JSON.stringify({ ubsReferenciaId: 2, remediosContinuos, buscasRecentes: [] }),
     );
-    spyOn(navigator.geolocation, 'getCurrentPosition').and.callFake((ok) =>
-      ok({ coords: { latitude: 0, longitude: 0 } } as GeolocationPosition),
+    spyOn(navigator.geolocation, 'getCurrentPosition').and.callFake((ok, erro) =>
+      localizacao
+        ? ok({ coords: { latitude: 0, longitude: 0 } } as GeolocationPosition)
+        : erro!({ code: 1 } as GeolocationPositionError),
     );
     TestBed.configureTestingModule({
       providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
@@ -51,26 +57,66 @@ describe('UbsMapPage', () => {
     );
   }
 
-  it('numera as UBS dentro do raio, da mais próxima para a mais distante', fakeAsync(() => {
+  it('pede à API as UBS do raio e numera na ordem e com a distância que ela devolve', fakeAsync(() => {
     preparar([]);
     const fixture = TestBed.createComponent(UbsMapPage);
     fixture.detectChanges();
     flushMicrotasks();
-    http
-      .expectOne('/api/ubs')
-      .flush([ubs(1, 'Longe', 8), ubs(2, 'Perto', 0.5), ubs(3, 'Meio', 2.5)]);
+    fixture.detectChanges();
+    http.expectOne(proximas(6)).flush([ubs(2, 'Perto', 0.5), ubs(3, 'Meio', 2.46)]);
     http.expectOne('/api/medicamentos').flush([]);
     fixture.detectChanges();
 
     const el = fixture.nativeElement as HTMLElement;
-    expect(linhas(el)).toEqual(['1 Perto 500 m · Sua UBS', '2 Meio 2,5 km · Centro']); // 6 km
+    expect(linhas(el)).toEqual(['1 Perto 500 m · Sua UBS', '2 Meio 2,5 km · Centro']);
 
     const umKm = Array.from(el.querySelectorAll('app-chip button')).find(
       (b) => b.textContent!.trim() === '1 km',
     ) as HTMLButtonElement;
     umKm.click();
     fixture.detectChanges();
-    expect(linhas(el).length).toBe(1);
+    http.expectOne(proximas(1)).flush([ubs(2, 'Perto', 0.5)]);
+    fixture.detectChanges();
+    expect(linhas(el)).toEqual(['1 Perto 500 m · Sua UBS']);
+    http.verify();
+  }));
+
+  it('sem raio escolhido, deixa a API usar o raio padrão', fakeAsync(() => {
+    preparar([]);
+    const fixture = TestBed.createComponent(UbsMapPage);
+    fixture.detectChanges();
+    flushMicrotasks();
+    fixture.detectChanges();
+    http.expectOne(proximas(6)).flush([ubs(2, 'Perto', 0.5)]);
+    http.expectOne('/api/medicamentos').flush([]);
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    const seisKm = Array.from(el.querySelectorAll('app-chip button')).find(
+      (b) => b.textContent!.trim() === '6 km',
+    ) as HTMLButtonElement;
+    seisKm.click();
+    fixture.detectChanges();
+    http.expectOne('/api/ubs?lat=0&lng=0').flush([ubs(2, 'Perto', 0.5), ubs(9, 'Longe', 15)]);
+    fixture.detectChanges();
+    expect(linhas(el)).toEqual(['1 Perto 500 m · Sua UBS', '2 Longe 15,0 km · Centro']);
+    http.verify();
+  }));
+
+  it('sem localização, lista todas as UBS por nome e sem distância', fakeAsync(() => {
+    preparar([], false);
+    const fixture = TestBed.createComponent(UbsMapPage);
+    fixture.detectChanges();
+    flushMicrotasks();
+    fixture.detectChanges();
+    const { distanciaKm: _a, ...centro } = ubs(1, 'Centro', 0);
+    const { distanciaKm: _b, ...perto } = ubs(2, 'Perto', 0);
+    http.expectOne('/api/ubs').flush([centro, perto]);
+    http.expectOne('/api/medicamentos').flush([]);
+    fixture.detectChanges();
+
+    expect(linhas(fixture.nativeElement)).toEqual(['1 Centro Centro', '2 Perto Sua UBS']);
+    http.verify();
   }));
 
   it('resume quantos dos meus remédios cada UBS tem e detalha a selecionada', fakeAsync(() => {
@@ -78,7 +124,8 @@ describe('UbsMapPage', () => {
     const fixture = TestBed.createComponent(UbsMapPage);
     fixture.detectChanges();
     flushMicrotasks();
-    http.expectOne('/api/ubs').flush([ubs(2, 'Perto', 0.5), ubs(3, 'Meio', 2.5)]);
+    fixture.detectChanges();
+    http.expectOne(proximas(6)).flush([ubs(2, 'Perto', 0.5), ubs(3, 'Meio', 2.5)]);
     http.expectOne('/api/medicamentos').flush([]);
     http.expectOne('/api/medicamentos/1').flush(med(1, 'Metformina'));
     http.expectOne('/api/medicamentos/1/disponibilidade').flush([
@@ -111,7 +158,8 @@ describe('UbsMapPage', () => {
     const fixture = TestBed.createComponent(UbsMapPage);
     fixture.detectChanges();
     flushMicrotasks();
-    http.expectOne('/api/ubs').flush([ubs(2, 'Perto', 0.5), ubs(3, 'Meio', 2.5)]);
+    fixture.detectChanges();
+    http.expectOne(proximas(6)).flush([ubs(2, 'Perto', 0.5), ubs(3, 'Meio', 2.5)]);
     http.expectOne('/api/medicamentos').flush([]);
     http.expectOne('/api/medicamentos/1').flush(med(1, 'Metformina'));
     http

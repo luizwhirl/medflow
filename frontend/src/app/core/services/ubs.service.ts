@@ -1,10 +1,11 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 
 import { environment } from '../../../environments/environment';
+import { Coordenadas } from '../geo';
 import { ItemEstoque } from '../models/estoque.model';
-import { Ubs } from '../models/ubs.model';
+import { Ubs, UbsProxima } from '../models/ubs.model';
 
 @Injectable({ providedIn: 'root' })
 export class UbsService {
@@ -13,6 +14,20 @@ export class UbsService {
 
   listar(): Observable<Ubs[]> {
     return this.http.get<Ubs[]>(this.baseUrl);
+  }
+
+  /**
+   * UBS a até `raioKm` de `origem`, da mais próxima para a mais distante (sem `raioKm`, a API usa
+   * 20 km). Com `medicamentoId`, as unidades que têm o item trazem `status` e `quantidade`.
+   */
+  proximas(
+    origem: Coordenadas,
+    filtro: { raioKm?: number | null; medicamentoId?: number } = {},
+  ): Observable<UbsProxima[]> {
+    let params = new HttpParams().set('lat', origem.latitude).set('lng', origem.longitude);
+    if (filtro.raioKm != null) params = params.set('raioKm', filtro.raioKm);
+    if (filtro.medicamentoId != null) params = params.set('medicamentoId', filtro.medicamentoId);
+    return this.http.get<UbsProxima[]>(this.baseUrl, { params });
   }
 
   buscarPorId(id: number): Observable<Ubs> {

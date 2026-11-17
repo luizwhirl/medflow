@@ -4,8 +4,8 @@ import { RouterLink } from '@angular/router';
 import { catchError, forkJoin, map, of, startWith, switchMap } from 'rxjs';
 
 import {
+  compararDistancia,
   Coordenadas,
-  distanciaKm,
   formatarDistancia,
   linkRota,
   posicaoAtual,
@@ -14,6 +14,7 @@ import { Disponibilidade, statusExibido, temEstoque } from '../../core/models/es
 import { Medicamento } from '../../core/models/medicamento.model';
 import { MedicamentoService } from '../../core/services/medicamento.service';
 import { PreferenciasService } from '../../core/services/preferencias.service';
+import { UbsService } from '../../core/services/ubs.service';
 import { Button } from '../../shared/components/button';
 import { MapaIlustrado } from '../../shared/components/mapa-ilustrado';
 import { EtapaTimeline, Timeline } from '../../shared/components/timeline';
@@ -215,6 +216,7 @@ const ORDEM = { DISPONIVEL: 0, RESERVADO: 1, EM_FALTA: 2 } as const;
 })
 export class RastreioMedicamento {
   private readonly medicamentoService = inject(MedicamentoService);
+  private readonly ubsService = inject(UbsService);
   protected readonly preferencias = inject(PreferenciasService);
 
   readonly id = input.required<number>();
@@ -249,20 +251,37 @@ export class RastreioMedicamento {
     { initialValue: { carregando: true } as Estado },
   );
 
+  /** Distância (km) da API, por id de UBS, das unidades no raio padrão que têm o item. */
+  private readonly distancias = toSignal(
+    toObservable(computed(() => ({ id: this.id(), pos: this.posicao() }))).pipe(
+      switchMap(({ id, pos }) =>
+        pos
+          ? this.ubsService.proximas(pos, { medicamentoId: id }).pipe(
+              map((ubs) => new Map(ubs.map((u) => [u.id, u.distanciaKm]))),
+              catchError(() => of(new Map<number, number>())),
+            )
+          : of(new Map<number, number>()),
+      ),
+    ),
+    { initialValue: new Map<number, number>() },
+  );
+
   /** Unidades com o item: disponíveis primeiro, depois pela distância. */
   protected readonly unidades = computed(() => {
     const e = this.estado();
     if (e.carregando) return [];
-    const pos = this.posicao();
+    const distancias = this.distancias();
     const ref = this.preferencias.ubsReferenciaId();
     return e.disponibilidade
       .map((d) => ({
         d,
         status: statusExibido(d),
-        distancia: pos ? distanciaKm(pos, d.ubs) : null,
+        distancia: distancias.get(d.ubs.id) ?? null,
         referencia: d.ubs.id === ref,
       }))
-      .sort((a, b) => ORDEM[a.status] - ORDEM[b.status] || (a.distancia ?? 0) - (b.distancia ?? 0));
+      .sort(
+        (a, b) => ORDEM[a.status] - ORDEM[b.status] || compararDistancia(a.distancia, b.distancia),
+      );
   });
 
   /** Alerta quando o item está em falta na UBS de referência. */

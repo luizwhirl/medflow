@@ -5,8 +5,8 @@ import { Router, RouterLink } from '@angular/router';
 import { catchError, forkJoin, map, of, switchMap } from 'rxjs';
 
 import {
+  compararDistancia,
   Coordenadas,
-  distanciaKm,
   formatarDistancia,
   linkRota,
   posicaoAtual,
@@ -14,7 +14,7 @@ import {
 import { Disponibilidade, statusExibido, temEstoque } from '../../core/models/estoque.model';
 import { Medicamento } from '../../core/models/medicamento.model';
 import { StatusEstoque } from '../../core/models/status-estoque';
-import { Ubs } from '../../core/models/ubs.model';
+import { Ubs, UbsProxima } from '../../core/models/ubs.model';
 import { MedicamentoService } from '../../core/services/medicamento.service';
 import { PreferenciasService } from '../../core/services/preferencias.service';
 import { UbsService } from '../../core/services/ubs.service';
@@ -389,6 +389,21 @@ export class HomePage {
     initialValue: [] as Ubs[],
   });
 
+  /** UBS do raio padrão da API, da mais próxima para a mais distante, com a distância. */
+  private readonly perto = toSignal(
+    toObservable(this.posicao).pipe(
+      switchMap((pos) =>
+        pos ? this.ubsService.proximas(pos).pipe(catchError(() => of([]))) : of([]),
+      ),
+    ),
+    { initialValue: [] as UbsProxima[] },
+  );
+
+  /** Distância (km) da API por id de UBS; fica sem distância quem está fora do raio. */
+  private readonly distancias = computed(
+    () => new Map(this.perto().map((u) => [u.id, u.distanciaKm])),
+  );
+
   protected readonly categorias = toSignal(
     this.medicamentoService.categorias().pipe(catchError(() => of([]))),
     { initialValue: [] as string[] },
@@ -399,9 +414,8 @@ export class HomePage {
   );
 
   protected readonly distanciaReferencia = computed(() => {
-    const pos = this.posicao();
     const u = this.ubsReferencia();
-    return pos && u ? distanciaKm(pos, u) : null;
+    return u ? (this.distancias().get(u.id) ?? null) : null;
   });
 
   private readonly carregados = toSignal(
@@ -424,13 +438,13 @@ export class HomePage {
 
   protected readonly remedios = computed((): Remedio[] => {
     const refId = this.preferencias.ubsReferenciaId();
-    const pos = this.posicao();
+    const distancias = this.distancias();
     return this.carregados().map(({ medicamento, disponibilidade }) => {
       const naReferencia = disponibilidade.find((d) => d.ubs.id === refId) ?? null;
       const candidatas = disponibilidade
         .filter((d) => temEstoque(d) && d.ubs.id !== refId)
-        .map((d) => ({ ubs: d.ubs, distancia: pos ? distanciaKm(pos, d.ubs) : null }))
-        .sort((a, b) => (a.distancia ?? 0) - (b.distancia ?? 0));
+        .map((d) => ({ ubs: d.ubs, distancia: distancias.get(d.ubs.id) ?? null }))
+        .sort((a, b) => compararDistancia(a.distancia, b.distancia));
       return {
         medicamento,
         disponibilidade,
@@ -441,18 +455,17 @@ export class HomePage {
     });
   });
 
+  /** Com localização, as três mais próximas segundo a API; sem ela, as três primeiras por nome. */
   protected readonly proximas = computed(() => {
-    const pos = this.posicao();
     const remedios = this.remedios();
-    const lista = this.unidades().map((ubs) => ({
+    const base: (Ubs | UbsProxima)[] = this.posicao() ? this.perto() : this.unidades();
+    return base.slice(0, 3).map((ubs) => ({
       ubs,
-      distancia: pos ? distanciaKm(pos, ubs) : null,
+      distancia: 'distanciaKm' in ubs ? ubs.distanciaKm : null,
       disponiveis: remedios.filter((r) =>
         r.disponibilidade.some((d) => d.ubs.id === ubs.id && temEstoque(d)),
       ).length,
     }));
-    if (pos) lista.sort((a, b) => a.distancia! - b.distancia!);
-    return lista.slice(0, 3);
   });
 
   constructor() {

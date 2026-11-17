@@ -4,7 +4,7 @@ import { TestBed, fakeAsync, flushMicrotasks, tick } from '@angular/core/testing
 import { provideRouter } from '@angular/router';
 
 import { Medicamento } from '../../core/models/medicamento.model';
-import { Ubs } from '../../core/models/ubs.model';
+import { Ubs, UbsProxima } from '../../core/models/ubs.model';
 import { Timeline } from '../../shared/components/timeline';
 import { MedicamentoSearchPage } from './medicamento-search.page';
 
@@ -18,9 +18,12 @@ const metformina: Medicamento = {
   rename: true,
 };
 
-/** UBS a `km` quilômetros ao norte da origem (1° de latitude ≈ 111,19 km). */
+/**
+ * UBS todas no mesmo ponto da origem: distância e raio só podem vir da API de proximidade.
+ * `km` é a distância que a API devolve para ela.
+ */
 const ubs = (id: number, nome: string, km: number) =>
-  ({ id, nome, bairro: 'Centro', latitude: km / 111.19, longitude: 0 }) as Ubs;
+  ({ id, nome, bairro: 'Centro', latitude: 0, longitude: 0, distanciaKm: km }) as Ubs & UbsProxima;
 
 describe('Timeline', () => {
   it('marca como concluídas as etapas até a atual e destaca a seguinte', () => {
@@ -63,11 +66,13 @@ describe('MedicamentoSearchPage', () => {
     );
   }
 
-  it('conta só as UBS até 5 km e respeita "Só disponíveis"', fakeAsync(() => {
+  it('conta só as UBS que a API devolve a até 5 km e respeita "Só disponíveis"', fakeAsync(() => {
     const fixture = TestBed.createComponent(MedicamentoSearchPage);
     fixture.detectChanges();
     flushMicrotasks();
+    fixture.detectChanges();
     http.expectOne('/api/medicamentos/categorias').flush([]);
+    http.expectOne('/api/ubs?lat=0&lng=0&raioKm=5').flush([ubs(1, 'Perto', 1), ubs(2, 'Meio', 3)]);
     tick(250);
     http
       .expectOne('/api/medicamentos')
@@ -97,11 +102,40 @@ describe('MedicamentoSearchPage', () => {
     http.verify();
   }));
 
+  it('desligar "Até 5 km" conta todas as UBS sem nova chamada', fakeAsync(() => {
+    const fixture = TestBed.createComponent(MedicamentoSearchPage);
+    fixture.detectChanges();
+    flushMicrotasks();
+    fixture.detectChanges();
+    http.expectOne('/api/medicamentos/categorias').flush([]);
+    http.expectOne('/api/ubs?lat=0&lng=0&raioKm=5').flush([ubs(1, 'Perto', 1)]);
+    tick(250);
+    http.expectOne('/api/medicamentos').flush([metformina]);
+    http.expectOne('/api/medicamentos/1/disponibilidade').flush([
+      { ubs: ubs(1, 'Perto', 1), status: 'DISPONIVEL', quantidade: 9, atualizadoEm: '' },
+      { ubs: ubs(3, 'Longe', 9), status: 'DISPONIVEL', quantidade: 9, atualizadoEm: '' },
+    ]);
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(resultados(el)).toEqual(['Metformina 850 mg comprimido Em 1 de 1 UBS próximas']);
+
+    const ateCinco = Array.from(el.querySelectorAll('app-chip button')).find((b) =>
+      b.textContent!.includes('5 km'),
+    ) as HTMLButtonElement;
+    ateCinco.click();
+    fixture.detectChanges();
+    expect(resultados(el)[0]).toContain('2 de 2');
+    http.verify();
+  }));
+
   it('filtra pela categoria escolhida no chip', fakeAsync(() => {
     const fixture = TestBed.createComponent(MedicamentoSearchPage);
     fixture.detectChanges();
     flushMicrotasks();
+    fixture.detectChanges();
     http.expectOne('/api/medicamentos/categorias').flush(['Diabetes']);
+    http.expectOne('/api/ubs?lat=0&lng=0&raioKm=5').flush([]);
     tick(250);
     http.expectOne('/api/medicamentos').flush([]);
     fixture.detectChanges();
@@ -124,6 +158,7 @@ describe('MedicamentoSearchPage', () => {
     fixture.componentRef.setInput('id', '1');
     fixture.detectChanges();
     flushMicrotasks();
+    fixture.detectChanges();
     http.expectOne('/api/medicamentos/categorias').flush([]);
     http.expectOne('/api/medicamentos/1').flush(metformina);
     http.expectOne('/api/medicamentos/1/disponibilidade').flush([
@@ -140,6 +175,12 @@ describe('MedicamentoSearchPage', () => {
         atualizadoEm: '',
       },
     ]);
+    http
+      .expectOne('/api/ubs?lat=0&lng=0&raioKm=5')
+      .flush([ubs(1, 'UBS Benedito Bentes I', 0.26), ubs(3, 'UBS Clima Bom', 2.4)]);
+    http
+      .expectOne('/api/ubs?lat=0&lng=0&medicamentoId=1')
+      .flush([ubs(1, 'UBS Benedito Bentes I', 0.26), ubs(3, 'UBS Clima Bom', 2.4)]);
     tick(250);
     http.expectOne('/api/medicamentos').flush([]);
     fixture.detectChanges();
@@ -160,6 +201,7 @@ describe('MedicamentoSearchPage', () => {
     fixture.componentRef.setInput('id', '1');
     fixture.detectChanges();
     flushMicrotasks();
+    fixture.detectChanges();
     http.expectOne('/api/medicamentos/categorias').flush([]);
     http.expectOne('/api/medicamentos/1').flush(metformina);
     http.expectOne('/api/medicamentos/1/disponibilidade').flush([
@@ -170,6 +212,12 @@ describe('MedicamentoSearchPage', () => {
         atualizadoEm: '',
       },
     ]);
+    http
+      .expectOne('/api/ubs?lat=0&lng=0&raioKm=5')
+      .flush([ubs(1, 'UBS Benedito Bentes I', 0.26), ubs(3, 'UBS Clima Bom', 2.4)]);
+    http
+      .expectOne('/api/ubs?lat=0&lng=0&medicamentoId=1')
+      .flush([ubs(1, 'UBS Benedito Bentes I', 0.26), ubs(3, 'UBS Clima Bom', 2.4)]);
     tick(250);
     http.expectOne('/api/medicamentos').flush([]);
     fixture.detectChanges();

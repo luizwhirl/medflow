@@ -3,12 +3,12 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import { catchError, debounceTime, distinctUntilChanged, forkJoin, map, of, switchMap } from 'rxjs';
 
-import { Coordenadas, distanciaKm, posicaoAtual } from '../../core/geo';
+import { Coordenadas, posicaoAtual } from '../../core/geo';
 import { Disponibilidade, temEstoque } from '../../core/models/estoque.model';
 import { Medicamento } from '../../core/models/medicamento.model';
-import { Ubs } from '../../core/models/ubs.model';
 import { MedicamentoService } from '../../core/services/medicamento.service';
 import { PreferenciasService } from '../../core/services/preferencias.service';
+import { UbsService } from '../../core/services/ubs.service';
 import { Chip } from '../../shared/components/chip';
 import { SearchField } from '../../shared/components/search-field';
 import { RastreioMedicamento } from './rastreio-medicamento';
@@ -145,6 +145,7 @@ interface Resultado {
 })
 export class MedicamentoSearchPage {
   private readonly medicamentoService = inject(MedicamentoService);
+  private readonly ubsService = inject(UbsService);
   private readonly router = inject(Router);
   protected readonly preferencias = inject(PreferenciasService);
 
@@ -161,6 +162,24 @@ export class MedicamentoSearchPage {
   protected readonly posicao = signal<Coordenadas | null>(null);
 
   protected readonly raioAtivo = computed(() => this.ateCincoKm() && this.posicao() !== null);
+
+  /**
+   * Ids das UBS a até 5 km, segundo a API (uma chamada ao ligar o filtro);
+   * `null` com o filtro desligado ou sem localização.
+   */
+  private readonly idsNoRaio = toSignal(
+    toObservable(computed(() => (this.raioAtivo() ? this.posicao() : null))).pipe(
+      switchMap((pos) =>
+        pos
+          ? this.ubsService.proximas(pos, { raioKm: RAIO_PROXIMAS_KM }).pipe(
+              map((ubs) => new Set(ubs.map((u) => u.id))),
+              catchError(() => of(null)),
+            )
+          : of(null),
+      ),
+    ),
+    { initialValue: null },
+  );
 
   protected readonly selecionado = computed(() => {
     const n = Number(this.id());
@@ -205,12 +224,12 @@ export class MedicamentoSearchPage {
   );
 
   protected readonly visiveis = computed((): Resultado[] => {
-    const pos = this.posicao();
-    const filtrarRaio = this.raioAtivo();
-    const perto = (u: Ubs) => !filtrarRaio || distanciaKm(pos!, u) <= RAIO_PROXIMAS_KM;
+    const noRaio = this.idsNoRaio();
     return this.encontrados()
       .itens.map(({ medicamento, disponibilidade }) => {
-        const consideradas = disponibilidade.filter((d) => perto(d.ubs));
+        const consideradas = noRaio
+          ? disponibilidade.filter((d) => noRaio.has(d.ubs.id))
+          : disponibilidade;
         return {
           medicamento,
           total: consideradas.length,
