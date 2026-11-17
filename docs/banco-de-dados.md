@@ -21,7 +21,7 @@ ubs 1───* item_estoque *───1 medicamento
 | `ubs` | Unidades de saúde, localização e última sincronização | `cnes` |
 | `medicamento` | Itens da RENAME/REMUME | `catmat` |
 | `item_estoque` | Status e quantidade de um medicamento numa UBS | (`ubs_id`, `medicamento_id`) |
-| `lote_estoque` | Lotes de um item de estoque, com validade (a soma dos lotes é `item_estoque.quantidade`) | (`item_estoque_id`, `numero_lote`) |
+| `lote_estoque` | Lotes de um item de estoque, com validade (a soma dos lotes é, no máximo, `item_estoque.quantidade`: posição sem validade conta no total, mas não vira lote) | (`item_estoque_id`, `numero_lote`) |
 | `item_lista_desejo` | Medicamentos que o cidadão quer ser avisado quando chegarem | (`cidadao_cns`, `ubs_id`, `medicamento_id`) |
 
 ## Regras para migrations

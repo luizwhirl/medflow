@@ -53,4 +53,6 @@ interface MedicamentoRepository : JpaRepository<Medicamento, Long> {
     fun listarCategorias(): List<String>
 
     fun findAllByOrderByNomeAsc(): List<Medicamento>
+
+    fun findByCatmatIn(catmats: Collection<String>): List<Medicamento>
 }

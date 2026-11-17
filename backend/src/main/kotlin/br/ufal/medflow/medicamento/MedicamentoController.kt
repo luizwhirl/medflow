@@ -3,6 +3,7 @@ package br.ufal.medflow.medicamento
 import br.ufal.medflow.common.RecursoNaoEncontradoException
 import br.ufal.medflow.estoque.DisponibilidadeResponse
 import br.ufal.medflow.estoque.ItemEstoqueRepository
+import br.ufal.medflow.estoque.ResumoDisponibilidadeResponse
 import br.ufal.medflow.estoque.toDisponibilidadeResponse
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.transaction.annotation.Transactional
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController
 class MedicamentoController(
     private val medicamentoRepository: MedicamentoRepository,
     private val itemEstoqueRepository: ItemEstoqueRepository,
+    private val medicamentoDisponibilidadeService: MedicamentoDisponibilidadeService,
 ) {
 
     /** Lista medicamentos; `busca` e `categoria` podem ser combinados. */
@@ -70,4 +72,12 @@ class MedicamentoController(
         return itemEstoqueRepository.findByMedicamento(id)
             .map { it.toDisponibilidadeResponse() }
     }
+
+    /** Resumo da disponibilidade do medicamento nas UBS. */
+    @GetMapping("/{id}/disponibilidade/resumo")
+    fun resumoDisponibilidade(
+        @PathVariable id: Long,
+        @RequestParam(required = false) ibge: String?,
+    ): ResumoDisponibilidadeResponse =
+        medicamentoDisponibilidadeService.obterResumo(id, ibge)
 }

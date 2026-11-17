@@ -1,3 +1,5 @@
 package br.ufal.medflow.common
 
-class ParametroInvalidoException(mensagem: String) : RuntimeException(mensagem)
+/** Indica que um parâmetro informado na requisição é inválido. */
+class ParametroInvalidoException(parametro: String) :
+    RuntimeException("Parâmetro '$parametro' inválido")

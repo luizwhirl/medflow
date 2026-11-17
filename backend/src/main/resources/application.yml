@@ -34,6 +34,11 @@ app:
     max-paginas: 500
     timeout-conexao: 5s
     timeout-leitura: 30s
+  sync:
+    ativo: ${SYNC_ATIVO:false}
+    municipios: ${SYNC_MUNICIPIOS:} # IBGE (6 ou 7 dígitos), separados por vírgula
+    cron: ${SYNC_CRON:0 0 */6 * * *} # a cada 6 horas (fuso de Maceió)
+    executar-ao-iniciar: ${SYNC_AO_INICIAR:false}
 
 management:
   endpoints:

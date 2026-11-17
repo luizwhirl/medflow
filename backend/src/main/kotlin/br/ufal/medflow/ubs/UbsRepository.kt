@@ -38,4 +38,8 @@ interface UbsRepository : JpaRepository<Ubs, Long> {
                 "power(sin((radians(u.latitude) - :latRad) / 2), 2) + " +
                 ":cosLat * cos(radians(u.latitude)) * power(sin((radians(u.longitude) - :lngRad) / 2), 2)))))"
     }
+
+    fun findByCnesIn(cnes: Collection<String>): List<Ubs>
+
+    fun countByCodigoIbgeMunicipio(ibge: String): Long
 }

@@ -16,6 +16,7 @@ import java.time.LocalDate
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * Usa respostas reais da BNAFAR gravadas em `src/test/resources/bnafar` (Delmiro Gouveia, 3 lotes).
@@ -47,7 +48,7 @@ class BnafarFonteEstoqueTest {
         val fonte = fonte(props()) {
             servidor = it
             it.pagina("$base?codigo_municipio=270240&limit=2&offset=0", fixture("pagina-cheia.json"))
-            it.pagina("$base?codigo_municipio=270240&limit=2&offset=2", fixture("pagina-final.json"))
+            it.pagina("$base?codigo_municipio=270240&limit=2&offset=1", fixture("pagina-final.json"))
         }
 
         val posicoes = fonte.buscarPosicoes("2702405")
@@ -90,7 +91,7 @@ class BnafarFonteEstoqueTest {
         val fonte = fonte(props()) {
             servidor = it
             it.pagina("$base?codigo_municipio=270240&limit=2&offset=0", fixture("pagina-cheia.json"))
-            it.pagina("$base?codigo_municipio=270240&limit=2&offset=2", fixture("pagina-vazia.json"))
+            it.pagina("$base?codigo_municipio=270240&limit=2&offset=1", fixture("pagina-vazia.json"))
         }
 
         assertEquals(2, fonte.buscarPosicoes("270240").size)
@@ -143,7 +144,7 @@ class BnafarFonteEstoqueTest {
             .replace("\"codigo_catmat\": \"BR0267691U0042\"", "\"codigo_catmat\": null")
         val fonte = fonte(props()) {
             it.pagina("$base?codigo_municipio=270240&limit=2&offset=0", semCatmat)
-            it.pagina("$base?codigo_municipio=270240&limit=2&offset=2", fixture("pagina-vazia.json"))
+            it.pagina("$base?codigo_municipio=270240&limit=2&offset=1", fixture("pagina-vazia.json"))
         }
 
         val posicoes = fonte.buscarPosicoes("270240")
@@ -157,7 +158,7 @@ class BnafarFonteEstoqueTest {
             .replace("\"quantidade_estoque\": 0.0", "\"quantidade_estoque\": null")
         val fonte = fonte(props()) {
             it.pagina("$base?codigo_municipio=270240&limit=2&offset=0", semQuantidade)
-            it.pagina("$base?codigo_municipio=270240&limit=2&offset=2", fixture("pagina-vazia.json"))
+            it.pagina("$base?codigo_municipio=270240&limit=2&offset=1", fixture("pagina-vazia.json"))
         }
 
         assertEquals(emptyList(), fonte.buscarPosicoes("270240"))
@@ -169,7 +170,7 @@ class BnafarFonteEstoqueTest {
             .replace("\"data_posicao_estoque\": \"2026-11-03\"", "\"data_posicao_estoque\": null")
         val fonte = fonte(props()) {
             it.pagina("$base?codigo_municipio=270240&limit=2&offset=0", semData)
-            it.pagina("$base?codigo_municipio=270240&limit=2&offset=2", fixture("pagina-vazia.json"))
+            it.pagina("$base?codigo_municipio=270240&limit=2&offset=1", fixture("pagina-vazia.json"))
         }
 
         assertEquals(emptyList(), fonte.buscarPosicoes("270240"))
@@ -182,7 +183,7 @@ class BnafarFonteEstoqueTest {
             .replace("\"data_validade\": \"2028-05-01 00:00:00-03\"", "\"data_validade\": \"sem data\"")
         val fonte = fonte(props()) {
             it.pagina("$base?codigo_municipio=270240&limit=2&offset=0", semValidade)
-            it.pagina("$base?codigo_municipio=270240&limit=2&offset=2", fixture("pagina-vazia.json"))
+            it.pagina("$base?codigo_municipio=270240&limit=2&offset=1", fixture("pagina-vazia.json"))
         }
 
         val posicoes = fonte.buscarPosicoes("270240")
@@ -218,7 +219,7 @@ class BnafarFonteEstoqueTest {
             .replaceFirst("\"codigo_municipio\": 270240", "\"codigo_municipio\": 27024")
         val fonte = fonte(props()) {
             it.pagina("$base?codigo_municipio=270240&limit=2&offset=0", curto)
-            it.pagina("$base?codigo_municipio=270240&limit=2&offset=2", fixture("pagina-vazia.json"))
+            it.pagina("$base?codigo_municipio=270240&limit=2&offset=1", fixture("pagina-vazia.json"))
         }
 
         assertEquals(listOf("BR0267663U0042"), fonte.buscarPosicoes("270240").map { it.catmat })
@@ -230,20 +231,56 @@ class BnafarFonteEstoqueTest {
             .replaceFirst("\"codigo_municipio\": 270240", "\"codigo_municipio\": 27024000")
         val fonte = fonte(props()) {
             it.pagina("$base?codigo_municipio=270240&limit=2&offset=0", longo)
-            it.pagina("$base?codigo_municipio=270240&limit=2&offset=2", fixture("pagina-vazia.json"))
+            it.pagina("$base?codigo_municipio=270240&limit=2&offset=1", fixture("pagina-vazia.json"))
         }
 
         assertEquals(listOf("BR0267663U0042"), fonte.buscarPosicoes("270240").map { it.catmat })
+    }
+
+    /** Mesma página real, mas com outros lotes, para parecer uma segunda página diferente. */
+    private fun outraPaginaCheia() = fixture("pagina-cheia.json")
+        .replace("\"numero_lote\": \"25104312\"", "\"numero_lote\": \"OUTRO-1\"")
+        .replace("\"numero_lote\": \"25E19D\"", "\"numero_lote\": \"OUTRO-2\"")
+
+    @Test
+    fun `le todas as paginas, pedindo offset como numero da pagina`() {
+        lateinit var servidor: MockRestServiceServer
+        val fonte = fonte(props()) {
+            servidor = it
+            it.pagina("$base?codigo_municipio=270240&limit=2&offset=0", fixture("pagina-cheia.json"))
+            it.pagina("$base?codigo_municipio=270240&limit=2&offset=1", outraPaginaCheia())
+            it.pagina("$base?codigo_municipio=270240&limit=2&offset=2", fixture("pagina-final.json"))
+        }
+
+        val posicoes = fonte.buscarPosicoes("270240")
+
+        servidor.verify()
+        assertEquals(5, posicoes.size)
+        assertEquals(listOf("25104312", "25E19D", "OUTRO-1", "OUTRO-2", "125064"), posicoes.map { it.numeroLote })
+    }
+
+    @Test
+    fun `pagina que repete a anterior falha em vez de somar duas vezes`() {
+        val fonte = fonte(props()) {
+            it.pagina("$base?codigo_municipio=270240&limit=2&offset=0", fixture("pagina-cheia.json"))
+            it.pagina("$base?codigo_municipio=270240&limit=2&offset=1", fixture("pagina-cheia.json"))
+        }
+
+        val erro = assertFailsWith<FonteEstoqueIndisponivelException> { fonte.buscarPosicoes("270240") }
+
+        assertTrue("repetiu registros" in erro.message.orEmpty(), erro.message)
     }
 
     @Test
     fun `falha em vez de truncar quando passa do limite de paginas`() {
         val fonte = fonte(props(maxPaginas = 2)) {
             it.pagina("$base?codigo_municipio=270240&limit=2&offset=0", fixture("pagina-cheia.json"))
-            it.pagina("$base?codigo_municipio=270240&limit=2&offset=2", fixture("pagina-cheia.json"))
+            it.pagina("$base?codigo_municipio=270240&limit=2&offset=1", outraPaginaCheia())
         }
 
-        assertFailsWith<FonteEstoqueIndisponivelException> { fonte.buscarPosicoes("270240") }
+        val erro = assertFailsWith<FonteEstoqueIndisponivelException> { fonte.buscarPosicoes("270240") }
+
+        assertTrue("limite de 2 páginas" in erro.message.orEmpty(), erro.message)
     }
 
     @Test
