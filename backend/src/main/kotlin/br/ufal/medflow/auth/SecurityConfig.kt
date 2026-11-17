@@ -1,6 +1,7 @@
 package br.ufal.medflow.auth
 
 import com.nimbusds.jose.jwk.source.ImmutableSecret
+import jakarta.servlet.DispatcherType
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -20,6 +21,7 @@ import org.springframework.security.oauth2.jwt.NimbusJwtEncoder
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter
 import org.springframework.security.web.SecurityFilterChain
+import org.springframework.security.web.util.matcher.DispatcherTypeRequestMatcher
 import java.time.Clock
 import javax.crypto.spec.SecretKeySpec
 
@@ -41,6 +43,8 @@ class SecurityConfig(private val props: JwtProperties) {
             csrf { disable() } // sem sessão nem cookie, não há o que forjar
             sessionManagement { sessionCreationPolicy = SessionCreationPolicy.STATELESS }
             authorizeHttpRequests {
+                // erro tratado pelo Spring (400, 404, 405, 415...) é encaminhado para /error e passa pelo filtro de novo
+                authorize(DispatcherTypeRequestMatcher(DispatcherType.ERROR), permitAll)
                 authorize(HttpMethod.OPTIONS, "/**", permitAll)
                 authorize(HttpMethod.POST, "/api/auth/login", permitAll)
                 authorize(HttpMethod.POST, "/api/auth/cadastro", permitAll)

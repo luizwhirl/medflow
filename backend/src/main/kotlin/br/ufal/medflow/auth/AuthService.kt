@@ -5,6 +5,7 @@ import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.sql.SQLException
 import java.util.Locale
 
 @Service
@@ -39,7 +40,8 @@ class AuthService(
         return try {
             usuarios.saveAndFlush(novo).toResponse()
         } catch (e: DataIntegrityViolationException) {
-            throw EmailJaCadastradoException() // duas contas com o mesmo e-mail ao mesmo tempo
+            if (e.violaUnicidade()) throw EmailJaCadastradoException() // duas contas com o mesmo e-mail ao mesmo tempo
+            throw e // outra violação (CHECK, tamanho da coluna) é bug nosso: não pode virar "e-mail já cadastrado"
         }
     }
 
@@ -52,6 +54,10 @@ class AuthService(
 
     private fun gerarHash(senha: String) = requireNotNull(senhas.encode(senha)) { "O codificador de senha devolveu nulo" }
 
+    /** SQLState 23505 é `unique_violation` no PostgreSQL; a única restrição de unicidade de usuario (fora o id) é o e-mail. */
+    private fun Throwable.violaUnicidade() =
+        generateSequence(this) { it.cause }.filterIsInstance<SQLException>().any { it.sqlState == UNIQUE_VIOLATION }
+
     private fun normalizar(email: String) = email.trim().lowercase(Locale.ROOT)
 
     private fun String.cabeNoBcrypt() = toByteArray().size <= LIMITE_BCRYPT_BYTES
@@ -59,5 +65,6 @@ class AuthService(
     private companion object {
         /** O BCrypt só considera os 72 primeiros bytes da senha. */
         const val LIMITE_BCRYPT_BYTES = 72
+        const val UNIQUE_VIOLATION = "23505"
     }
 }
