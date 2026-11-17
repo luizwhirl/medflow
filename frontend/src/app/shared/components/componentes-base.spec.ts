@@ -65,6 +65,21 @@ describe('componentes base', () => {
     expect(botao.getAttribute('aria-pressed')).toBe('true');
   });
 
+  it('Chip fixo não desmarca ao ser clicado, mas marca quando está desligado', () => {
+    const fixture = TestBed.createComponent(Chip);
+    fixture.componentRef.setInput('fixo', true);
+    fixture.detectChanges();
+    const botao = (fixture.nativeElement as HTMLElement).querySelector('button')!;
+
+    botao.click();
+    fixture.detectChanges();
+    expect(botao.getAttribute('aria-pressed')).toBe('true');
+
+    botao.click();
+    fixture.detectChanges();
+    expect(botao.getAttribute('aria-pressed')).toBe('true');
+  });
+
   it('Chip selecionado usa o estilo verde-claro do Figma', () => {
     const { fixture, el, host } = montar();
     host.filtro = true;

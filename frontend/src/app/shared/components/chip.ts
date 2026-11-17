@@ -28,7 +28,7 @@ const ESTILOS = {
     <button
       type="button"
       [attr.aria-pressed]="variante() === 'sugestao' ? null : selecionado()"
-      (click)="selecionado.set(!selecionado())"
+      (click)="alternar()"
       class="inline-flex items-center whitespace-nowrap rounded-full transition-colors"
       [class]="classes()"
     >
@@ -39,6 +39,13 @@ const ESTILOS = {
 export class Chip {
   readonly selecionado = model(false);
   readonly variante = input<keyof typeof ESTILOS>('filtro');
+  /** Se selecionado, não desmarca ao ser clicado (ex.: "Todos" num grupo de filtros exclusivos). */
+  readonly fixo = input(false);
+
+  protected alternar(): void {
+    if (this.fixo() && this.selecionado()) return;
+    this.selecionado.set(!this.selecionado());
+  }
 
   protected classes(): string {
     const e = ESTILOS[this.variante()];

@@ -80,6 +80,31 @@ describe('PainelGestaoPage', () => {
     expect(linhas(f).length).toBe(5);
   });
 
+  it('"Exportar" baixa só os itens do filtro ativo, com BOM para o Excel', async () => {
+    let blob: Blob | undefined;
+    spyOn(URL, 'createObjectURL').and.callFake((b: Blob | MediaSource) => {
+      blob = b as Blob;
+      return 'blob:teste';
+    });
+    spyOn(URL, 'revokeObjectURL');
+    const clique = spyOn(HTMLAnchorElement.prototype, 'click');
+
+    const f = montar();
+    chip(f, 'Em falta').click();
+    f.detectChanges();
+    Array.from(el(f).querySelectorAll<HTMLButtonElement>('header button'))
+      .find((b) => texto(b) === 'Exportar')!
+      .click();
+
+    expect(clique).toHaveBeenCalled();
+    const bytes = new Uint8Array(await blob!.arrayBuffer());
+    expect(Array.from(bytes.slice(0, 3))).toEqual([0xef, 0xbb, 0xbf]);
+    const linhasCsv = new TextDecoder().decode(bytes.slice(3)).split('\r\n');
+    expect(linhasCsv.length).toBe(3);
+    expect(linhasCsv[1]).toContain('"Metformina 850 mg"');
+    expect(linhasCsv[2]).toContain('"Insulina humana NPH 100 UI/mL"');
+  });
+
   it('barras dos mais procurados são proporcionais ao maior número de buscas', () => {
     const barras = Array.from(
       el(montar()).querySelectorAll<HTMLElement>('ul li [aria-hidden] > div'),

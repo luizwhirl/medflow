@@ -93,10 +93,10 @@ const SITUACAO_CLASSES: Record<SituacaoItem, string> = {
               <div class="flex flex-wrap gap-2" role="group" aria-label="Filtrar itens">
                 @for (f of filtros; track f.valor) {
                   <app-chip
-                    #chip
                     variante="filtro-sm"
+                    [fixo]="f.valor === 'TODOS'"
                     [selecionado]="filtro() === f.valor"
-                    (selecionadoChange)="filtrar(f.valor, $event, chip)"
+                    (selecionadoChange)="filtrar(f.valor, $event)"
                     >{{ f.rotulo }}</app-chip
                   >
                 }
@@ -242,13 +242,8 @@ export class PainelGestaoPage {
   });
 
   /** Filtros são exclusivos; desmarcar um volta para "Todos" (que não se desmarca). */
-  protected filtrar(valor: Filtro, ligado: boolean, chip: Chip): void {
-    if (valor === 'TODOS' || !ligado) {
-      this.filtro.set('TODOS');
-      if (valor === 'TODOS') chip.selecionado.set(true);
-    } else {
-      this.filtro.set(valor);
-    }
+  protected filtrar(valor: Filtro, ligado: boolean): void {
+    this.filtro.set(ligado ? valor : 'TODOS');
   }
 
   protected situacaoTexto(item: ItemAtencao): string {
@@ -272,11 +267,11 @@ export class PainelGestaoPage {
     return `${diaDaSemana(iso)}, ${dia}/${mes}`;
   }
 
-  /** Baixa a tabela "Itens que pedem atenção" em CSV (abre no Excel/Planilhas). */
+  /** Baixa em CSV os itens que pedem atenção visíveis na tabela, com o filtro aplicado (abre no Excel/Planilhas). */
   protected exportar(p: PainelGestao): void {
     const linhas = [
       ['Medicamento', 'Estoque', 'Mínimo', 'Aguardando aviso', 'Situação'],
-      ...p.itensAtencao.map((i) => [
+      ...this.itensFiltrados().map((i) => [
         i.medicamento,
         String(i.estoque),
         String(i.minimo),
@@ -288,12 +283,13 @@ export class PainelGestaoPage {
       .map((l) => l.map((c) => `"${c.replaceAll('"', '""')}"`).join(';'))
       .join('\r\n');
     // BOM para o Excel reconhecer os acentos.
-    const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
+    const url = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }));
     const a = document.createElement('a');
     a.href = url;
-    a.download = `estoque-cnes-${p.ubs.cnes}.csv`;
+    a.download = `itens-atencao-cnes-${p.ubs.cnes}.csv`;
     a.click();
-    URL.revokeObjectURL(url);
+    // Libera o link só depois que o download começou (revogar na hora pode cancelar em alguns navegadores).
+    setTimeout(() => URL.revokeObjectURL(url));
   }
 }
 
