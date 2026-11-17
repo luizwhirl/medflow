@@ -1,5 +1,6 @@
 package br.ufal.medflow.medicamento
 
+import br.ufal.medflow.auth.SecurityConfig
 import br.ufal.medflow.common.ParametroInvalidoException
 import br.ufal.medflow.common.RecursoNaoEncontradoException
 import br.ufal.medflow.estoque.ItemEstoqueRepository
@@ -9,12 +10,14 @@ import org.mockito.BDDMockito.given
 import org.mockito.Mockito.verify
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
+import org.springframework.context.annotation.Import
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 
 /** Teste da camada web, sem banco (não precisa de Docker). */
 @WebMvcTest(MedicamentoController::class)
+@Import(SecurityConfig::class) // a segurança real: leitura pública, como em produção
 class MedicamentoControllerTest(@Autowired private val mockMvc: MockMvc) {
 
     @MockitoBean

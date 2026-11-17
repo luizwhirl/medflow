@@ -23,6 +23,7 @@ br.ufal.medflow
 ├── estoque/       ItemEstoque, StatusEstoque, ItemEstoqueRepository, DTOs de estoque/disponibilidade
 ├── integracao/    FonteEstoque e cliente da BNAFAR (BnafarFonteEstoque), PosicaoEstoque, CodigoIbge
 ├── sincronizacao/ job que traz o estoque da BNAFAR para o banco (SincronizacaoEstoqueService)
+├── auth/          usuários, login/cadastro, JWT e regras de acesso (SecurityConfig)
 ├── common/        exceções e ApiExceptionHandler
 └── config/        CORS e configurações web
 ```
@@ -57,6 +58,9 @@ Regras:
 | `ultima_sincronizacao` por UBS exposta na API | Transparência: o cidadão vê quão atual é o dado (unidades rurais sincronizam com atraso). |
 | Dados de exemplo só no perfil `dev` (`db/seed`) | Produção nunca recebe dados fictícios. |
 | Testcontainers nos testes de integração | Testa contra PostgreSQL real, não H2. |
+| API sem sessão, com JWT (HS256) no cabeçalho `Authorization` | O front é um SPA; sem cookie não há CSRF. Segredo em `JWT_SECRET` (obrigatório fora do dev), validade de 8 h. |
+| Não guardamos o CNS do cidadão | Dado sensível (LGPD). A conta é só nome, e-mail e senha (hash BCrypt); a lista de desejos passa a ser do usuário autenticado. |
+| Todo cadastro é `CIDADAO`; `GESTOR` só é criado direto no banco | Ninguém ganha acesso de gestão pela API. |
 
 ## Próximos passos sugeridos
 

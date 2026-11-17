@@ -1,0 +1,4 @@
+# Perfil "test": banco vazio (sem o seed do perfil dev).
+app:
+  jwt:
+    secret: segredo-so-para-testes-com-mais-de-32-caracteres
