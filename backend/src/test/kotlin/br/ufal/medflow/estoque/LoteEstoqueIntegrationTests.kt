@@ -37,10 +37,15 @@ class LoteEstoqueIntegrationTests(
 
     @Test
     fun `lista os lotes que vencem em ate 60 dias do que vence primeiro`() {
-        val lotes = loteRepository.findComValidadeAte(LocalDate.now().plusDays(60))
+        val limite = LocalDate.now().plusDays(60)
+        val lotes = loteRepository.findComValidadeAte(limite)
 
-        assertEquals(listOf("AMX-2601", "LOS-2602", "DIP-2603"), lotes.map { it.numeroLote })
-        assertEquals("UBS Cidade Universitária", lotes.first().itemEstoque.ubs.nome)
+        // O seed cresce (V1002); confere a ordem e o corte em vez da lista exata.
+        assertEquals(lotes.sortedBy { it.validade }.map { it.numeroLote }, lotes.map { it.numeroLote })
+        assertTrue(lotes.all { it.validade <= limite })
+        assertTrue(lotes.map { it.numeroLote }.containsAll(listOf("AMX-2601", "LOS-2602", "DIP-2603")))
+        val amoxicilina = lotes.single { it.numeroLote == "AMX-2601" }
+        assertEquals("UBS Cidade Universitária", amoxicilina.itemEstoque.ubs.nome)
     }
 
     @Test
