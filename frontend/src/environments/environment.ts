@@ -6,12 +6,16 @@
 export const environment = {
   apiUrl: '/api',
   mapa: {
-    // Tiles públicos do OpenStreetMap têm limite de uso e não servem para produção
-    // (https://operations.osmfoundation.org/policies/tiles/). CARTO Voyager mantém o estilo
-    // do OpenStreetMap, dispensa chave e só exige a atribuição abaixo.
-    tilesUrl: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    // Stadia Maps, estilo Alidade Smooth (claro e discreto, próximo do frame "Tablet paisagem ·
+    // Mapa de UBS"). Não leva chave na URL: a Stadia autentica pelo domínio de origem, que precisa
+    // estar cadastrado no painel (client.stadiamaps.com → Manage Properties → Authentication
+    // Configuration). Sem isso, os tiles voltam 401 com uma imagem de aviso.
+    // https://docs.stadiamaps.com/authentication/
+    tilesUrl: 'https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png',
     atribuicao:
-      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-    maxZoom: 19,
+      '&copy; <a href="https://stadiamaps.com/attribution/" target="_blank" rel="noopener">Stadia Maps</a> ' +
+      '&copy; <a href="https://openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a> ' +
+      '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
+    maxZoom: 20,
   },
 };

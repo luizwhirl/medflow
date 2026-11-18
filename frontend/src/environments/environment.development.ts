@@ -7,10 +7,13 @@
 export const environment = {
   apiUrl: '/api',
   mapa: {
-    // Uso local é baixo e cabe na política dos tiles públicos do OpenStreetMap.
-    tilesUrl: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    // Mesmo estilo de produção. Em localhost/127.0.0.1 a Stadia não exige autenticação
+    // (com limite de uso mais baixo); https://docs.stadiamaps.com/authentication/
+    tilesUrl: 'https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png',
     atribuicao:
-      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    maxZoom: 19,
+      '&copy; <a href="https://stadiamaps.com/attribution/" target="_blank" rel="noopener">Stadia Maps</a> ' +
+      '&copy; <a href="https://openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a> ' +
+      '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
+    maxZoom: 20,
   },
 };
