@@ -1,5 +1,7 @@
 package br.ufal.medflow.common
 
+import br.ufal.medflow.auth.CredenciaisInvalidasException
+import br.ufal.medflow.auth.EmailJaCadastradoException
 import org.springframework.http.HttpStatus
 import org.springframework.http.ProblemDetail
 import org.springframework.web.bind.annotation.ExceptionHandler
@@ -19,5 +21,17 @@ class ApiExceptionHandler {
     fun parametroInvalido(ex: ParametroInvalidoException): ProblemDetail =
         ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.message ?: "Parâmetro inválido").apply {
             title = "Parâmetro inválido"
+        }
+
+    @ExceptionHandler(CredenciaisInvalidasException::class)
+    fun credenciaisInvalidas(ex: CredenciaisInvalidasException): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, ex.message ?: "Credenciais inválidas").apply {
+            title = "Credenciais inválidas"
+        }
+
+    @ExceptionHandler(EmailJaCadastradoException::class)
+    fun emailJaCadastrado(ex: EmailJaCadastradoException): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.message ?: "E-mail já cadastrado").apply {
+            title = "E-mail já cadastrado"
         }
 }
