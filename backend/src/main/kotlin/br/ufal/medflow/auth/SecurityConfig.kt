@@ -27,7 +27,8 @@ import javax.crypto.spec.SecretKeySpec
 
 /**
  * API sem sessão: cada requisição leva um JWT (HS256). Leitura de UBS e medicamentos é pública,
- * o prefixo `/api/gestao` é só do papel GESTOR e o resto exige login.
+ * a lista de desejos é do papel CIDADAO, o prefixo `/api/gestao` é só do papel GESTOR
+ * e o restante exige login.
  */
 @Configuration
 @EnableWebSecurity
@@ -54,6 +55,8 @@ class SecurityConfig(private val props: JwtProperties) {
                 authorize("/swagger-ui.html", permitAll)
                 authorize("/swagger-ui/**", permitAll)
                 authorize("/v3/api-docs/**", permitAll)
+                authorize("/api/lista-desejos", hasRole("CIDADAO"))
+                authorize("/api/lista-desejos/**", hasRole("CIDADAO"))
                 authorize("/api/gestao/**", hasRole("GESTOR"))
                 authorize(anyRequest, authenticated)
             }

@@ -66,6 +66,7 @@ spring:
       on-profile: dev
   flyway:
     locations: classpath:db/migration,classpath:db/seed
+    out-of-order: true # permite novas migrations após os seeds V1000 e V1001
   jpa:
     show-sql: false
 
