@@ -115,7 +115,7 @@ class UbsControllerTest(@Autowired private val mockMvc: MockMvc) {
             status { isBadRequest() }
             content { contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON) }
             jsonPath("$.status") { value(400) }
-            jsonPath("$.title") { exists() }
+            jsonPath("$.title") { value("Bad Request") }
         }
 
         verifyNoInteractions(ubsProximidadeService)
@@ -129,7 +129,7 @@ class UbsControllerTest(@Autowired private val mockMvc: MockMvc) {
             status { isBadRequest() }
             content { contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON) }
             jsonPath("$.status") { value(400) }
-            jsonPath("$.title") { exists() }
+            jsonPath("$.title") { value("Bad Request") }
         }
 
         verifyNoInteractions(ubsEstoqueService)
