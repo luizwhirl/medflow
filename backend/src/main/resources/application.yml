@@ -28,7 +28,7 @@ server:
 
 app:
   estoque:
-    limite-reservado: 20 # com saldo até esta quantidade o item aparece como RESERVADO
+    limite-reservado: 20 # limite padrão: com saldo até esta quantidade o item aparece como RESERVADO (o medicamento pode ter o seu)
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200}
   jwt:
