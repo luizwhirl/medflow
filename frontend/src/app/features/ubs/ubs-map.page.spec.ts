@@ -1,11 +1,25 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { Component, input, output } from '@angular/core';
 import { TestBed, fakeAsync, flushMicrotasks } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 
 import { Medicamento } from '../../core/models/medicamento.model';
 import { UbsProxima } from '../../core/models/ubs.model';
+import { Coordenadas } from '../../core/geo';
+import { Mapa, PinoMapa } from '../../shared/components/mapa';
 import { UbsMapPage } from './ubs-map.page';
+
+/** Substitui o Leaflet para que os testes não baixem tiles da internet. */
+@Component({ selector: 'app-mapa', template: '' })
+class MapaFalso {
+  readonly pinos = input<PinoMapa[]>([]);
+  readonly centro = input<Coordenadas | null>(null);
+  readonly raioKm = input<number | null>(null);
+  readonly selecionado = input<number | null>(null);
+  readonly selecionar = output<number>();
+}
 
 /** UBS como a busca por proximidade devolve, a `km` quilômetros da origem. */
 const ubs = (id: number, nome: string, km: number): UbsProxima => ({
@@ -43,6 +57,10 @@ describe('UbsMapPage', () => {
     );
     TestBed.configureTestingModule({
       providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
+    });
+    TestBed.overrideComponent(UbsMapPage, {
+      remove: { imports: [Mapa] },
+      add: { imports: [MapaFalso] },
     });
     http = TestBed.inject(HttpTestingController);
   }
@@ -180,6 +198,33 @@ describe('UbsMapPage', () => {
     select.dispatchEvent(new Event('change'));
     fixture.detectChanges();
     expect(linhas(el).length).toBe(2);
+    http.verify();
+  }));
+
+  it('repassa as UBS ao mapa e seleciona a que for clicada nele, sem carregar o Leaflet', fakeAsync(() => {
+    preparar([]);
+    const fixture = TestBed.createComponent(UbsMapPage);
+    fixture.detectChanges();
+    flushMicrotasks();
+    fixture.detectChanges();
+    http.expectOne(proximas(6)).flush([ubs(2, 'Perto', 0.5), ubs(3, 'Meio', 2.5)]);
+    http.expectOne('/api/medicamentos').flush([]);
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('.leaflet-container')).toBeNull();
+
+    const mapa = fixture.debugElement.query(By.directive(MapaFalso)).componentInstance as MapaFalso;
+    expect(mapa.pinos().map((p) => [p.numero, p.rotulo])).toEqual([
+      [1, 'Perto'],
+      [2, 'Meio'],
+    ]);
+    expect(mapa.centro()).toEqual({ latitude: 0, longitude: 0 });
+
+    mapa.selecionar.emit(3);
+    fixture.detectChanges();
+    expect(mapa.selecionado()).toBe(3);
+    expect(el.querySelector('article')!.textContent).toContain('Meio');
     http.verify();
   }));
 });

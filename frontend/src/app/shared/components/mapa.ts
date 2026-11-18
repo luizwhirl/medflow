@@ -11,7 +11,16 @@ import {
 } from '@angular/core';
 import * as L from 'leaflet';
 
+import { environment } from '../../../environments/environment';
 import { Coordenadas } from '../../core/geo';
+
+/** Camada de tiles do provedor configurado em `environment.mapa`. */
+export function camadaDeTiles(config = environment.mapa): L.TileLayer {
+  return L.tileLayer(config.tilesUrl, {
+    maxZoom: config.maxZoom,
+    attribution: config.atribuicao,
+  });
+}
 
 export interface PinoMapa {
   id: number;
@@ -24,7 +33,7 @@ export interface PinoMapa {
   numero?: number;
 }
 
-/** Mapa (Leaflet + OpenStreetMap) com pinos numerados e raio opcional. */
+/** Mapa (Leaflet + tiles de `environment.mapa`) com pinos numerados e raio opcional. */
 @Component({
   selector: 'app-mapa',
   host: { class: 'block isolate' },
@@ -50,11 +59,7 @@ export class Mapa {
         12,
       );
       L.control.zoom({ position: 'topright' }).addTo(this.mapa);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution:
-          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-      }).addTo(this.mapa);
+      camadaDeTiles().addTo(this.mapa);
       this.camada.addTo(this.mapa);
       this.desenhar();
     });
