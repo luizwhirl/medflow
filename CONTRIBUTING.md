@@ -8,6 +8,7 @@
    - `docs/<descricao>`, `chore/<descricao>`, `refactor/<descricao>`
 2. Faça commits pequenos e com mensagem clara (veja abaixo).
 3. Abra um Pull Request para a `main` preenchendo o template, com pelo menos **1 revisor**.
+   O título começa com o ticket do Jira entre colchetes (veja [Título do Pull Request](#título-do-pull-request)).
 4. O CI precisa passar (build + testes de backend e frontend) antes do merge.
 
 ## Mensagens de commit
@@ -24,6 +25,20 @@ docs: atualiza guia de setup
 
 Tipos: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `ci`, `build`.
 Escopos: `backend`, `frontend`, `db`, `infra`, `front` (protótipo).
+
+## Título do Pull Request
+
+O título do PR começa com o número do ticket do Jira entre colchetes, `[PDS-XX]`, seguido
+de uma descrição no formato de Conventional Commits:
+
+```
+[PDS-XX] <tipo>(<escopo>): <descrição no imperativo>
+
+[PDS-41] feat(frontend): usa a API de proximidade no mapa, na início e na busca
+[PDS-44] feat(frontend): isola o mapa nos testes e configura os tiles por ambiente
+```
+
+Use o número do ticket que o PR resolve (o mesmo citado no corpo do PR).
 
 ## Padrões de código
 
