@@ -4,16 +4,19 @@ PostgreSQL 17, versionado com Flyway em `backend/src/main/resources/db/`.
 
 ```text
 db/migration/   schema (todos os ambientes)       V1__schema_inicial.sql, V2__..., ...
-db/seed/        dados fictícios (só perfil dev)   V1000__dados_exemplo.sql, V1001__lotes_exemplo.sql
+db/seed/        dados fictícios (só perfil dev)   V1000__dados_exemplo.sql, V1001__lotes_exemplo.sql, V1002__remessas_exemplo.sql
 ```
 
 ## Modelo
 
 ```text
 ubs 1───* item_estoque *───1 medicamento
- │             │ 1               │
- │             * lote_estoque    │
- └───* item_lista_desejo *───────┘
+ │  │          │ 1               │ │
+ │  │          * lote_estoque    │ │
+ │  └───* remessa *──────────────┘ │
+ │          │ 1                    │
+ │          * remessa_evento       │
+ └───* item_lista_desejo *─────────┘
              *
              │
              1
@@ -27,6 +30,8 @@ ubs 1───* item_estoque *───1 medicamento
 | `usuario` | Contas autenticadas de cidadãos e gestores | `email` |
 | `item_estoque` | Status e quantidade de um medicamento numa UBS | (`ubs_id`, `medicamento_id`) |
 | `lote_estoque` | Lotes de um item de estoque, com validade (a soma dos lotes é, no máximo, `item_estoque.quantidade`: posição sem validade conta no total, mas não vira lote) | (`item_estoque_id`, `numero_lote`) |
+| `remessa` | Remessa de um medicamento da CAF para uma UBS, com quantidade e previsão de chegada | — |
+| `remessa_evento` | Momento em que a remessa chegou a cada etapa (`PEDIDO`, `SEPARADO_CAF`, `EM_TRANSPORTE`, `RECEBIDO`, `DISPONIVEL`) | (`remessa_id`, `etapa`) |
 | `item_lista_desejo` | Medicamentos que o cidadão quer ser avisado quando chegarem | (`usuario_id`, `ubs_id`, `medicamento_id`) |
 
 A partir da migration `V5__lista_desejos_usuario.sql`, cada item da lista de desejos pertence a um usuário autenticado, identificado por `usuario_id`, que referencia `usuario(id)`.
@@ -58,6 +63,12 @@ No perfil `dev`, o Flyway utiliza `db/migration` e `db/seed`, com `out-of-order:
 No perfil `prod`, apenas `db/migration` é utilizado e `out-of-order` não é habilitado.
 
 O perfil padrão da aplicação é `dev`; ambientes de produção devem ativar explicitamente o perfil `prod`.
+
+### Remessas
+
+A migration `V6__remessas.sql` cria `remessa` e `remessa_evento`. A etapa atual de uma remessa é a mais avançada registrada nos eventos; ela está em andamento enquanto não tiver o evento `DISPONIVEL`. Cada etapa só acontece uma vez por remessa, e apagar a remessa apaga seus eventos.
+
+A BNAFAR pública não informa remessas em trânsito, então não há fonte oficial. No perfil `dev`, o seed `V1002__remessas_exemplo.sql` cria seis remessas em etapas diferentes (uma delas já concluída).
 
 ## Regras para migrations
 
