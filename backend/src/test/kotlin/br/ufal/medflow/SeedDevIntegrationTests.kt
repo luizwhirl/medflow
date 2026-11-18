@@ -33,6 +33,12 @@ class SeedDevIntegrationTests(@Autowired private val jdbc: JdbcTemplate) {
     }
 
     @Test
+    fun `seed tem 17 medicamentos em 7 categorias`() {
+        assertEquals(17, contar("SELECT COUNT(*) FROM medicamento"))
+        assertEquals(7, contar("SELECT COUNT(DISTINCT categoria) FROM medicamento"))
+    }
+
+    @Test
     fun `status do seed segue a regra de estoque`() {
         // Regra de RegraStatusEstoque com app.estoque.limite-reservado = 20
         val divergentes = jdbc.queryForList(

@@ -4,11 +4,12 @@ PostgreSQL 17, versionado com Flyway em `backend/src/main/resources/db/`.
 
 ```text
 db/migration/   schema (todos os ambientes)       V1__schema_inicial.sql, V2__..., ...
-db/seed/        dados fictícios (só perfil dev)   V1000__dados_exemplo.sql, V1001__lotes_exemplo.sql, V1002__estoque_completo.sql
+db/seed/        dados fictícios (só perfil dev)   V1000__dados_exemplo.sql, V1001__lotes_exemplo.sql, V1002__estoque_completo.sql,
+                                                  V1004__medicamentos_extras.sql
                                                   afterMigrate__sincronizacao_exemplo.sql (callback)
 ```
 
-O seed do perfil `dev` cobre todas as telas: os 10 medicamentos nas 7 UBS (com os três status em cada uma), lotes
+O seed do perfil `dev` cobre todas as telas: os 17 medicamentos nas 7 UBS (com os três status em cada uma), lotes
 vencendo em até 60 dias e a USF Riacho Doce com a sincronização atrasada. O callback `afterMigrate` roda a cada
 subida e mantém a "última sincronização" das UBS fictícias relativa a agora (senão todas ficariam atrasadas com o
 tempo). As validades dos lotes são relativas ao dia em que o banco foi criado; para renová-las, recrie o banco
