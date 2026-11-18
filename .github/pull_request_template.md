@@ -1,3 +1,5 @@
+<!-- Título do PR: [PDS-XX] <tipo>(<escopo>): <descrição>, com o número do ticket do Jira -->
+
 ## O que muda
 <!-- Resumo da mudança e por quê -->
 
