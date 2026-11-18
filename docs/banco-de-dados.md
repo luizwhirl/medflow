@@ -4,7 +4,7 @@ PostgreSQL 17, versionado com Flyway em `backend/src/main/resources/db/`.
 
 ```text
 db/migration/   schema (todos os ambientes)       V1__schema_inicial.sql, V2__..., ...
-db/seed/        dados fictícios (só perfil dev)   V1000__dados_exemplo.sql, V1001__lotes_exemplo.sql, V1006__remessas_exemplo.sql
+db/seed/        dados fictícios (só perfil dev)   V1000__dados_exemplo.sql, V1001__lotes_exemplo.sql, V1006__remessas_exemplo.sql, V1007__movimentacoes_exemplo.sql
 ```
 
 ## Modelo
@@ -32,6 +32,7 @@ ubs 1───* item_estoque *───1 medicamento
 | `lote_estoque` | Lotes de um item de estoque, com validade (a soma dos lotes é, no máximo, `item_estoque.quantidade`: posição sem validade conta no total, mas não vira lote) | (`item_estoque_id`, `numero_lote`) |
 | `remessa` | Remessa de um medicamento da CAF para uma UBS, com quantidade e previsão de chegada | — |
 | `remessa_evento` | Momento em que a remessa chegou a cada etapa (`PEDIDO`, `SEPARADO_CAF`, `EM_TRANSPORTE`, `RECEBIDO`, `DISPONIVEL`) | (`remessa_id`, `etapa`) |
+| `movimentacao_estoque` | Entradas, dispensações e ajustes de um item de estoque, com quantidade com sinal e data | — |
 | `item_lista_desejo` | Medicamentos que o cidadão quer ser avisado quando chegarem | (`usuario_id`, `ubs_id`, `medicamento_id`) |
 
 A partir da migration `V5__lista_desejos_usuario.sql`, cada item da lista de desejos pertence a um usuário autenticado, identificado por `usuario_id`, que referencia `usuario(id)`.
@@ -63,6 +64,12 @@ No perfil `dev`, o Flyway utiliza `db/migration` e `db/seed`, com `out-of-order:
 No perfil `prod`, apenas `db/migration` é utilizado e `out-of-order` não é habilitado.
 
 O perfil padrão da aplicação é `dev`; ambientes de produção devem ativar explicitamente o perfil `prod`.
+
+### Movimentações de estoque
+
+A migration `V7__movimentacao_estoque.sql` cria `movimentacao_estoque`, ligada a `item_estoque` (a UBS e o medicamento vêm do item). A quantidade tem sinal, garantido por uma constraint: `ENTRADA` é maior que zero, `DISPENSACAO` é menor que zero e `AJUSTE` é diferente de zero. A chave estrangeira é `ON DELETE RESTRICT`: não dá para apagar um item que tem histórico. Os índices são por item e data, e por data.
+
+No seed (`V1007__movimentacoes_exemplo.sql`), a soma das movimentações de cada item do seed é igual a `item_estoque.quantidade`.
 
 ### Remessas
 
