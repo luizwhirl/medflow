@@ -1,6 +1,7 @@
 package br.ufal.medflow.listadesejo
 
 import br.ufal.medflow.TestcontainersConfiguration
+import br.ufal.medflow.auth.JwtProperties
 import br.ufal.medflow.auth.JwtService
 import br.ufal.medflow.auth.PapelUsuario
 import br.ufal.medflow.auth.Usuario
@@ -17,6 +18,11 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
 import org.springframework.security.crypto.password.PasswordEncoder
+import org.springframework.security.oauth2.jose.jws.MacAlgorithm
+import org.springframework.security.oauth2.jwt.JwsHeader
+import org.springframework.security.oauth2.jwt.JwtClaimsSet
+import org.springframework.security.oauth2.jwt.JwtEncoder
+import org.springframework.security.oauth2.jwt.JwtEncoderParameters
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.delete
@@ -25,6 +31,7 @@ import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.post
 import org.springframework.transaction.annotation.Transactional
 import org.testcontainers.junit.jupiter.Testcontainers
+import java.time.Clock
 import kotlin.test.assertNotNull
 
 /** Testes da lista de desejos com JWT real e PostgreSQL. */
@@ -41,6 +48,9 @@ class ItemListaDesejoIntegrationTests(
     @Autowired private val medicamentoRepository: MedicamentoRepository,
     @Autowired private val jwtService: JwtService,
     @Autowired private val senhas: PasswordEncoder,
+    @Autowired private val jwtEncoder: JwtEncoder,
+    @Autowired private val jwtProperties: JwtProperties,
+    @Autowired private val relogio: Clock,
 ) {
 
     private fun cidadao(email: String): Usuario =
@@ -81,6 +91,26 @@ class ItemListaDesejoIntegrationTests(
     private fun token(usuario: Usuario): String =
         jwtService.emitir(usuario).token
 
+    /** Emite um JWT válido, mas com sub que não representa um ID numérico. */
+    private fun tokenComSubjectInvalido(): String {
+        val agora = relogio.instant()
+
+        val claims = JwtClaimsSet.builder()
+            .issuer(jwtProperties.emissor)
+            .issuedAt(agora)
+            .expiresAt(agora.plus(jwtProperties.expiracao))
+            .subject("usuario-invalido")
+            .claim("email", "invalido@teste.com")
+            .claim("papel", PapelUsuario.CIDADAO.name)
+            .build()
+
+        val cabecalho = JwsHeader.with(MacAlgorithm.HS256).build()
+
+        return jwtEncoder.encode(
+            JwtEncoderParameters.from(cabecalho, claims),
+        ).tokenValue
+    }
+
     private fun criar(
         token: String,
         ubsId: Long,
@@ -118,6 +148,64 @@ class ItemListaDesejoIntegrationTests(
 
         mockMvc.delete("/api/lista-desejos/1").andExpect {
             status { isUnauthorized() }
+        }
+    }
+
+    @Test
+    fun `jwt com subject nao numerico retorna 401`() {
+        val jwt = tokenComSubjectInvalido()
+
+        mockMvc.get("/api/lista-desejos") {
+            header("Authorization", "Bearer $jwt")
+        }.andExpect {
+            status { isUnauthorized() }
+            content { contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON) }
+            jsonPath("$.status") { value(401) }
+            jsonPath("$.title") { value("Credenciais inválidas") }
+        }
+    }
+
+    @Test
+    fun `token de usuario excluido retorna 401 em todas as operacoes`() {
+        val usuario = cidadao("excluido@teste.com")
+        val jwt = token(usuario)
+
+        // O JWT ainda é válido, mas a conta deixa de existir no banco.
+        usuarios.delete(usuario)
+        usuarios.flush()
+
+        mockMvc.get("/api/lista-desejos") {
+            header("Authorization", "Bearer $jwt")
+        }.andExpect {
+            status { isUnauthorized() }
+            content { contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON) }
+            jsonPath("$.status") { value(401) }
+            jsonPath("$.title") { value("Credenciais inválidas") }
+        }
+
+        mockMvc.post("/api/lista-desejos") {
+            header("Authorization", "Bearer $jwt")
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"ubsId":1,"medicamentoId":1}"""
+        }.andExpect {
+            status { isUnauthorized() }
+            jsonPath("$.title") { value("Credenciais inválidas") }
+        }
+
+        mockMvc.patch("/api/lista-desejos/1") {
+            header("Authorization", "Bearer $jwt")
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"notificar":false}"""
+        }.andExpect {
+            status { isUnauthorized() }
+            jsonPath("$.title") { value("Credenciais inválidas") }
+        }
+
+        mockMvc.delete("/api/lista-desejos/1") {
+            header("Authorization", "Bearer $jwt")
+        }.andExpect {
+            status { isUnauthorized() }
+            jsonPath("$.title") { value("Credenciais inválidas") }
         }
     }
 

@@ -1,14 +1,15 @@
 package br.ufal.medflow.listadesejo
 
+import br.ufal.medflow.auth.CredenciaisInvalidasException
 import br.ufal.medflow.auth.UsuarioRepository
 import br.ufal.medflow.common.RecursoNaoEncontradoException
 import br.ufal.medflow.medicamento.MedicamentoRepository
 import br.ufal.medflow.ubs.UbsRepository
-import org.hibernate.exception.ConstraintViolationException
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.sql.SQLException
 
 /** Indica que o medicamento já foi adicionado à lista para a mesma UBS. */
 class ItemListaDesejoDuplicadoException :
@@ -24,9 +25,13 @@ class ItemListaDesejoService(
     private val medicamentoRepository: MedicamentoRepository,
 ) {
 
-    fun listar(usuarioId: Long): List<ItemListaDesejoResponse> =
-        itemListaDesejoRepository.findAllByUsuarioIdOrderByCriadoEmDescIdDesc(usuarioId)
+    fun listar(usuarioId: Long): List<ItemListaDesejoResponse> {
+        validarUsuario(usuarioId)
+
+        return itemListaDesejoRepository
+            .findAllByUsuarioIdOrderByCriadoEmDescIdDesc(usuarioId)
             .map { it.toResponse() }
+    }
 
     @Transactional
     fun criar(
@@ -34,7 +39,7 @@ class ItemListaDesejoService(
         request: CriarItemListaDesejoRequest,
     ): ItemListaDesejoResponse {
         val usuario = usuarioRepository.findByIdOrNull(usuarioId)
-            ?: throw RecursoNaoEncontradoException("Usuário", usuarioId)
+            ?: throw CredenciaisInvalidasException()
 
         val ubs = ubsRepository.findByIdOrNull(request.ubsId)
             ?: throw RecursoNaoEncontradoException("UBS", request.ubsId)
@@ -62,11 +67,8 @@ class ItemListaDesejoService(
         try {
             return itemListaDesejoRepository.saveAndFlush(item).toResponse()
         } catch (ex: DataIntegrityViolationException) {
-            val duplicado = generateSequence<Throwable>(ex) { it.cause }
-                .filterIsInstance<ConstraintViolationException>()
-                .any { it.constraintName == "uk_item_lista_desejo" }
-
-            if (duplicado) {
+            // Protege também contra duas requisições simultâneas que tentem criar o mesmo item.
+            if (ex.violaUnicidade()) {
                 throw ItemListaDesejoDuplicadoException()
             }
 
@@ -80,6 +82,8 @@ class ItemListaDesejoService(
         itemId: Long,
         notificar: Boolean,
     ): ItemListaDesejoResponse {
+        validarUsuario(usuarioId)
+
         val item = itemListaDesejoRepository.findByIdAndUsuarioId(itemId, usuarioId)
             ?: throw RecursoNaoEncontradoException("Item da lista de desejos", itemId)
 
@@ -93,9 +97,28 @@ class ItemListaDesejoService(
         usuarioId: Long,
         itemId: Long,
     ) {
+        validarUsuario(usuarioId)
+
         val item = itemListaDesejoRepository.findByIdAndUsuarioId(itemId, usuarioId)
             ?: throw RecursoNaoEncontradoException("Item da lista de desejos", itemId)
 
         itemListaDesejoRepository.delete(item)
+    }
+
+    /** Um token de uma conta excluída não deve continuar autorizando operações. */
+    private fun validarUsuario(usuarioId: Long) {
+        if (!usuarioRepository.existsById(usuarioId)) {
+            throw CredenciaisInvalidasException()
+        }
+    }
+
+    /** SQLState 23505 indica violação de unicidade no PostgreSQL. */
+    private fun Throwable.violaUnicidade(): Boolean =
+        generateSequence(this) { it.cause }
+            .filterIsInstance<SQLException>()
+            .any { it.sqlState == UNIQUE_VIOLATION }
+
+    private companion object {
+        const val UNIQUE_VIOLATION = "23505"
     }
 }

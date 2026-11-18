@@ -71,10 +71,13 @@ class ItemListaDesejoServiceTest {
             .willReturn(false)
     }
 
-    private fun violacao(constraint: String): DataIntegrityViolationException {
+    private fun violacao(
+        sqlState: String,
+        constraint: String,
+    ): DataIntegrityViolationException {
         val causa = ConstraintViolationException(
             "Violação de constraint",
-            SQLException("Violação de integridade", "23505"),
+            SQLException("Violação de integridade", sqlState),
             constraint,
         )
 
@@ -85,8 +88,36 @@ class ItemListaDesejoServiceTest {
     fun `duplicata detectada pelo banco vira excecao de dominio`() {
         prepararCriacao()
 
+        val erro = violacao(
+            sqlState = "23505",
+            constraint = "uk_item_lista_desejo",
+        )
+
         given(itens.saveAndFlush(any(ItemListaDesejo::class.java)))
-            .willThrow(violacao("uk_item_lista_desejo"))
+            .willThrow(erro)
+
+        assertFailsWith<ItemListaDesejoDuplicadoException> {
+            service.criar(
+                1L,
+                CriarItemListaDesejoRequest(
+                    ubsId = 2L,
+                    medicamentoId = 3L,
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `duplicata e detectada independentemente do nome da constraint`() {
+        prepararCriacao()
+
+        val erro = violacao(
+            sqlState = "23505",
+            constraint = "nome_diferente_informado_pelo_hibernate",
+        )
+
+        given(itens.saveAndFlush(any(ItemListaDesejo::class.java)))
+            .willThrow(erro)
 
         assertFailsWith<ItemListaDesejoDuplicadoException> {
             service.criar(
@@ -103,7 +134,10 @@ class ItemListaDesejoServiceTest {
     fun `outra violacao de integridade nao e tratada como duplicata`() {
         prepararCriacao()
 
-        val erro = violacao("item_lista_desejo_ubs_id_fkey")
+        val erro = violacao(
+            sqlState = "23503",
+            constraint = "item_lista_desejo_ubs_id_fkey",
+        )
 
         given(itens.saveAndFlush(any(ItemListaDesejo::class.java)))
             .willThrow(erro)

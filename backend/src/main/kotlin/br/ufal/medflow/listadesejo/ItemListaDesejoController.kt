@@ -1,5 +1,6 @@
 package br.ufal.medflow.listadesejo
 
+import br.ufal.medflow.auth.CredenciaisInvalidasException
 import br.ufal.medflow.common.ParametroInvalidoException
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
@@ -45,6 +46,8 @@ class ItemListaDesejoController(
         itemListaDesejoService.atualizarNotificacao(
             usuarioId(jwt),
             id,
+            // @NotNull valida a entrada, mas o DTO usa Boolean?;
+            // esta checagem garante um Boolean não nulo para o serviço.
             request.notificar
                 ?: throw ParametroInvalidoException("notificar", "Informe true ou false"),
         )
@@ -61,5 +64,5 @@ class ItemListaDesejoController(
     /** A claim sub do JWT emitido pela L6 contém o ID do usuário. */
     private fun usuarioId(jwt: Jwt): Long =
         jwt.subject?.toLongOrNull()
-            ?: throw ParametroInvalidoException("sub", "Identificador do usuário inválido")
+            ?: throw CredenciaisInvalidasException()
 }
