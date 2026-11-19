@@ -1,6 +1,8 @@
 package br.ufal.medflow.ubs
 
+import com.fasterxml.jackson.annotation.JsonFormat
 import java.time.Instant
+import java.time.LocalTime
 
 data class UbsResponse(
     val id: Long,
@@ -14,7 +16,17 @@ data class UbsResponse(
     val latitude: Double,
     val longitude: Double,
     val ultimaSincronizacao: Instant?,
-)
+    /** Turnos por dia da semana; vazio quando a UBS não tem horário cadastrado. */
+    val horarios: List<HorarioResponse> = emptyList(),
+    /** `null` quando a UBS não tem horário cadastrado. */
+    val abertaAgora: Boolean? = null,
+    /** Hora em que fecha, só quando está aberta. */
+    @get:JsonFormat(pattern = "HH:mm") val fechaAs: LocalTime? = null,
+) {
+    fun com(funcionamento: FuncionamentoUbs?) = funcionamento?.let {
+        copy(horarios = it.horarios, abertaAgora = it.abertaAgora, fechaAs = it.fechaAs)
+    } ?: this
+}
 
 fun Ubs.toResponse() = UbsResponse(
     id = requireNotNull(id),

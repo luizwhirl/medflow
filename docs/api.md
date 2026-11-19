@@ -4,8 +4,8 @@ Base: `http://localhost:8080/api`. A documentação interativa fica em `/swagger
 
 | Método | Rota | Descrição |
 | --- | --- | --- |
-| GET | `/ubs` | Lista as unidades por nome. Com `lat` e `lng`, da mais próxima para a mais distante (veja abaixo) |
-| GET | `/ubs/{id}` | Detalhe de uma unidade |
+| GET | `/ubs` | Lista as unidades por nome. Com `lat` e `lng`, da mais próxima para a mais distante; com `abertas=true`, só as abertas agora (veja abaixo) |
+| GET | `/ubs/{id}` | Detalhe de uma unidade, com o horário de funcionamento |
 | GET | `/ubs/{id}/estoque` | Lista os itens do estoque da UBS, com filtro opcional por status |
 | GET | `/ubs/{id}/estoque/resumo` | Resumo do estoque da UBS, com contagens por status e filtro opcional |
 | GET | `/medicamentos?busca=` | Lista medicamentos; `busca` filtra por nome ou categoria |
@@ -210,6 +210,41 @@ Sem parâmetros, a rota lista as unidades por nome, como sempre. Com `lat` e `ln
 ```
 
 Sem `raioKm` a busca usa 20 km, para não varrer todas as unidades do banco. A caixa de latitude/longitude (índice `idx_ubs_localizacao`) descarta as unidades distantes antes da conta de distância. Para raios grandes a resposta pode ser longa; a paginação virá com a PDS-22.
+
+## Horário de funcionamento e "aberta agora"
+
+`GET /api/ubs?abertas=true` · `GET /api/ubs?lat=-9.55&lng=-35.72&abertas=true` · `GET /api/ubs/{id}`
+
+Toda UBS em `GET /api/ubs` (com ou sem `lat`/`lng`) e em `GET /api/ubs/{id}` traz três campos novos:
+
+| Campo | Conteúdo |
+| --- | --- |
+| `horarios` | Turnos por dia da semana (`SEGUNDA` ... `DOMINGO`), com `abre` e `fecha` em `HH:mm`. Vazio quando a unidade não tem horário cadastrado |
+| `abertaAgora` | `true` ou `false` no horário atual de Maceió (`America/Maceio`); `null` quando a unidade não tem horário cadastrado |
+| `fechaAs` | Hora em que fecha (`HH:mm`), só quando está aberta; senão `null` |
+
+Com `abertas=true`, a lista fica só com as unidades abertas agora; quem não tem horário cadastrado fica de fora. `abertas=false` ou sem o parâmetro não filtra. O filtro vale junto com `lat`, `lng`, `raioKm` e `medicamentoId`.
+
+Regras:
+
+- Um turno vale de `abre` (inclusive) até `fecha` (exclusive): às 17:00 uma unidade "7h às 17h" já está fechada.
+- Se `fecha` for antes de `abre`, o turno vira a noite e termina no dia seguinte (ex.: sexta, 19:00 às 07:00 vale até sábado, 07:00).
+- Turnos emendados (07:00–12:00 e 12:00–17:00) contam como um só: `fechaAs` é `17:00`.
+- Dias sem turno (fim de semana, na maioria das unidades) ficam fechados.
+
+```json
+{
+  "id": 1, "cnes": "9000101", "nome": "UBS Benedito Bentes I", "horario": "Seg a Sex · 7h às 17h",
+  "horarios": [
+    { "diaSemana": "SEGUNDA", "abre": "07:00", "fecha": "17:00" },
+    { "diaSemana": "TERCA", "abre": "07:00", "fecha": "17:00" }
+  ],
+  "abertaAgora": true,
+  "fechaAs": "17:00"
+}
+```
+
+O campo `horario` (texto livre) continua na resposta como descrição. Os turnos ficam na tabela `horario_funcionamento` (migration `V9`); no perfil `dev`, o seed `V1005` preenche os turnos das unidades de exemplo de acordo com esse texto.
 
 ## Resumo do estoque da UBS
 

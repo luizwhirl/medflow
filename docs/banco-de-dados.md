@@ -23,6 +23,7 @@ ubs 1───* item_estoque *───1 medicamento
 | Tabela | Conteúdo | Chave natural |
 | --- | --- | --- |
 | `ubs` | Unidades de saúde, localização e última sincronização | `cnes` |
+| `horario_funcionamento` | Turnos de atendimento da UBS por dia da semana (`dia_semana` de 1 = segunda a 7 = domingo; `fecha` antes de `abre` vira a noite) | (`ubs_id`, `dia_semana`, `abre`) |
 | `medicamento` | Itens da RENAME/REMUME | `catmat` |
 | `usuario` | Contas autenticadas de cidadãos e gestores | `email` |
 | `item_estoque` | Status e quantidade de um medicamento numa UBS | (`ubs_id`, `medicamento_id`) |
