@@ -15,7 +15,7 @@ import java.sql.SQLException
 class ItemListaDesejoDuplicadoException :
     RuntimeException("Medicamento já cadastrado na lista de desejos para esta UBS")
 
-/** Regras de negócio da lista de desejos do usuário autenticado. */
+/** Regras de negócio da lista de desejos, de uma conta logada ou de um aparelho sem login. */
 @Service
 @Transactional(readOnly = true)
 class ItemListaDesejoService(
@@ -25,21 +25,29 @@ class ItemListaDesejoService(
     private val medicamentoRepository: MedicamentoRepository,
 ) {
 
-    fun listar(usuarioId: Long): List<ItemListaDesejoResponse> {
-        validarUsuario(usuarioId)
+    fun listar(dono: DonoLista): List<ItemListaDesejoResponse> {
+        val itens = when (dono) {
+            is DonoLista.Conta -> {
+                validarUsuario(dono.usuarioId)
+                itemListaDesejoRepository.findAllByUsuarioIdOrderByCriadoEmDescIdDesc(dono.usuarioId)
+            }
+            is DonoLista.Aparelho ->
+                itemListaDesejoRepository.findAllByDispositivoIdOrderByCriadoEmDescIdDesc(dono.dispositivoId)
+        }
 
-        return itemListaDesejoRepository
-            .findAllByUsuarioIdOrderByCriadoEmDescIdDesc(usuarioId)
-            .map { it.toResponse() }
+        return itens.map { it.toResponse() }
     }
 
     @Transactional
     fun criar(
-        usuarioId: Long,
+        dono: DonoLista,
         request: CriarItemListaDesejoRequest,
     ): ItemListaDesejoResponse {
-        val usuario = usuarioRepository.findByIdOrNull(usuarioId)
-            ?: throw CredenciaisInvalidasException()
+        val usuario = when (dono) {
+            is DonoLista.Conta ->
+                usuarioRepository.findByIdOrNull(dono.usuarioId) ?: throw CredenciaisInvalidasException()
+            is DonoLista.Aparelho -> null
+        }
 
         val ubs = ubsRepository.findByIdOrNull(request.ubsId)
             ?: throw RecursoNaoEncontradoException("UBS", request.ubsId)
@@ -47,18 +55,25 @@ class ItemListaDesejoService(
         val medicamento = medicamentoRepository.findByIdOrNull(request.medicamentoId)
             ?: throw RecursoNaoEncontradoException("Medicamento", request.medicamentoId)
 
-        if (
-            itemListaDesejoRepository.existsByUsuarioIdAndUbsIdAndMedicamentoId(
-                usuarioId,
+        val jaExiste = when (dono) {
+            is DonoLista.Conta -> itemListaDesejoRepository.existsByUsuarioIdAndUbsIdAndMedicamentoId(
+                dono.usuarioId,
                 request.ubsId,
                 request.medicamentoId,
             )
-        ) {
+            is DonoLista.Aparelho -> itemListaDesejoRepository.existsByDispositivoIdAndUbsIdAndMedicamentoId(
+                dono.dispositivoId,
+                request.ubsId,
+                request.medicamentoId,
+            )
+        }
+        if (jaExiste) {
             throw ItemListaDesejoDuplicadoException()
         }
 
         val item = ItemListaDesejo(
             usuario = usuario,
+            dispositivoId = (dono as? DonoLista.Aparelho)?.dispositivoId,
             ubs = ubs,
             medicamento = medicamento,
             notificar = request.notificar,
@@ -78,14 +93,11 @@ class ItemListaDesejoService(
 
     @Transactional
     fun atualizarNotificacao(
-        usuarioId: Long,
+        dono: DonoLista,
         itemId: Long,
         notificar: Boolean,
     ): ItemListaDesejoResponse {
-        validarUsuario(usuarioId)
-
-        val item = itemListaDesejoRepository.findByIdAndUsuarioId(itemId, usuarioId)
-            ?: throw RecursoNaoEncontradoException("Item da lista de desejos", itemId)
+        val item = buscarDoDono(dono, itemId)
 
         item.notificar = notificar
 
@@ -94,15 +106,23 @@ class ItemListaDesejoService(
 
     @Transactional
     fun remover(
-        usuarioId: Long,
+        dono: DonoLista,
         itemId: Long,
     ) {
-        validarUsuario(usuarioId)
+        itemListaDesejoRepository.delete(buscarDoDono(dono, itemId))
+    }
 
-        val item = itemListaDesejoRepository.findByIdAndUsuarioId(itemId, usuarioId)
-            ?: throw RecursoNaoEncontradoException("Item da lista de desejos", itemId)
+    /** Item de outro dono responde como inexistente (404), para não revelar que ele existe. */
+    private fun buscarDoDono(dono: DonoLista, itemId: Long): ItemListaDesejo {
+        val item = when (dono) {
+            is DonoLista.Conta -> {
+                validarUsuario(dono.usuarioId)
+                itemListaDesejoRepository.findByIdAndUsuarioId(itemId, dono.usuarioId)
+            }
+            is DonoLista.Aparelho -> itemListaDesejoRepository.findByIdAndDispositivoId(itemId, dono.dispositivoId)
+        }
 
-        itemListaDesejoRepository.delete(item)
+        return item ?: throw RecursoNaoEncontradoException("Item da lista de desejos", itemId)
     }
 
     /** Um token de uma conta excluída não deve continuar autorizando operações. */

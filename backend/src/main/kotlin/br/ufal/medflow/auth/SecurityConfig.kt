@@ -6,6 +6,10 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.http.HttpMethod
+import org.springframework.security.authorization.AuthenticatedAuthorizationManager
+import org.springframework.security.authorization.AuthorityAuthorizationManager
+import org.springframework.security.authorization.AuthorizationManager
+import org.springframework.security.authorization.AuthorizationManagers
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity
 import org.springframework.security.config.annotation.web.invoke
@@ -21,14 +25,15 @@ import org.springframework.security.oauth2.jwt.NimbusJwtEncoder
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter
 import org.springframework.security.web.SecurityFilterChain
+import org.springframework.security.web.access.intercept.RequestAuthorizationContext
 import org.springframework.security.web.util.matcher.DispatcherTypeRequestMatcher
 import java.time.Clock
 import javax.crypto.spec.SecretKeySpec
 
 /**
  * API sem sessão: cada requisição leva um JWT (HS256). Leitura de UBS e medicamentos é pública,
- * a lista de desejos é do papel CIDADAO, o prefixo `/api/gestao` é só do papel GESTOR
- * e o restante exige login.
+ * a lista de desejos é de quem não fez login (identificado pelo aparelho) ou do papel CIDADAO,
+ * o prefixo `/api/gestao` é só do papel GESTOR e o restante exige login.
  */
 @Configuration
 @EnableWebSecurity
@@ -36,6 +41,13 @@ import javax.crypto.spec.SecretKeySpec
 class SecurityConfig(private val props: JwtProperties) {
 
     private val chave = SecretKeySpec(props.secret.toByteArray(), "HmacSHA256")
+
+    /** Sem token, a lista é do aparelho (X-Dispositivo-Id); com token, só o cidadão (gestor recebe 403). */
+    private val anonimoOuCidadao: AuthorizationManager<RequestAuthorizationContext> =
+        AuthorizationManagers.anyOf(
+            AuthenticatedAuthorizationManager.anonymous(),
+            AuthorityAuthorizationManager.hasRole("CIDADAO"),
+        )
 
     @Bean
     fun filterChain(http: HttpSecurity): SecurityFilterChain {
@@ -55,8 +67,8 @@ class SecurityConfig(private val props: JwtProperties) {
                 authorize("/swagger-ui.html", permitAll)
                 authorize("/swagger-ui/**", permitAll)
                 authorize("/v3/api-docs/**", permitAll)
-                authorize("/api/lista-desejos", hasRole("CIDADAO"))
-                authorize("/api/lista-desejos/**", hasRole("CIDADAO"))
+                authorize("/api/lista-desejos", anonimoOuCidadao)
+                authorize("/api/lista-desejos/**", anonimoOuCidadao)
                 authorize("/api/gestao/**", hasRole("GESTOR"))
                 authorize(anyRequest, authenticated)
             }
