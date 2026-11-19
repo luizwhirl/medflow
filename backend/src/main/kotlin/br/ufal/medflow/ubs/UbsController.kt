@@ -24,13 +24,15 @@ class UbsController(
     private val ubsRepository: UbsRepository,
     private val ubsEstoqueService: UbsEstoqueService,
     private val ubsProximidadeService: UbsProximidadeService,
+    private val horarioFuncionamentoService: HorarioFuncionamentoService,
 ) {
 
     @Operation(
         summary = "Lista as UBS",
         description = "Sem parâmetros, em ordem de nome. Com lat e lng, da mais próxima para a mais distante, " +
             "com a distância em km, até raioKm (padrão 20 km). Com medicamentoId, cada UBS que tem o item traz o " +
-            "status e a quantidade.",
+            "status e a quantidade. Cada UBS traz os horários, abertaAgora e fechaAs (fuso de Maceió); com " +
+            "abertas=true, só as abertas agora.",
     )
     @GetMapping
     fun listar(
@@ -42,20 +44,29 @@ class UbsController(
         @RequestParam(required = false) @DecimalMin(value = "0.0", inclusive = false) raioKm: Double?,
         @Parameter(description = "Traz o status e a quantidade desse medicamento em cada UBS que o tem. Exige lat e lng.")
         @RequestParam(required = false) medicamentoId: Long?,
+        @Parameter(description = "Com true, só as UBS abertas agora (fuso de Maceió). UBS sem horário cadastrado ficam de fora.")
+        @RequestParam(required = false) abertas: Boolean?,
     ): List<UbsProximaResponse> {
-        if (lat == null && lng == null) {
+        val unidades = if (lat == null && lng == null) {
             if (raioKm != null || medicamentoId != null) {
                 throw ParametroInvalidoException("lat/lng", "raioKm e medicamentoId exigem lat e lng")
             }
-            return ubsRepository.findAllByOrderByNomeAsc().map { it.toProximaResponse() }
+            ubsRepository.findAllByOrderByNomeAsc().map { it.toProximaResponse() }
+        } else {
+            if (lat == null || lng == null) throw ParametroInvalidoException("lat/lng", "Informe lat e lng juntos")
+            ubsProximidadeService.buscar(lat, lng, raioKm, medicamentoId)
         }
-        if (lat == null || lng == null) throw ParametroInvalidoException("lat/lng", "Informe lat e lng juntos")
-        return ubsProximidadeService.buscar(lat, lng, raioKm, medicamentoId)
+
+        val funcionamento = horarioFuncionamentoService.buscar(unidades.map { it.id })
+        val comHorario = unidades.map { it.com(funcionamento[it.id]) }
+        return if (abertas == true) comHorario.filter { it.abertaAgora == true } else comHorario
     }
 
     @GetMapping("/{id}")
-    fun buscar(@PathVariable id: Long): UbsResponse =
-        (ubsRepository.findByIdOrNull(id) ?: throw RecursoNaoEncontradoException("UBS", id)).toResponse()
+    fun buscar(@PathVariable id: Long): UbsResponse {
+        val ubs = (ubsRepository.findByIdOrNull(id) ?: throw RecursoNaoEncontradoException("UBS", id)).toResponse()
+        return ubs.com(horarioFuncionamentoService.buscar(listOf(id))[id])
+    }
 
     @GetMapping("/{id}/estoque")
     fun estoque(
