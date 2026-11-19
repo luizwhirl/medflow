@@ -1,4 +1,4 @@
-import { Component, computed, inject, input, signal } from '@angular/core';
+import { Component, computed, inject, input, linkedSignal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { catchError, forkJoin, map, of, startWith, switchMap } from 'rxjs';
@@ -11,7 +11,9 @@ import {
   posicaoAtual,
 } from '../../core/geo';
 import { Disponibilidade, statusExibido, temEstoque } from '../../core/models/estoque.model';
+import { ItemListaDesejo } from '../../core/models/lista-desejos.model';
 import { Medicamento } from '../../core/models/medicamento.model';
+import { ListaDesejosService } from '../../core/services/lista-desejos.service';
 import { MedicamentoService } from '../../core/services/medicamento.service';
 import { PreferenciasService } from '../../core/services/preferencias.service';
 import { UbsService } from '../../core/services/ubs.service';
@@ -98,7 +100,17 @@ const ORDEM = { DISPONIVEL: 0, RESERVADO: 1, EM_FALTA: 2 } as const;
             </svg>
             {{ naLista() ? 'Na minha lista' : 'Adicionar à lista' }}
           </button>
-          <button appButton type="button" disabled aria-describedby="aviso-em-breve">
+          <button
+            appButton
+            type="button"
+            [variante]="avisoLigado() ? 'secundario' : 'primario'"
+            [attr.aria-pressed]="avisoLigado()"
+            [disabled]="
+              !preferencias.ubsReferenciaId() || desejos() === undefined || salvandoAviso()
+            "
+            aria-describedby="aviso-ajuda"
+            (click)="alternarAviso()"
+          >
             <svg
               class="size-5"
               viewBox="0 0 24 24"
@@ -110,10 +122,20 @@ const ORDEM = { DISPONIVEL: 0, RESERVADO: 1, EM_FALTA: 2 } as const;
             >
               <path d="M6 16V11a6 6 0 1 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0" />
             </svg>
-            Avisar quando chegar
+            {{ avisoLigado() ? 'Aviso ligado' : 'Avisar quando chegar' }}
           </button>
-          <p id="aviso-em-breve" class="w-full text-right text-xs text-content-muted">
-            Os avisos chegam em breve.
+          <p id="aviso-ajuda" class="w-full text-right text-xs text-content-muted">
+            @if (erroAviso(); as erro) {
+              <span class="font-semibold text-status-falta">{{ erro }}</span>
+            } @else if (!preferencias.ubsReferenciaId()) {
+              <a routerLink="/mapa" class="font-semibold text-brand-600">Escolha sua UBS</a>
+              para receber avisos.
+            } @else if (avisoLigado()) {
+              Acompanhe em
+              <a routerLink="/lista" class="font-semibold text-brand-600">Minha lista</a>.
+            } @else {
+              O aviso fica vinculado à sua UBS de referência.
+            }
           </p>
         </div>
       </header>
@@ -217,6 +239,7 @@ const ORDEM = { DISPONIVEL: 0, RESERVADO: 1, EM_FALTA: 2 } as const;
 export class RastreioMedicamento {
   private readonly medicamentoService = inject(MedicamentoService);
   private readonly ubsService = inject(UbsService);
+  private readonly listaDesejos = inject(ListaDesejosService);
   protected readonly preferencias = inject(PreferenciasService);
 
   readonly id = input.required<number>();
@@ -228,6 +251,22 @@ export class RastreioMedicamento {
   protected readonly naLista = computed(() =>
     this.preferencias.remediosContinuos().includes(this.id()),
   );
+
+  /** Lista de desejos deste aparelho; `undefined` enquanto carrega, `null` se falhou. */
+  protected readonly desejos = linkedSignal(
+    toSignal(this.listaDesejos.listar().pipe(catchError(() => of(null))), {
+      initialValue: undefined,
+    }),
+  );
+  protected readonly salvandoAviso = signal(false);
+  protected readonly erroAviso = signal<string | null>(null);
+
+  /** Item deste medicamento na UBS de referência, se já estiver na lista. */
+  private readonly desejo = computed(() => {
+    const ref = this.preferencias.ubsReferenciaId();
+    return this.desejos()?.find((d) => d.medicamentoId === this.id() && d.ubsId === ref) ?? null;
+  });
+  protected readonly avisoLigado = computed(() => this.desejo()?.notificar === true);
 
   protected readonly estado = toSignal(
     toObservable(this.id).pipe(
@@ -310,5 +349,30 @@ export class RastreioMedicamento {
 
   constructor() {
     posicaoAtual().then((p) => this.posicao.set(p));
+  }
+
+  /**
+   * Liga o aviso na UBS de referência: cria o item na lista de desejos ou, se ele já existe,
+   * liga/desliga o aviso dele.
+   */
+  protected alternarAviso(): void {
+    const ref = this.preferencias.ubsReferenciaId();
+    if (!ref) return;
+    const atual = this.desejo();
+    const chamada = atual
+      ? this.listaDesejos.definirAviso(atual.id, !atual.notificar)
+      : this.listaDesejos.adicionar(ref, this.id(), true);
+    this.erroAviso.set(null);
+    this.salvandoAviso.set(true);
+    chamada.subscribe({
+      next: (item: ItemListaDesejo) => {
+        this.desejos.update((lista) => [item, ...(lista ?? []).filter((d) => d.id !== item.id)]);
+        this.salvandoAviso.set(false);
+      },
+      error: () => {
+        this.erroAviso.set('Não foi possível salvar o aviso agora. Tente de novo.');
+        this.salvandoAviso.set(false);
+      },
+    });
   }
 }
