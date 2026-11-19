@@ -5,17 +5,19 @@ import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { Disponibilidade } from '../models/estoque.model';
 import { Medicamento } from '../models/medicamento.model';
+import { Pagina } from '../models/pagina.model';
 
 @Injectable({ providedIn: 'root' })
 export class MedicamentoService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = `${environment.apiUrl}/medicamentos`;
 
-  buscar(termo = '', categoria = ''): Observable<Medicamento[]> {
+  /** Primeira página da busca (20 itens, em ordem de nome), com o total encontrado. */
+  buscar(termo = '', categoria = ''): Observable<Pagina<Medicamento>> {
     let params = new HttpParams();
     if (termo) params = params.set('busca', termo);
     if (categoria) params = params.set('categoria', categoria);
-    return this.http.get<Medicamento[]>(this.baseUrl, { params });
+    return this.http.get<Pagina<Medicamento>>(this.baseUrl, { params });
   }
 
   categorias(): Observable<string[]> {

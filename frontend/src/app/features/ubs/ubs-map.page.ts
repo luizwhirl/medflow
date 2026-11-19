@@ -266,7 +266,10 @@ export class UbsMapPage {
   );
 
   protected readonly medicamentos = toSignal(
-    this.medicamentoService.buscar().pipe(catchError(() => of([]))),
+    this.medicamentoService.buscar().pipe(
+      map((pagina) => pagina.itens),
+      catchError(() => of([])),
+    ),
     { initialValue: [] as Medicamento[] },
   );
 

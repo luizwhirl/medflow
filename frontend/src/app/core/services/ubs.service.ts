@@ -1,10 +1,11 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { Observable } from 'rxjs';
+import { map, Observable } from 'rxjs';
 
 import { environment } from '../../../environments/environment';
 import { Coordenadas } from '../geo';
 import { ItemEstoque } from '../models/estoque.model';
+import { Pagina, TAMANHO_MAXIMO_PAGINA } from '../models/pagina.model';
 import { Ubs, UbsProxima } from '../models/ubs.model';
 
 @Injectable({ providedIn: 'root' })
@@ -34,7 +35,11 @@ export class UbsService {
     return this.http.get<Ubs>(`${this.baseUrl}/${id}`);
   }
 
+  /** Estoque da UBS em ordem de nome (até 100 itens: a maior página da API). */
   estoque(id: number): Observable<ItemEstoque[]> {
-    return this.http.get<ItemEstoque[]>(`${this.baseUrl}/${id}/estoque`);
+    const params = new HttpParams().set('tamanho', TAMANHO_MAXIMO_PAGINA);
+    return this.http
+      .get<Pagina<ItemEstoque>>(`${this.baseUrl}/${id}/estoque`, { params })
+      .pipe(map((pagina) => pagina.itens));
   }
 }
