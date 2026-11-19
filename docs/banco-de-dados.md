@@ -66,6 +66,30 @@ O perfil padrão da aplicação é `dev`; ambientes de produção devem ativar e
 3. Seeds de desenvolvimento ficam em `db/seed` com numeração a partir de `V1000`, para não colidir com o schema.
 4. Toda mudança de schema precisa refletir na entidade JPA (o Hibernate valida no startup).
 
+## Recriar, salvar e restaurar o banco local
+
+Scripts em `scripts/`, em duas versões com o mesmo comportamento: `.sh` (Linux, macOS e Git Bash no Windows) e
+`.ps1` (PowerShell no Windows). Funcionam de qualquer pasta, sobem o container `db` se ele estiver parado e rodam
+tudo dentro dos containers do `docker-compose`, então não precisam de `psql`, `pg_dump` nem da API.
+
+| Comando | O que faz |
+| --- | --- |
+| `scripts/db-reset.sh` | Apaga o banco, aplica as migrations (`db/migration`) e o seed (`db/seed`) |
+| `scripts/db-dump.sh [arquivo]` | Salva o banco com `pg_dump` (padrão: `backups/medflow-AAAAMMDD-HHMMSS.dump`) |
+| `scripts/db-restore.sh <arquivo>` | Substitui o banco pelo conteúdo de um dump |
+
+No PowerShell, troque por `.\scripts\db-reset.ps1`, `.\scripts\db-dump.ps1` e `.\scripts\db-restore.ps1`. Se o
+Windows bloquear scripts, rode uma vez `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
+
+- `db-reset` e `db-restore` pedem confirmação; `-y` pula a pergunta.
+- O banco é apagado com `DROP DATABASE ... WITH (FORCE)`, que derruba as conexões abertas. A API pode ficar rodando:
+  ela reconecta sozinha. Os dados de exemplo ficam como se a API tivesse subido num banco vazio.
+- O `db-reset` usa o serviço `flyway` do `docker-compose` (perfil `migracao`, não sobe com o `up`), na mesma versão do
+  Flyway do Spring Boot e com a configuração do perfil `dev` (`db/migration` + `db/seed`, `out-of-order`). Ao trocar
+  de branch, ele resolve o `Flyway validation failed` causado por migrations que só existem em outra branch.
+- Os dumps ficam em `backups/`, que não vai para o git. Um dump traz também o `flyway_schema_history`: restaure-o
+  numa branch com as mesmas migrations em que ele foi gerado.
+
 ## Acesso
 
 - Linha de comando: `docker compose exec db psql -U medflow -d medflow`
