@@ -98,7 +98,7 @@ class ItemListaDesejoServiceTest {
 
         assertFailsWith<ItemListaDesejoDuplicadoException> {
             service.criar(
-                1L,
+                DonoLista.Conta(1L),
                 CriarItemListaDesejoRequest(
                     ubsId = 2L,
                     medicamentoId = 3L,
@@ -121,7 +121,7 @@ class ItemListaDesejoServiceTest {
 
         assertFailsWith<ItemListaDesejoDuplicadoException> {
             service.criar(
-                1L,
+                DonoLista.Conta(1L),
                 CriarItemListaDesejoRequest(
                     ubsId = 2L,
                     medicamentoId = 3L,
@@ -144,7 +144,7 @@ class ItemListaDesejoServiceTest {
 
         val lancada = assertFailsWith<DataIntegrityViolationException> {
             service.criar(
-                1L,
+                DonoLista.Conta(1L),
                 CriarItemListaDesejoRequest(
                     ubsId = 2L,
                     medicamentoId = 3L,

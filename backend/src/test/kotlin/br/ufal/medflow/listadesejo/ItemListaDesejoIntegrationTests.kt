@@ -127,27 +127,29 @@ class ItemListaDesejoIntegrationTests(
     }
 
     @Test
-    fun `endpoints exigem autenticacao`() {
+    fun `sem token as rotas exigem o identificador do aparelho`() {
         mockMvc.get("/api/lista-desejos").andExpect {
-            status { isUnauthorized() }
+            status { isBadRequest() }
+            content { contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON) }
+            jsonPath("$.title") { value("Parâmetro inválido") }
         }
 
         mockMvc.post("/api/lista-desejos") {
             contentType = MediaType.APPLICATION_JSON
             content = """{"ubsId":1,"medicamentoId":1}"""
         }.andExpect {
-            status { isUnauthorized() }
+            status { isBadRequest() }
         }
 
         mockMvc.patch("/api/lista-desejos/1") {
             contentType = MediaType.APPLICATION_JSON
             content = """{"notificar":false}"""
         }.andExpect {
-            status { isUnauthorized() }
+            status { isBadRequest() }
         }
 
         mockMvc.delete("/api/lista-desejos/1").andExpect {
-            status { isUnauthorized() }
+            status { isBadRequest() }
         }
     }
 

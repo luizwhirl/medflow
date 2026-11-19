@@ -12,11 +12,16 @@ import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
+import java.util.UUID
 
-/** API da lista de desejos do usuário autenticado. */
+/**
+ * API da lista de desejos. Com JWT de cidadão, a lista é da conta; sem login, é do aparelho
+ * informado no cabeçalho [CABECALHO_DISPOSITIVO].
+ */
 @RestController
 @RequestMapping("/api/lista-desejos")
 class ItemListaDesejoController(
@@ -25,26 +30,29 @@ class ItemListaDesejoController(
 
     @GetMapping
     fun listar(
-        @AuthenticationPrincipal jwt: Jwt,
+        @AuthenticationPrincipal jwt: Jwt?,
+        @RequestHeader(CABECALHO_DISPOSITIVO, required = false) dispositivo: String?,
     ): List<ItemListaDesejoResponse> =
-        itemListaDesejoService.listar(usuarioId(jwt))
+        itemListaDesejoService.listar(dono(jwt, dispositivo))
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     fun criar(
-        @AuthenticationPrincipal jwt: Jwt,
+        @AuthenticationPrincipal jwt: Jwt?,
+        @RequestHeader(CABECALHO_DISPOSITIVO, required = false) dispositivo: String?,
         @Valid @RequestBody request: CriarItemListaDesejoRequest,
     ): ItemListaDesejoResponse =
-        itemListaDesejoService.criar(usuarioId(jwt), request)
+        itemListaDesejoService.criar(dono(jwt, dispositivo), request)
 
     @PatchMapping("/{id}")
     fun atualizarNotificacao(
-        @AuthenticationPrincipal jwt: Jwt,
+        @AuthenticationPrincipal jwt: Jwt?,
+        @RequestHeader(CABECALHO_DISPOSITIVO, required = false) dispositivo: String?,
         @PathVariable id: Long,
         @Valid @RequestBody request: AtualizarNotificacaoRequest,
     ): ItemListaDesejoResponse =
         itemListaDesejoService.atualizarNotificacao(
-            usuarioId(jwt),
+            dono(jwt, dispositivo),
             id,
             // @NotNull valida a entrada, mas o DTO usa Boolean?;
             // esta checagem garante um Boolean não nulo para o serviço.
@@ -55,14 +63,35 @@ class ItemListaDesejoController(
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     fun remover(
-        @AuthenticationPrincipal jwt: Jwt,
+        @AuthenticationPrincipal jwt: Jwt?,
+        @RequestHeader(CABECALHO_DISPOSITIVO, required = false) dispositivo: String?,
         @PathVariable id: Long,
     ) {
-        itemListaDesejoService.remover(usuarioId(jwt), id)
+        itemListaDesejoService.remover(dono(jwt, dispositivo), id)
     }
 
-    /** A claim sub do JWT emitido pela L6 contém o ID do usuário. */
-    private fun usuarioId(jwt: Jwt): Long =
-        jwt.subject?.toLongOrNull()
-            ?: throw CredenciaisInvalidasException()
+    /**
+     * Com JWT (o SecurityConfig só deixa passar o papel CIDADAO), o dono é a conta do `sub`.
+     * Sem login, é o aparelho do cabeçalho, que precisa ser um UUID no formato canônico.
+     */
+    private fun dono(jwt: Jwt?, dispositivo: String?): DonoLista {
+        if (jwt != null) {
+            return DonoLista.Conta(jwt.subject?.toLongOrNull() ?: throw CredenciaisInvalidasException())
+        }
+        if (dispositivo == null || !UUID_CANONICO.matches(dispositivo)) {
+            throw ParametroInvalidoException(
+                CABECALHO_DISPOSITIVO,
+                "Envie o cabeçalho $CABECALHO_DISPOSITIVO com o identificador (UUID) deste aparelho",
+            )
+        }
+        return DonoLista.Aparelho(UUID.fromString(dispositivo))
+    }
+
+    companion object {
+        const val CABECALHO_DISPOSITIVO = "X-Dispositivo-Id"
+
+        /** `UUID.fromString` aceita formas abreviadas ("1-1-1-1-1"); aqui só o formato de 36 caracteres. */
+        private val UUID_CANONICO =
+            Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+    }
 }

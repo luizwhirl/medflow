@@ -14,14 +14,14 @@ Base: `http://localhost:8080/api`. A documentação interativa fica em `/swagger
 | GET | `/medicamentos/{id}` | Detalhe de um medicamento |
 | GET | `/medicamentos/{id}/disponibilidade` | Unidades com o medicamento (disponíveis primeiro) |
 | GET | `/medicamentos/{id}/disponibilidade/resumo` | Total de unidades e unidades com estoque disponível, com filtro opcional por município |
-| GET | `/lista-desejos` | Lista os medicamentos desejados pelo cidadão autenticado |
+| GET | `/lista-desejos` | Lista os medicamentos desejados pelo aparelho (sem login) ou pelo cidadão autenticado |
 | POST | `/lista-desejos` | Adiciona um medicamento à lista de desejos |
 | PATCH | `/lista-desejos/{id}` | Ativa ou desativa a notificação de um item |
 | DELETE | `/lista-desejos/{id}` | Remove um item da lista de desejos |
 
 ## Autenticação
 
-A leitura de UBS e medicamentos (`GET /api/ubs/**` e `GET /api/medicamentos/**`), a saúde (`/actuator/health`) e a documentação (Swagger) são públicas. Todo o resto exige login. O prefixo `/api/gestao` é só do papel `GESTOR`, enquanto `/api/lista-desejos` e suas subrotas são exclusivos do papel `CIDADAO`. Rota que não existe também responde `401` sem token.
+A leitura de UBS e medicamentos (`GET /api/ubs/**` e `GET /api/medicamentos/**`), a saúde (`/actuator/health`) e a documentação (Swagger) são públicas. A lista de desejos (`/api/lista-desejos` e subrotas) funciona sem login, identificada pelo aparelho, ou com o token do papel `CIDADAO` (veja [Lista de desejos](#lista-de-desejos)). Todo o resto exige login. O prefixo `/api/gestao` é só do papel `GESTOR`. Rota que não existe também responde `401` sem token.
 
 | Método | Rota | Quem | Descrição |
 | --- | --- | --- | --- |
@@ -57,7 +57,12 @@ No perfil `dev` existem duas contas de exemplo, com a senha `medflow-dev-123`: `
 
 A lista de desejos permite que um cidadão acompanhe medicamentos em uma UBS de referência e escolha se deseja receber avisos de disponibilidade.
 
-Todas as rotas exigem um JWT válido com o papel `CIDADAO`. O proprietário é identificado automaticamente pela claim `sub` do token; não é necessário informar o ID do usuário na requisição.
+A lista pode pertencer a um aparelho sem login ou a uma conta de cidadão:
+
+- **Sem login:** envie o cabeçalho `X-Dispositivo-Id` com um UUID no formato canônico (36 caracteres, ex.: `3f1c2b7e-8a4d-4e1f-9b2c-5d6e7f8a9b0c`). O frontend gera esse UUID uma vez com `crypto.randomUUID()` e o guarda no navegador. Quem tiver o UUID tem acesso à lista daquele aparelho, então ele deve ser tratado como um segredo do aparelho. Sem o cabeçalho, ou fora do formato, a resposta é `400` com `title: "Parâmetro inválido"`.
+- **Com login:** envie `Authorization: Bearer <token>` de uma conta `CIDADAO`. O proprietário é a conta da claim `sub`, e o cabeçalho `X-Dispositivo-Id` é ignorado. Token de `GESTOR` recebe `403`.
+
+Cada item pertence a um único dono (conta **ou** aparelho), garantido pela constraint `ck_item_lista_desejo_dono`. Item de outro dono responde `404`, como se não existisse.
 
 ### Listar desejos
 
@@ -105,7 +110,7 @@ Corpo da requisição:
 
 A resposta retorna `201 Created` com os dados do item cadastrado, no mesmo formato apresentado na listagem.
 
-O mesmo cidadão não pode cadastrar duas vezes o mesmo medicamento para a mesma UBS. A unicidade é garantida pela constraint `uk_item_lista_desejo`, baseada em `(usuario_id, ubs_id, medicamento_id)`.
+O mesmo dono não pode cadastrar duas vezes o mesmo medicamento para a mesma UBS. A unicidade é garantida pelas constraints `uk_item_lista_desejo`, baseada em `(usuario_id, ubs_id, medicamento_id)`, e `uk_item_lista_desejo_dispositivo`, baseada em `(dispositivo_id, ubs_id, medicamento_id)`.
 
 Uma tentativa de cadastro duplicado retorna `409 Conflict` no padrão `application/problem+json`:
 
@@ -118,7 +123,7 @@ Uma tentativa de cadastro duplicado retorna `409 Conflict` no padrão `applicati
 }
 ```
 
-Cidadãos diferentes podem adicionar o mesmo medicamento para a mesma UBS, pois cada lista pertence ao respectivo usuário.
+Donos diferentes (contas ou aparelhos) podem adicionar o mesmo medicamento para a mesma UBS, pois cada lista pertence ao respectivo dono.
 
 ### Ativar ou desativar notificações
 
