@@ -236,7 +236,7 @@ Sem parâmetros, a rota lista as unidades por nome, como sempre. Com `lat` e `ln
 ]
 ```
 
-Sem `raioKm` a busca usa 20 km, para não varrer todas as unidades do banco. A caixa de latitude/longitude (índice `idx_ubs_localizacao`) descarta as unidades distantes antes da conta de distância. Para raios grandes a resposta pode ser longa; a paginação virá com a PDS-22.
+Sem `raioKm` a busca usa 20 km, para não varrer todas as unidades do banco. A caixa de latitude/longitude (índice `idx_ubs_localizacao`) descarta as unidades distantes antes da conta de distância. Para raios grandes a resposta pode ser longa: esta rota ainda não é paginada.
 
 ## Resumo do estoque da UBS
 
