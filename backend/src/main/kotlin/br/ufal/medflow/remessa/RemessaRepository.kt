@@ -19,4 +19,14 @@ interface RemessaRepository : JpaRepository<Remessa, Long> {
         @Param("ubsId") ubsId: Long,
         @Param("concluida") concluida: EtapaRemessa = EtapaRemessa.DISPONIVEL,
     ): List<Remessa>
+
+    /** Todas as remessas do medicamento na UBS, da mais recente para a mais antiga. */
+    @Query(
+        """
+        select r from Remessa r
+        where r.ubs.id = :ubsId and r.medicamento.id = :medicamentoId
+        order by r.criadoEm desc, r.id desc
+        """,
+    )
+    fun findDaUbsEMedicamento(@Param("ubsId") ubsId: Long, @Param("medicamentoId") medicamentoId: Long): List<Remessa>
 }
