@@ -4,7 +4,7 @@ PostgreSQL 17, versionado com Flyway em `backend/src/main/resources/db/`.
 
 ```text
 db/migration/   schema (todos os ambientes)       V1__schema_inicial.sql, V2__..., ...
-db/seed/        dados fictícios (só perfil dev)   V1000__dados_exemplo.sql, V1001__lotes_exemplo.sql, V1002__remessas_exemplo.sql
+db/seed/        dados fictícios (só perfil dev)   V1000__dados_exemplo.sql, V1001__lotes_exemplo.sql, V1006__remessas_exemplo.sql
 ```
 
 ## Modelo
@@ -68,7 +68,7 @@ O perfil padrão da aplicação é `dev`; ambientes de produção devem ativar e
 
 A migration `V6__remessas.sql` cria `remessa` e `remessa_evento`. A etapa atual de uma remessa é a mais avançada registrada nos eventos; ela está em andamento enquanto não tiver o evento `DISPONIVEL`. Cada etapa só acontece uma vez por remessa, e apagar a remessa apaga seus eventos.
 
-A BNAFAR pública não informa remessas em trânsito, então não há fonte oficial. No perfil `dev`, o seed `V1002__remessas_exemplo.sql` cria seis remessas em etapas diferentes (uma delas já concluída).
+A BNAFAR pública não informa remessas em trânsito, então não há fonte oficial. No perfil `dev`, o seed `V1006__remessas_exemplo.sql` cria seis remessas em etapas diferentes (uma delas já concluída).
 
 ## Regras para migrations
 

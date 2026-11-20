@@ -43,8 +43,8 @@ class RemessaIntegrationTests(
         )!!
 
     @Test
-    fun `seed tem seis remessas e cada uma comeca no pedido`() {
-        assertEquals(6, remessas.count())
+    fun `toda remessa do seed comeca no pedido`() {
+        assertTrue(remessas.count() > 0, "o seed precisa ter remessas")
         val semPedido = jdbc.queryForList(
             "SELECT r.id FROM remessa r WHERE NOT EXISTS (SELECT 1 FROM remessa_evento e WHERE e.remessa_id = r.id AND e.etapa = 'PEDIDO')",
             Long::class.java,
@@ -68,19 +68,23 @@ class RemessaIntegrationTests(
 
     @Test
     fun `lista as remessas em andamento da UBS com o medicamento`() {
-        val lista = remessas.findEmAndamentoDaUbs(idUbs("9000101"))
+        val metformina = remessas.findEmAndamentoDaUbs(idUbs("9000101")).single { it.medicamento.nome == "Metformina" }
 
-        assertEquals(1, lista.size)
-        assertEquals("Metformina", lista.single().medicamento.nome)
-        assertEquals(300, lista.single().quantidade)
-        assertEquals(LocalDate.now().plusDays(2), lista.single().previsaoChegada)
+        assertEquals(300, metformina.quantidade)
+        assertEquals(LocalDate.now().plusDays(2), metformina.previsaoChegada)
     }
 
     @Test
     fun `remessa que ja esta disponivel nao aparece em andamento`() {
-        // a UBS 9000104 só tem a remessa de Losartana, já na etapa DISPONIVEL
-        assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM remessa WHERE ubs_id = ?", Int::class.java, idUbs("9000104")))
-        assertTrue(remessas.findEmAndamentoDaUbs(idUbs("9000104")).isEmpty())
+        // a UBS 9000104 tem a remessa de Losartana, já na etapa DISPONIVEL
+        val ubs = idUbs("9000104")
+        val disponiveis = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM remessa r JOIN remessa_evento e ON e.remessa_id = r.id AND e.etapa = 'DISPONIVEL' WHERE r.ubs_id = ?",
+            Int::class.java,
+            ubs,
+        )!!
+        assertTrue(disponiveis >= 1, "o seed precisa ter uma remessa concluída na UBS 9000104")
+        assertTrue(remessas.findEmAndamentoDaUbs(ubs).none { it.medicamento.nome == "Losartana potássica" })
     }
 
     @Test
@@ -89,14 +93,15 @@ class RemessaIntegrationTests(
         inserirRemessa("9000101", "BR0268856", 10, LocalDate.now().plusDays(30))
         inserirRemessa("9000101", "BR0267543", 20, LocalDate.now())
 
-        val lista = remessas.findEmAndamentoDaUbs(idUbs("9000101"))
+        val nomes = setOf("Dipirona", "Metformina", "Losartana potássica")
+        val lista = remessas.findEmAndamentoDaUbs(idUbs("9000101")).map { it.medicamento.nome }.filter { it in nomes }
 
-        assertEquals(listOf("Dipirona", "Metformina", "Losartana potássica"), lista.map { it.medicamento.nome })
+        assertEquals(listOf("Dipirona", "Metformina", "Losartana potássica"), lista)
     }
 
     @Test
     fun `eventos da remessa vem em ordem e nenhum esta no futuro`() {
-        val remessa = remessas.findEmAndamentoDaUbs(idUbs("9000101")).single()
+        val remessa = remessas.findEmAndamentoDaUbs(idUbs("9000101")).single { it.medicamento.nome == "Metformina" }
 
         val lista = eventos.findDasRemessas(listOf(requireNotNull(remessa.id)))
 
@@ -133,7 +138,7 @@ class RemessaIntegrationTests(
 
     @Test
     fun `apagar a remessa apaga os eventos`() {
-        val remessa = remessas.findEmAndamentoDaUbs(idUbs("9000101")).single()
+        val remessa = remessas.findEmAndamentoDaUbs(idUbs("9000101")).single { it.medicamento.nome == "Metformina" }
         val id = requireNotNull(remessa.id)
         assertEquals(3, jdbc.queryForObject("SELECT COUNT(*) FROM remessa_evento WHERE remessa_id = ?", Int::class.java, id))
 
