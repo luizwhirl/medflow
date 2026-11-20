@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.context.annotation.Import
+import org.springframework.data.domain.Pageable
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
@@ -53,6 +54,7 @@ class MedicamentoRepositoryIntegrationTests(
         val resultado = medicamentoRepository.buscarPorCategoriaETermo(
             "Medicamento Teste Filtro",
             "Diabetes",
+            Pageable.unpaged(),
         )
 
         assertTrue(resultado.any { it.id == medicamentoDiabetes.id })
@@ -70,9 +72,9 @@ class MedicamentoRepositoryIntegrationTests(
             param("categoria", "Diabetes")
         }.andExpect {
             status { isOk() }
-            jsonPath("$.length()") { value(1) }
-            jsonPath("$[0].nome") { value("Metformina") }
-            jsonPath("$[0].categoria") { value("Diabetes") }
+            jsonPath("$.itens.length()") { value(1) }
+            jsonPath("$.itens[0].nome") { value("Metformina") }
+            jsonPath("$.itens[0].categoria") { value("Diabetes") }
         }
     }
 
@@ -82,10 +84,10 @@ class MedicamentoRepositoryIntegrationTests(
             param("categoria", "diabetes")
         }.andExpect {
             status { isOk() }
-            jsonPath("$[*].categoria") {
+            jsonPath("$.itens[*].categoria") {
                 value(everyItem(equalTo("Diabetes")))
             }
-            jsonPath("$[*].nome") {
+            jsonPath("$.itens[*].nome") {
                 value(hasItem("Metformina"))
             }
         }

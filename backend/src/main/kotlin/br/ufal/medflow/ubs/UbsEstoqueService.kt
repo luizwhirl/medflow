@@ -1,12 +1,15 @@
 package br.ufal.medflow.ubs
 
+import br.ufal.medflow.common.PaginaResponse
 import br.ufal.medflow.common.RecursoNaoEncontradoException
+import br.ufal.medflow.common.toPaginaResponse
 import br.ufal.medflow.estoque.ItemEstoque
 import br.ufal.medflow.estoque.ItemEstoqueRepository
 import br.ufal.medflow.estoque.ItemEstoqueResponse
 import br.ufal.medflow.estoque.ResumoEstoqueUbsResponse
 import br.ufal.medflow.estoque.StatusEstoque
 import br.ufal.medflow.estoque.toItemResponse
+import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -17,14 +20,20 @@ class UbsEstoqueService(
     private val itemEstoqueRepository: ItemEstoqueRepository,
 ) {
 
+    /** Estoque da UBS em ordem de nome do medicamento, paginado. */
     fun listarItens(
         ubsId: Long,
         status: StatusEstoque?,
-    ): List<ItemEstoqueResponse> {
+        pagina: Pageable,
+    ): PaginaResponse<ItemEstoqueResponse> {
         verificarUbs(ubsId)
 
-        return buscarItens(ubsId, status)
-            .map { it.toItemResponse() }
+        val itens = if (status == null) {
+            itemEstoqueRepository.findByUbs(ubsId, pagina)
+        } else {
+            itemEstoqueRepository.findByUbsEStatus(ubsId, status, pagina)
+        }
+        return itens.toPaginaResponse { it.toItemResponse() }
     }
 
     fun obterResumo(
