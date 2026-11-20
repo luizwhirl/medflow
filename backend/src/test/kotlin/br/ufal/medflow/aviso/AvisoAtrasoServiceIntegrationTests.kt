@@ -19,7 +19,6 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
 import org.springframework.test.context.ActiveProfiles
-import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.transaction.annotation.Transactional
 import org.testcontainers.junit.jupiter.Testcontainers
@@ -34,7 +33,6 @@ import kotlin.test.assertTrue
 /** Testes da geração de avisos sobre UBS com dados atrasados. */
 @SpringBootTest
 @ActiveProfiles("test")
-@TestPropertySource(properties = ["app.avisos.atraso-dias=7"])
 @Import(TestcontainersConfiguration::class)
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional
@@ -52,11 +50,14 @@ class AvisoAtrasoServiceIntegrationTests(
     private lateinit var relogio: Clock
 
     private val agora = Instant.parse("2026-11-19T20:00:00Z")
+    private var instanteAtual = agora
+
     private val ibge = "2702405"
 
     @BeforeEach
     fun prepararRelogio() {
-        given(relogio.instant()).willReturn(agora)
+        instanteAtual = agora
+        given(relogio.instant()).willAnswer { instanteAtual }
     }
 
     private fun criarUbs(
@@ -131,7 +132,7 @@ class AvisoAtrasoServiceIntegrationTests(
 
     @Test
     fun `gera um aviso por cidadao mesmo com varios medicamentos na ubs`() {
-        val referencia = agora.minus(Duration.ofDays(10))
+        val referencia = agora.minus(Duration.ofHours(48))
         val ubs = criarUbs("9000101", referencia)
 
         val metformina = criarMedicamento("BR0267690", "Metformina")
@@ -180,7 +181,7 @@ class AvisoAtrasoServiceIntegrationTests(
     fun `verificacoes repetidas nao geram avisos duplicados`() {
         val ubs = criarUbs(
             "9000102",
-            agora.minus(Duration.ofDays(10)),
+            agora.minus(Duration.ofHours(36)),
         )
 
         val medicamento = criarMedicamento("BR0267691", "Metformina")
@@ -201,12 +202,12 @@ class AvisoAtrasoServiceIntegrationTests(
 
         val atualizada = criarUbs(
             "9000104",
-            agora.minus(Duration.ofDays(2)),
+            agora.minus(Duration.ofHours(12)),
         )
 
         val outroMunicipio = criarUbs(
             "9000105",
-            agora.minus(Duration.ofDays(20)),
+            agora.minus(Duration.ofHours(48)),
             codigoIbge = "2704302",
         )
 
@@ -232,7 +233,7 @@ class AvisoAtrasoServiceIntegrationTests(
     fun `gera novo aviso quando dados atualizados voltam a ficar atrasados`() {
         val ubs = criarUbs(
             "9000106",
-            agora.minus(Duration.ofDays(10)),
+            agora.minus(Duration.ofHours(48)),
         )
 
         val medicamento = criarMedicamento("BR0267693", "Metformina")
@@ -240,51 +241,52 @@ class AvisoAtrasoServiceIntegrationTests(
 
         acompanhar(cidadao, ubs, medicamento)
 
+        // Primeiro período de atraso.
         assertEquals(1, servico.verificarMunicipio(ibge))
 
         val primeiraChave = avisosDo(cidadao).single().chaveEvento
 
-        // A UBS recebeu uma posição recente: não deve gerar aviso.
+        // A UBS recebe uma posição atualizada, com 12 horas de idade.
         val unidadeAtualizada = unidades.findById(ubs.id!!).orElseThrow()
         unidadeAtualizada.ultimaSincronizacao =
-            agora.minus(Duration.ofDays(1))
+            agora.minus(Duration.ofHours(12))
         unidades.saveAndFlush(unidadeAtualizada)
 
         assertEquals(0, servico.verificarMunicipio(ibge))
         assertEquals(1, avisosDo(cidadao).size)
 
-        // Simula um novo período de atraso, com outra referência.
-        val unidadeNovamenteAtrasada =
-            unidades.findById(ubs.id!!).orElseThrow()
-
-        unidadeNovamenteAtrasada.ultimaSincronizacao =
-            agora.minus(Duration.ofDays(8))
-
-        unidades.saveAndFlush(unidadeNovamenteAtrasada)
+        // Avança 13 horas. A mesma posição agora tem 25 horas
+        // de idade e passa a ser considerada atrasada.
+        instanteAtual = agora.plus(Duration.ofHours(13))
 
         assertEquals(1, servico.verificarMunicipio(ibge))
 
         val encontrados = avisosDo(cidadao)
 
         assertEquals(2, encontrados.size)
-        assertNotEquals(
-            primeiraChave,
-            encontrados.first {
-                it.chaveEvento != primeiraChave
-            }.chaveEvento,
+
+        val segundaChave = encontrados.first {
+            it.chaveEvento != primeiraChave
+        }.chaveEvento
+
+        assertNotEquals(primeiraChave, segundaChave)
+        assertTrue(
+            encontrados.all {
+                it.tipo == TipoAviso.UBS_DADOS_ATRASADOS
+            },
         )
     }
 
     @Test
-    fun `respeita o limite configurado de sete dias`() {
+    fun `respeita o limite padrao de vinte e quatro horas`() {
         val noLimite = criarUbs(
             "9000107",
-            agora.minus(Duration.ofDays(7)),
+            agora.minus(Duration.ofHours(24)),
         )
 
         val ultrapassouLimite = criarUbs(
             "9000108",
-            agora.minus(Duration.ofDays(7)).minusSeconds(1),
+            agora.minus(Duration.ofHours(24)).minusSeconds(1),
         )
 
         val medicamento = criarMedicamento("BR0267694", "Metformina")
@@ -293,6 +295,8 @@ class AvisoAtrasoServiceIntegrationTests(
         acompanhar(cidadao, noLimite, medicamento)
         acompanhar(cidadao, ultrapassouLimite, medicamento)
 
+        // Exatamente 24 horas não é considerado atraso.
+        // A partir de 24 horas e 1 segundo, gera aviso.
         assertEquals(1, servico.verificarMunicipio(ibge))
 
         val encontrados = avisosDo(cidadao)

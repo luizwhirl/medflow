@@ -22,6 +22,9 @@ class GeracaoAvisoService(
      * Avisa os cidadãos interessados quando um medicamento
      * passa a estar disponível em uma UBS.
      *
+     * Não gera um novo aviso se o cidadão já possui um aviso
+     * não lido para o mesmo medicamento e UBS.
+     *
      * Deve ser chamado apenas quando houver uma transição real
      * para DISPONIVEL, inclusive na criação de um item disponível.
      *
@@ -53,15 +56,37 @@ class GeracaoAvisoService(
             return 0
         }
 
-        // Um identificador novo para cada transição real.
-        // Todos os usuários notificados pela mesma transição
-        // recebem a mesma chave de evento.
-        val chaveEvento =
-            "disponibilidade:$ubsId:$medicamentoId:${UUID.randomUUID()}"
+        val prefixoEvento = "disponibilidade:$ubsId:$medicamentoId:"
 
+        val usuarioIds = usuarios.map { usuario ->
+            requireNotNull(usuario.id) {
+                "O usuário interessado precisa estar persistido"
+            }
+        }
+
+        // Consulta o banco uma única vez para identificar os cidadãos
+        // que já possuem um aviso pendente dessa UBS e medicamento.
+        val usuariosComAvisoPendente =
+            avisos.buscarUsuariosComDisponibilidadeNaoLida(
+                usuarioIds,
+                TipoAviso.MEDICAMENTO_DISPONIVEL,
+                prefixoEvento,
+            ).toSet()
+
+        val usuariosParaNotificar = usuarios.filter { usuario ->
+            usuario.id !in usuariosComAvisoPendente
+        }
+
+        if (usuariosParaNotificar.isEmpty()) {
+            return 0
+        }
+
+        // Identificador novo para esta transição.
+        // Todos os cidadãos notificados recebem a mesma chave.
+        val chaveEvento = "$prefixoEvento${UUID.randomUUID()}"
         val criadoEm = Instant.now(relogio)
 
-        val novosAvisos = usuarios.map { usuario ->
+        val novosAvisos = usuariosParaNotificar.map { usuario ->
             Aviso(
                 usuario = usuario,
                 tipo = TipoAviso.MEDICAMENTO_DISPONIVEL,

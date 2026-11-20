@@ -9,10 +9,46 @@ import java.time.Instant
 /** Acesso aos avisos, sempre restrito ao usuário autenticado quando aplicável. */
 interface AvisoRepository : JpaRepository<Aviso, Long> {
 
-    /** Lista os avisos do cidadão, começando pelos mais recentes. */
+    /** Retorna somente os 50 avisos mais recentes do cidadão. */
+    fun findTop50ByUsuarioIdOrderByCriadoEmDescIdDesc(
+        usuarioId: Long,
+    ): List<Aviso>
+
+    /** Consulta o histórico completo, utilizada também nos testes de integração. */
     fun findAllByUsuarioIdOrderByCriadoEmDescIdDesc(
         usuarioId: Long,
     ): List<Aviso>
+
+    /** Conta os avisos não lidos do cidadão diretamente no banco. */
+    fun countByUsuarioIdAndLidoFalse(
+        usuarioId: Long,
+    ): Long
+
+    /**
+     * Identifica os cidadãos que já possuem um aviso de disponibilidade
+     * não lido para a mesma combinação de UBS e medicamento.
+     *
+     * O filtro é realizado diretamente no banco, sem carregar
+     * o histórico completo de avisos.
+     *
+     * O prefixo termina com ":" para não confundir IDs
+     * como medicamento 2 e medicamento 20.
+     */
+    @Query(
+        """
+        select distinct a.usuario.id
+        from Aviso a
+        where a.usuario.id in :usuarioIds
+          and a.tipo = :tipo
+          and a.lido = false
+          and a.chaveEvento like concat(:prefixoEvento, '%')
+        """,
+    )
+    fun buscarUsuariosComDisponibilidadeNaoLida(
+        @Param("usuarioIds") usuarioIds: Collection<Long>,
+        @Param("tipo") tipo: TipoAviso,
+        @Param("prefixoEvento") prefixoEvento: String,
+    ): List<Long>
 
     /** Marca todos os avisos não lidos do cidadão em uma única operação no banco. */
     @Modifying

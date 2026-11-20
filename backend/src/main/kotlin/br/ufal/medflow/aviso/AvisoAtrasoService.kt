@@ -16,12 +16,12 @@ class AvisoAtrasoService(
     private val avisoRepository: AvisoRepository,
     private val relogio: Clock,
 
-    @param:Value("\${app.avisos.atraso-dias:7}")
-    private val atrasoDias: Long,
+    @param:Value("\${app.avisos.atraso-horas:24}")
+    private val atrasoHoras: Long,
 ) {
 
     init {
-        require(atrasoDias > 0) {
+        require(atrasoHoras > 0) {
             "O prazo de atraso dos avisos deve ser maior que zero"
         }
     }
@@ -37,7 +37,7 @@ class AvisoAtrasoService(
     @Transactional
     fun verificarMunicipio(codigoIbge: String): Int {
         val agora = Instant.now(relogio)
-        val limite = agora.minus(Duration.ofDays(atrasoDias))
+        val limite = agora.minus(Duration.ofHours(atrasoHoras))
 
         val unidadesAtrasadas = ubsRepository.buscarComDadosAtrasados(
             codigoIbge,

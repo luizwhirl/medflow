@@ -15,12 +15,19 @@ class AvisoController(
     private val avisoService: AvisoService,
 ) {
 
-    /** Lista os avisos do cidadão, dos mais recentes aos mais antigos. */
+    /** Lista os 50 avisos mais recentes do cidadão. */
     @GetMapping
     fun listar(
         @AuthenticationPrincipal jwt: Jwt,
     ): List<AvisoResponse> =
         avisoService.listar(usuarioId(jwt))
+
+    /** Retorna o total de avisos não lidos, independentemente do limite da listagem. */
+    @GetMapping("/nao-lidos/total")
+    fun contarNaoLidos(
+        @AuthenticationPrincipal jwt: Jwt,
+    ): AvisosNaoLidosResponse =
+        avisoService.contarNaoLidos(usuarioId(jwt))
 
     /** Marca todos os avisos não lidos do cidadão como lidos. */
     @PatchMapping("/lidas")

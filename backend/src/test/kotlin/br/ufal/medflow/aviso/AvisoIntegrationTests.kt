@@ -130,6 +130,137 @@ class AvisoIntegrationTests(
     }
 
     @Test
+    fun `lista somente os cinquenta avisos mais recentes`() {
+        val cidadao = criarUsuario("avisos-limite@teste.com")
+        val outro = criarUsuario("avisos-limite-outro@teste.com")
+
+        val data = Instant.parse("2026-11-19T20:00:00Z")
+
+        // Todos possuem a mesma data. A ordenação deve
+        // desempatar pelo ID decrescente.
+        val criados = (1..60).map { numero ->
+            criarAviso(
+                usuario = cidadao,
+                chaveEvento = "limite-$numero",
+                criadoEm = data,
+            )
+        }
+
+        // Um aviso mais recente de outro cidadão não pode
+        // aparecer na listagem do primeiro.
+        criarAviso(
+            usuario = outro,
+            chaveEvento = "limite-outro",
+            criadoEm = data.plusSeconds(3600),
+        )
+
+        val maisRecente = requireNotNull(criados.last().id)
+        val quinquagesimo = requireNotNull(criados[10].id)
+
+        mockMvc.get("/api/avisos") {
+            header("Authorization", "Bearer ${token(cidadao)}")
+        }.andExpect {
+            status { isOk() }
+
+            // O banco contém 60, mas a API devolve 50.
+            jsonPath("$.length()") { value(50) }
+
+            jsonPath("$[0].id") {
+                value(maisRecente.toInt())
+            }
+
+            jsonPath("$[49].id") {
+                value(quinquagesimo.toInt())
+            }
+        }
+
+        // Confirma que existem mesmo 60 avisos persistidos.
+        assertEquals(
+            60,
+            avisos.findAllByUsuarioIdOrderByCriadoEmDescIdDesc(
+                requireNotNull(cidadao.id),
+            ).size,
+        )
+    }
+
+    @Test
+    fun `contador inclui avisos fora da listagem e respeita cada cidadao`() {
+        val cidadao = criarUsuario("avisos-contador@teste.com")
+        val outro = criarUsuario("avisos-contador-outro@teste.com")
+
+        val data = Instant.parse("2026-11-19T20:00:00Z")
+
+        // Cria 60 avisos: 55 não lidos e 5 já lidos.
+        (1..60).forEach { numero ->
+            criarAviso(
+                usuario = cidadao,
+                chaveEvento = "contador-$numero",
+                criadoEm = data.plusSeconds(numero.toLong()),
+                lido = numero <= 5,
+            )
+        }
+
+        // O outro cidadão possui um aviso independente.
+        criarAviso(
+            usuario = outro,
+            chaveEvento = "contador-outro",
+            criadoEm = data,
+        )
+
+        val authorization = "Bearer ${token(cidadao)}"
+        val authorizationOutro = "Bearer ${token(outro)}"
+
+        // A listagem retorna apenas os 50 mais recentes.
+        mockMvc.get("/api/avisos") {
+            header("Authorization", authorization)
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.length()") { value(50) }
+        }
+
+        // Mas o contador considera todos os avisos não lidos,
+        // inclusive os que não estão entre os 50 exibidos.
+        mockMvc.get("/api/avisos/nao-lidos/total") {
+            header("Authorization", authorization)
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.naoLidos") { value(55) }
+        }
+
+        // O segundo cidadão vê somente sua própria contagem.
+        mockMvc.get("/api/avisos/nao-lidos/total") {
+            header("Authorization", authorizationOutro)
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.naoLidos") { value(1) }
+        }
+
+        // Marca todos os avisos do primeiro cidadão como lidos.
+        mockMvc.patch("/api/avisos/lidas") {
+            header("Authorization", authorization)
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.atualizados") { value(55) }
+        }
+
+        // Após a atualização, o contador deve ser zero.
+        mockMvc.get("/api/avisos/nao-lidos/total") {
+            header("Authorization", authorization)
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.naoLidos") { value(0) }
+        }
+
+        // A atualização não pode afetar o outro cidadão.
+        mockMvc.get("/api/avisos/nao-lidos/total") {
+            header("Authorization", authorizationOutro)
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.naoLidos") { value(1) }
+        }
+    }
+
+    @Test
     fun `marca apenas avisos do cidadao e nao repete atualizacao`() {
         val cidadao = criarUsuario("avisos-patch@teste.com")
         val outro = criarUsuario("avisos-patch-outro@teste.com")
@@ -192,6 +323,10 @@ class AvisoIntegrationTests(
             status { isUnauthorized() }
         }
 
+        mockMvc.get("/api/avisos/nao-lidos/total").andExpect {
+            status { isUnauthorized() }
+        }
+
         mockMvc.patch("/api/avisos/lidas").andExpect {
             status { isUnauthorized() }
         }
@@ -207,6 +342,12 @@ class AvisoIntegrationTests(
         val authorization = "Bearer ${token(gestor)}"
 
         mockMvc.get("/api/avisos") {
+            header("Authorization", authorization)
+        }.andExpect {
+            status { isForbidden() }
+        }
+
+        mockMvc.get("/api/avisos/nao-lidos/total") {
             header("Authorization", authorization)
         }.andExpect {
             status { isForbidden() }
@@ -260,6 +401,12 @@ class AvisoIntegrationTests(
         // O token emitido antes da exclusão não deve
         // permitir operações de uma conta inexistente.
         mockMvc.get("/api/avisos") {
+            header("Authorization", authorization)
+        }.andExpect {
+            status { isUnauthorized() }
+        }
+
+        mockMvc.get("/api/avisos/nao-lidos/total") {
             header("Authorization", authorization)
         }.andExpect {
             status { isUnauthorized() }

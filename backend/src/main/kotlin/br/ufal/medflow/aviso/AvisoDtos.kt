@@ -1,4 +1,3 @@
-
 package br.ufal.medflow.aviso
 
 import java.time.Instant
@@ -16,6 +15,11 @@ data class AvisoResponse(
 /** Resultado da operação de marcar todos os avisos como lidos. */
 data class AvisosLidosResponse(
     val atualizados: Int,
+)
+
+/** Quantidade total de avisos não lidos do cidadão autenticado. */
+data class AvisosNaoLidosResponse(
+    val naoLidos: Long,
 )
 
 /** Converte uma entidade persistida em resposta da API. */

@@ -13,13 +13,24 @@ class AvisoService(
     private val usuarioRepository: UsuarioRepository,
 ) {
 
-    /** Retorna somente os avisos do cidadão, dos mais recentes aos mais antigos. */
+    /** Retorna os 50 avisos mais recentes do cidadão autenticado. */
     fun listar(usuarioId: Long): List<AvisoResponse> {
         validarUsuario(usuarioId)
 
         return avisoRepository
-            .findAllByUsuarioIdOrderByCriadoEmDescIdDesc(usuarioId)
+            .findTop50ByUsuarioIdOrderByCriadoEmDescIdDesc(usuarioId)
             .map { it.toResponse() }
+    }
+
+    /** Conta todos os avisos não lidos do cidadão, sem carregar os registros. */
+    fun contarNaoLidos(usuarioId: Long): AvisosNaoLidosResponse {
+        validarUsuario(usuarioId)
+
+        val quantidade = avisoRepository.countByUsuarioIdAndLidoFalse(
+            usuarioId,
+        )
+
+        return AvisosNaoLidosResponse(naoLidos = quantidade)
     }
 
     /** Marca todos os avisos não lidos do cidadão em uma única atualização no banco. */

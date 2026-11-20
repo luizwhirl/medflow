@@ -204,7 +204,7 @@ class AvisosSincronizacaoIntegrationTests(
     }
 
     @Test
-    fun `gera novo aviso quando medicamento volta a ficar disponivel`() {
+    fun `nao duplica aviso nao lido quando medicamento volta a ficar disponivel`() {
         val cidadao = criarCidadao("reposicao-sync@teste.com")
 
         // Sem estoque, reposição, falta novamente e nova reposição.
@@ -217,6 +217,9 @@ class AvisosSincronizacaoIntegrationTests(
         val primeiraDisponibilidade = avisosDo(cidadao)
 
         assertEquals(1, primeiraDisponibilidade.size)
+        assertFalse(primeiraDisponibilidade.single().lido)
+
+        val chaveOriginal = primeiraDisponibilidade.single().chaveEvento
 
         sincronizacao.sincronizar(ibge)
         assertEquals(1, avisosDo(cidadao).size)
@@ -224,19 +227,105 @@ class AvisosSincronizacaoIntegrationTests(
         sincronizacao.sincronizar(ibge)
         val aposNovaReposicao = avisosDo(cidadao)
 
-        assertEquals(2, aposNovaReposicao.size)
+        // O aviso anterior continua não lido.
+        // Não deve existir outro aviso pendente do mesmo item.
+        assertEquals(1, aposNovaReposicao.size)
+        assertEquals(
+            chaveOriginal,
+            aposNovaReposicao.single().chaveEvento,
+        )
+        assertFalse(aposNovaReposicao.single().lido)
+    }
 
-        // Uma nova transição deve ter uma chave de evento diferente.
+    @Test
+    fun `gera novo aviso apos cidadao ler a disponibilidade anterior`() {
+        val cidadao = criarCidadao("leitura-sync@teste.com")
+
+        // Primeira reposição, nova falta e segunda reposição.
+        fonteDevolve("0", "100", "0", "100")
+
+        sincronizacao.sincronizar(ibge)
+        assertTrue(avisosDo(cidadao).isEmpty())
+
+        sincronizacao.sincronizar(ibge)
+        val primeiroAviso = avisosDo(cidadao).single()
+
+        assertFalse(primeiroAviso.lido)
+
+        // O cidadão marca o primeiro aviso como lido.
+        val atualizados = avisos.marcarTodosComoLidos(
+            requireNotNull(cidadao.id),
+        )
+
+        assertEquals(1, atualizados)
+        assertTrue(avisosDo(cidadao).single().lido)
+
+        // O estoque deixa de estar disponível.
+        sincronizacao.sincronizar(ibge)
+        assertEquals(1, avisosDo(cidadao).size)
+
+        // Uma nova transição pode gerar outro aviso.
+        sincronizacao.sincronizar(ibge)
+
+        val historico = avisosDo(cidadao)
+
+        assertEquals(2, historico.size)
+
         assertNotEquals(
-            aposNovaReposicao[0].chaveEvento,
-            aposNovaReposicao[1].chaveEvento,
+            historico[0].chaveEvento,
+            historico[1].chaveEvento,
+        )
+
+        assertEquals(
+            1,
+            historico.count { !it.lido },
+        )
+
+        assertEquals(
+            1,
+            historico.count { it.lido },
         )
 
         assertTrue(
-            aposNovaReposicao.all {
+            historico.all {
                 it.tipo == TipoAviso.MEDICAMENTO_DISPONIVEL
             },
         )
+    }
+
+    @Test
+    fun `leitura de um cidadao nao libera duplicatas para outro`() {
+        val primeiro = criarCidadao("leitura-primeiro@teste.com")
+        val segundo = criarCidadao("leitura-segundo@teste.com")
+
+        fonteDevolve("100", "0", "100")
+
+        // Ambos recebem o aviso inicial.
+        sincronizacao.sincronizar(ibge)
+
+        assertEquals(1, avisosDo(primeiro).size)
+        assertEquals(1, avisosDo(segundo).size)
+
+        // Somente o primeiro cidadão marca o aviso como lido.
+        assertEquals(
+            1,
+            avisos.marcarTodosComoLidos(requireNotNull(primeiro.id)),
+        )
+
+        // O medicamento fica indisponível e depois disponível.
+        sincronizacao.sincronizar(ibge)
+        sincronizacao.sincronizar(ibge)
+
+        val avisosPrimeiro = avisosDo(primeiro)
+        val avisosSegundo = avisosDo(segundo)
+
+        // O primeiro recebe outro aviso.
+        assertEquals(2, avisosPrimeiro.size)
+        assertEquals(1, avisosPrimeiro.count { !it.lido })
+
+        // O segundo continua com o aviso original não lido.
+        assertEquals(1, avisosSegundo.size)
+        assertFalse(avisosSegundo.single().lido)
     }
 
     @Test

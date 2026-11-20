@@ -18,7 +18,8 @@ Base: `http://localhost:8080/api`. A documentação interativa fica em `/swagger
 | POST | `/lista-desejos` | Adiciona um medicamento à lista de desejos |
 | PATCH | `/lista-desejos/{id}` | Ativa ou desativa a notificação de um item |
 | DELETE | `/lista-desejos/{id}` | Remove um item da lista de desejos |
-| GET | `/avisos` | Lista os avisos do cidadão autenticado, dos mais recentes para os mais antigos |
+| GET | `/avisos` | Lista os 50 avisos mais recentes do cidadão autenticado |
+| GET | `/avisos/nao-lidos/total` | Retorna a quantidade total de avisos não lidos do cidadão |
 | PATCH | `/avisos/lidas` | Marca como lidos todos os avisos ainda não lidos do cidadão |
 
 ## Autenticação
@@ -175,7 +176,9 @@ Os avisos são registros persistidos no banco e consultados pelo cidadão pela A
 
 `GET /api/avisos`
 
-Retorna `200 OK` com os avisos do cidadão autenticado, ordenados por `criadoEm` decrescente e, em caso de empate, pelo ID decrescente.
+Retorna `200 OK` com **até 50 avisos mais recentes** do cidadão autenticado, ordenados por `criadoEm` decrescente e, em caso de empate, pelo ID decrescente.
+
+O limite de 50 registros é aplicado diretamente na consulta ao banco. A rota não recebe parâmetros de paginação nesta versão.
 
 Exemplo ilustrativo de resposta (os textos variam conforme o evento):
 
@@ -202,6 +205,34 @@ Exemplo ilustrativo de resposta (os textos variam conforme o evento):
 
 Os campos retornados são `id`, `tipo`, `titulo`, `texto`, `lido` e `criadoEm` (instante no formato ISO 8601). Se não houver avisos, retorna `[]`.
 
+O limite de 50 considera avisos lidos e não lidos. Registros mais antigos permanecem armazenados, mas não aparecem nessa listagem.
+
+### Contar avisos não lidos
+
+`GET /api/avisos/nao-lidos/total`
+
+Retorna `200 OK` com a quantidade total de avisos não lidos do cidadão autenticado.
+
+Exemplo de resposta:
+
+```json
+{
+  "naoLidos": 7
+}
+```
+
+Se não houver avisos não lidos, retorna:
+
+```json
+{
+  "naoLidos": 0
+}
+```
+
+A contagem é realizada diretamente no banco de dados e considera **todos os avisos não lidos**, inclusive os mais antigos que não aparecem entre os 50 registros retornados pela listagem.
+
+Essa rota pode ser utilizada pelo frontend para exibir a quantidade de avisos pendentes no menu de notificações, sem precisar carregar o histórico completo.
+
 ### Marcar todos os avisos como lidos
 
 `PATCH /api/avisos/lidas`
@@ -216,6 +247,8 @@ Não recebe corpo na requisição. Retorna `200 OK` com a quantidade de avisos q
 
 Se não houver avisos não lidos, retorna `{"atualizados": 0}`. A atualização é feita diretamente no banco e afeta apenas os avisos do cidadão autenticado. Esta operação não remove os avisos.
 
+A atualização inclui todos os avisos não lidos do cidadão, inclusive aqueles que não aparecem na listagem limitada a 50 registros. Após a marcação, o contador de não lidos passa a retornar zero, desde que nenhum novo aviso tenha sido gerado.
+
 ### Geração automática dos avisos
 
 Os tipos atualmente implementados são:
@@ -225,13 +258,72 @@ Os tipos atualmente implementados são:
 | `MEDICAMENTO_DISPONIVEL` | Durante a sincronização do estoque, quando um item novo já está `DISPONIVEL` ou um item existente muda de outro status para `DISPONIVEL`. |
 | `UBS_DADOS_ATRASADOS` | Durante a verificação do job de sincronização, quando uma UBS acompanhada possui dados de estoque antigos ou não possui data de referência. |
 
-A geração considera os itens da lista de desejos com `notificar: true` no momento da verificação. O aviso de disponibilidade exige a combinação exata de UBS e medicamento acompanhados. O aviso de atraso considera a UBS acompanhada, gerando no máximo um aviso por cidadão e UBS para a mesma referência de atualização, mesmo que ele acompanhe vários medicamentos naquela unidade.
+A geração considera os itens da lista de desejos com `notificar: true` no momento da verificação. O aviso de disponibilidade exige a combinação exata de UBS e medicamento acompanhados.
 
-Uma sincronização repetida, sem nova transição para `DISPONIVEL`, não gera outro aviso de disponibilidade. Os avisos de atraso também não são duplicados em verificações repetidas enquanto a referência de atualização da UBS permanecer igual. Uma nova transição de disponibilidade ou uma nova referência que volte a ficar atrasada pode gerar um novo aviso.
+O aviso de atraso considera a UBS acompanhada, gerando no máximo um aviso por cidadão e UBS para a mesma referência de atualização, mesmo que ele acompanhe vários medicamentos naquela unidade.
 
-O limite de atraso é configurado pela propriedade `app.avisos.atraso-dias` (padrão: `7`; exige valor positivo). Uma UBS é considerada atrasada quando `ultimaSincronizacao` está ausente ou é **anterior** ao instante atual menos esse número de dias. O campo `ultimaSincronizacao` representa a data de referência dos dados recebidos da fonte, e não necessariamente a hora da execução do job.
+**Deduplicação dos avisos de disponibilidade:**
+
+Uma sincronização repetida, sem nova transição para `DISPONIVEL`, não gera outro aviso de disponibilidade.
+
+Quando há uma nova transição para `DISPONIVEL`, o serviço verifica se o cidadão já possui um aviso de disponibilidade **não lido** para a mesma combinação de UBS e medicamento.
+
+- Se já existe um aviso não lido, outro não é criado.
+- Se não existe aviso não lido, a transição pode gerar um novo aviso.
+- Marcar um aviso como lido não gera automaticamente outro; é necessária uma nova transição de disponibilidade.
+
+Assim, oscilações de status entre `DISPONIVEL` e `RESERVADO` não acumulam avisos não lidos para a mesma combinação de UBS e medicamento durante o processamento sequencial.
+
+Essa verificação de avisos não lidos não constitui um mecanismo de exclusão mútua entre sincronizações concorrentes. A coordenação de execuções simultâneas deve ser tratada separadamente.
+
+**Deduplicação dos avisos de atraso:**
+
+Os avisos de atraso utilizam uma chave de evento associada à UBS e à referência de atualização de seus dados. Verificações repetidas não geram avisos duplicados enquanto essa referência permanecer igual.
+
+Se a UBS receber dados novos e, posteriormente, essa nova referência voltar a ficar atrasada, um novo aviso poderá ser gerado.
+
+**Prazo para considerar uma UBS atrasada:**
+
+O limite é configurado pela propriedade `app.avisos.atraso-horas`, com valor padrão de **24 horas**. A propriedade exige um número positivo de horas.
+
+Uma UBS é considerada atrasada quando `ultimaSincronizacao` está ausente ou é **anterior** ao instante atual menos o prazo configurado.
+
+Com o valor padrão:
+
+| Tempo desde a última referência | Resultado |
+| --- | --- |
+| Menos de 24 horas | Atualizada |
+| Exatamente 24 horas | Ainda não ultrapassou o limite |
+| Mais de 24 horas | Atrasada |
+| Sem data de referência | Atrasada |
+
+O campo `ultimaSincronizacao` representa a data de referência dos dados recebidos da fonte, e não necessariamente a hora da execução do job.
+
+O padrão de 24 horas segue o critério informado para o painel da gestão. Nesta implementação, a configuração pertence ao serviço de avisos; o compartilhamento de uma configuração única com o painel depende da integração das funcionalidades.
 
 A verificação automática de atraso faz parte de `SincronizacaoAgendada` e depende de o job estar habilitado (`app.sync.ativo=true`). A verificação ainda é tentada quando a consulta à fonte falha para um município; isso não significa que a fonte conseguiu atualizar seus dados.
+
+### Dados de demonstração no perfil dev
+
+No perfil `dev`, o componente `AvisosDeExemplo` cria três avisos fictícios para a conta `rita@medflow.local`:
+
+| Aviso | Tipo | Estado inicial |
+| --- | --- | --- |
+| Medicamento disponível (exemplo) | `MEDICAMENTO_DISPONIVEL` | Não lido |
+| Dados da UBS desatualizados (exemplo) | `UBS_DADOS_ATRASADOS` | Não lido |
+| Aviso já lido (exemplo) | `MEDICAMENTO_DISPONIVEL` | Lido |
+
+Esses registros permitem testar a listagem, o contador e a marcação de avisos como lidos no frontend.
+
+Em um banco de desenvolvimento sem avisos anteriores, após a criação dos exemplos, `GET /api/avisos` retorna três registros e `GET /api/avisos/nao-lidos/total` retorna `{"naoLidos": 2}`.
+
+Os avisos são inseridos após a criação das contas de exemplo. Suas chaves de evento são fixas e a constraint `uk_aviso_usuario_evento` impede duplicações nas reinicializações.
+
+Os avisos de demonstração não são recriados caso já existam, mesmo que tenham sido marcados como lidos. Portanto, a contagem de não lidos pode ser diferente de dois após o uso da aplicação.
+
+Esses registros não são criados nos perfis `test` ou `prod`.
+
+A conta `carlos@medflow.local` possui papel `GESTOR` e não recebe esses avisos de demonstração. Ela também não tem permissão para acessar os endpoints exclusivos de cidadãos.
 
 ### Segurança e respostas de erro
 
@@ -239,9 +331,13 @@ A verificação automática de atraso faz parte de `SincronizacaoAgendada` e dep
 | --- | --- |
 | Requisição sem token ou com token inválido | `401 Unauthorized` |
 | Usuário autenticado com papel `GESTOR` | `403 Forbidden` |
-| Cidadão autenticado sem avisos | `200 OK` com `[]` na listagem ou `{"atualizados": 0}` na marcação |
+| Cidadão sem avisos na listagem | `200 OK` com `[]` |
+| Cidadão sem avisos não lidos | `200 OK` com `{"naoLidos": 0}` no contador |
+| Cidadão sem avisos para marcar como lidos | `200 OK` com `{"atualizados": 0}` |
 
-Não é possível consultar nem marcar avisos de outro cidadão por essas rotas. Falhas de autenticação e autorização seguem o padrão `application/problem+json`.
+Não é possível consultar nem marcar avisos de outro cidadão por essas rotas. A API utiliza o identificador do usuário autenticado presente no JWT.
+
+Falhas de autenticação e autorização seguem o padrão `application/problem+json`.
 
 ## Filtro por categoria
 
