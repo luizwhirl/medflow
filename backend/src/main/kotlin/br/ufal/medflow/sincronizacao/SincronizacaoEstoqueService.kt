@@ -198,15 +198,23 @@ class SincronizacaoEstoqueService(
 
         for ((chave, lista) in porItem) {
             val quantidade = lista.sumOf { it.posicao.quantidadeInteira().toLong() }.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-            val status = regraStatus.calcular(quantidade)
+            val medicamento = medicamentoPorCatmat.porChave.getValue(chave.second)
+
+            // Preserva o limite de reserva por medicamento da develop.
+            val status = regraStatus.calcular(quantidade, limiteDoMedicamento = medicamento.limiteReservado)
+
             val atualizadoEm = lista.maxOf { it.posicao.dataPosicao }.comoInstante()
 
             val existente = existentes[chave]
             if (existente == null) {
                 val ubs = ubsPorCnes.porChave.getValue(chave.first)
-                val medicamento = medicamentoPorCatmat.porChave.getValue(chave.second)
+
                 novos += ItemEstoque(ubs, medicamento, status, quantidade, atualizadoEm)
-                if (status == StatusEstoque.DISPONIVEL) novasDisponibilidades += ubs to medicamento
+
+                // A primeira posição disponível também gera aviso.
+                if (status == StatusEstoque.DISPONIVEL) {
+                    novasDisponibilidades += ubs to medicamento
+                }
             } else {
                 val ficouDisponivel = existente.status != StatusEstoque.DISPONIVEL &&
                     status == StatusEstoque.DISPONIVEL
@@ -217,10 +225,15 @@ class SincronizacaoEstoqueService(
                     existente.atualizadoEm = atualizadoEm
                     atualizados++
                 }
-                if (ficouDisponivel) novasDisponibilidades += existente.ubs to existente.medicamento
+
+                if (ficouDisponivel) {
+                    novasDisponibilidades += existente.ubs to existente.medicamento
+                }
+
                 resultado[chave] = existente
             }
         }
+
         for ((chave, existente) in existentes) {
             if (chave in porItem) continue
             resultado[chave] = existente
@@ -231,6 +244,7 @@ class SincronizacaoEstoqueService(
                 atualizados++
             }
         }
+
         itemRepository.saveAll(novos).forEach { resultado[it.ubs.cnes to it.medicamento.catmat] = it }
 
         // Gera avisos somente para transições reais, na mesma transação do estoque.
@@ -279,6 +293,7 @@ class SincronizacaoEstoqueService(
             }
             remover += atuais.filterKeys { it !in desejados }.values
         }
+
         loteRepository.saveAll(novos)
         loteRepository.deleteAll(remover)
         return Contagem(criados = novos.size, atualizados = atualizados, removidos = remover.size)

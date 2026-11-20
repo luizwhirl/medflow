@@ -57,6 +57,29 @@ class RegraStatusEstoqueTest {
     }
 
     @Test
+    fun `limite do medicamento vale no lugar do global`() {
+        // global 20: com limite 50 o saldo 40 fica reservado; com limite 5 o saldo 10 fica disponível
+        assertEquals(StatusEstoque.RESERVADO, regra.calcular(40, limiteDoMedicamento = 50))
+        assertEquals(StatusEstoque.RESERVADO, regra.calcular(50, limiteDoMedicamento = 50))
+        assertEquals(StatusEstoque.DISPONIVEL, regra.calcular(51, limiteDoMedicamento = 50))
+        assertEquals(StatusEstoque.DISPONIVEL, regra.calcular(10, limiteDoMedicamento = 5))
+        assertEquals(StatusEstoque.RESERVADO, regra.calcular(5, limiteDoMedicamento = 5))
+    }
+
+    @Test
+    fun `sem limite do medicamento usa o global`() {
+        assertEquals(StatusEstoque.RESERVADO, regra.calcular(20, limiteDoMedicamento = null))
+        assertEquals(StatusEstoque.DISPONIVEL, regra.calcular(21, limiteDoMedicamento = null))
+    }
+
+    @Test
+    fun `limite do medicamento zero so reserva por demanda e nao tira o item de falta`() {
+        assertEquals(StatusEstoque.DISPONIVEL, regra.calcular(1, limiteDoMedicamento = 0))
+        assertEquals(StatusEstoque.RESERVADO, regra.calcular(1, demanda = 5, limiteDoMedicamento = 0))
+        assertEquals(StatusEstoque.EM_FALTA, regra.calcular(0, limiteDoMedicamento = 100))
+    }
+
+    @Test
     fun `limite negativo e rejeitado`() {
         assertFailsWith<IllegalArgumentException> { EstoqueProperties(limiteReservado = -1) }
     }
