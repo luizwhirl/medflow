@@ -1,6 +1,7 @@
 package br.ufal.medflow
 
 import br.ufal.medflow.estoque.RegraStatusEstoque
+import br.ufal.medflow.remessa.EtapaRemessa
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
@@ -51,19 +52,19 @@ class SeedDevIntegrationTests(
 
     @Test
     fun `status do seed segue a regra de estoque`() {
+        // Com o limite de reservado do medicamento, quando ele tem um (V1008), ou o global
         val divergentes = jdbc.queryForList(
             """
-            SELECT u.cnes, m.catmat, i.quantidade, i.status FROM item_estoque i
+            SELECT u.cnes, m.catmat, i.quantidade, i.status, m.limite_reservado FROM item_estoque i
             JOIN ubs u ON u.id = i.ubs_id JOIN medicamento m ON m.id = i.medicamento_id
             WHERE m.catmat IN ($catmatsFicticios)
             """,
-        ).filter { it["status"] != regra.calcular(it["quantidade"] as Int).name }
-            .map { "${it["cnes"]}/${it["catmat"]}" }
+        ).filter {
+            val esperado = regra.calcular(it["quantidade"] as Int, limiteDoMedicamento = it["limite_reservado"] as Int?)
+            it["status"] != esperado.name
+        }.map { "${it["cnes"]}/${it["catmat"]}" }
 
-        // Exceção do V1000 (já mergeado): Insulina na UBS Clima Bom com 18 unidades como DISPONIVEL. Ela pressupõe
-        // o limite de reservado por medicamento (Insulina = 10) do PDS-37; quando ele entrar, passe o limite do
-        // medicamento ao calcular() e tire esta exceção.
-        assertEquals(listOf("9000103/BR0271157"), divergentes)
+        assertTrue(divergentes.isEmpty(), "itens com status diferente da regra: $divergentes")
     }
 
     @Test
@@ -85,6 +86,22 @@ class SeedDevIntegrationTests(
         )
 
         assertTrue(ubsComLoteVencendo >= 5, "UBS com lote vencendo: $ubsComLoteVencendo")
+    }
+
+    @Test
+    fun `ha remessa parada em cada etapa`() {
+        // A etapa atual de uma remessa é a mais avançada dos eventos (V6__remessas.sql)
+        val etapasAtuais = jdbc.queryForList(
+            """
+            SELECT DISTINCT (ARRAY['PEDIDO', 'SEPARADO_CAF', 'EM_TRANSPORTE', 'RECEBIDO', 'DISPONIVEL'])[
+                MAX(array_position(ARRAY['PEDIDO', 'SEPARADO_CAF', 'EM_TRANSPORTE', 'RECEBIDO', 'DISPONIVEL'], e.etapa::TEXT))
+            ]
+            FROM remessa_evento e GROUP BY e.remessa_id
+            """,
+            String::class.java,
+        ).toSet()
+
+        assertEquals(EtapaRemessa.entries.map { it.name }.toSet(), etapasAtuais)
     }
 
     @Test

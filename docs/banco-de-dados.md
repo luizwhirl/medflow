@@ -6,7 +6,8 @@ PostgreSQL 17, versionado com Flyway em `backend/src/main/resources/db/`.
 db/migration/   schema (todos os ambientes)       V1__schema_inicial.sql, V2__..., ...
 db/seed/        dados fictícios (só perfil dev)   V1000__dados_exemplo.sql, V1001__lotes_exemplo.sql, V1006__remessas_exemplo.sql,
                                                   V1007__movimentacoes_exemplo.sql, V1008__limites_reservado_exemplo.sql,
-                                                  V1100__estoque_completo.sql, V1101__medicamentos_extras.sql
+                                                  V1100__estoque_completo.sql, V1101__medicamentos_extras.sql,
+                                                  V1102__remessa_recebida_exemplo.sql
                                                   afterMigrate__sincronizacao_exemplo.sql (callback)
 ```
 
@@ -90,7 +91,7 @@ No seed (`V1007__movimentacoes_exemplo.sql`), a soma das movimentações de cada
 
 A migration `V6__remessas.sql` cria `remessa` e `remessa_evento`. A etapa atual de uma remessa é a mais avançada registrada nos eventos; ela está em andamento enquanto não tiver o evento `DISPONIVEL`. Cada etapa só acontece uma vez por remessa, e apagar a remessa apaga seus eventos.
 
-A BNAFAR pública não informa remessas em trânsito, então não há fonte oficial. No perfil `dev`, o seed `V1006__remessas_exemplo.sql` cria seis remessas em etapas diferentes (uma delas já concluída).
+A BNAFAR pública não informa remessas em trânsito, então não há fonte oficial. No perfil `dev`, o seed `V1006__remessas_exemplo.sql` cria seis remessas em etapas diferentes (uma delas já concluída), e o `V1102__remessa_recebida_exemplo.sql` acrescenta uma parada em `RECEBIDO`, para haver remessa em cada etapa.
 
 ## Regras para migrations
 
