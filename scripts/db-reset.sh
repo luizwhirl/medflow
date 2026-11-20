@@ -3,7 +3,9 @@
 # Uso: scripts/db-reset.sh [-y]
 source "$(dirname "$0")/_db.sh"
 
-[[ "${1:-}" == "-y" ]] && SIM=1
+for arg in "$@"; do
+  if [[ "$arg" == "-y" ]]; then SIM=1; else echo "Uso: scripts/db-reset.sh [-y]"; exit 1; fi
+done
 confirmar "Isso apaga todos os dados do banco local."
 
 subir_banco

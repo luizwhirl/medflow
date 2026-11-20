@@ -33,7 +33,10 @@ services:
       - db
 
   # Aplica migrations + seed sem subir a API (usado por scripts/db-reset).
-  # Mesma versão do Flyway do Spring Boot e mesma configuração do perfil dev.
+  # Mantenha igual ao backend, senão o db-reset monta um banco diferente do que a API monta:
+  # - imagem: a versão do flyway-core que o Spring Boot traz (backend/build.gradle.kts; confira com
+  #   ./gradlew dependencies --configuration runtimeClasspath | grep flyway-core);
+  # - FLYWAY_LOCATIONS e FLYWAY_OUT_OF_ORDER: o perfil dev do backend/src/main/resources/application.yml.
   flyway:
     image: flyway/flyway:12.4.0-alpine
     profiles: [migracao] # não sobe com o up; roda com docker compose run --rm flyway
