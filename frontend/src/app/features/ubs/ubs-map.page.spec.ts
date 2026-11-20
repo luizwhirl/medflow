@@ -91,7 +91,7 @@ describe('UbsMapPage', () => {
     flushMicrotasks();
     fixture.detectChanges();
     http.expectOne(proximas(6)).flush([ubs(2, 'Perto', 0.5), ubs(3, 'Meio', 2.46)]);
-    http.expectOne('/api/medicamentos').flush(pagina([]));
+    http.expectOne('/api/medicamentos?tamanho=100').flush(pagina([]));
     fixture.detectChanges();
 
     const el = fixture.nativeElement as HTMLElement;
@@ -115,7 +115,7 @@ describe('UbsMapPage', () => {
     flushMicrotasks();
     fixture.detectChanges();
     http.expectOne(proximas(6)).flush([ubs(2, 'Perto', 0.5)]);
-    http.expectOne('/api/medicamentos').flush(pagina([]));
+    http.expectOne('/api/medicamentos?tamanho=100').flush(pagina([]));
     fixture.detectChanges();
 
     const el = fixture.nativeElement as HTMLElement;
@@ -139,7 +139,7 @@ describe('UbsMapPage', () => {
     const { distanciaKm: _a, ...centro } = ubs(1, 'Centro', 0);
     const { distanciaKm: _b, ...perto } = ubs(2, 'Perto', 0);
     http.expectOne('/api/ubs').flush([centro, perto]);
-    http.expectOne('/api/medicamentos').flush(pagina([]));
+    http.expectOne('/api/medicamentos?tamanho=100').flush(pagina([]));
     fixture.detectChanges();
 
     expect(linhas(fixture.nativeElement)).toEqual(['1 Centro Centro', '2 Perto Sua UBS']);
@@ -153,7 +153,7 @@ describe('UbsMapPage', () => {
     flushMicrotasks();
     fixture.detectChanges();
     http.expectOne(proximas(6)).flush([ubs(2, 'Perto', 0.5), ubs(3, 'Meio', 2.5)]);
-    http.expectOne('/api/medicamentos').flush(pagina([]));
+    http.expectOne('/api/medicamentos?tamanho=100').flush(pagina([]));
     http.expectOne('/api/medicamentos/1').flush(med(1, 'Metformina'));
     http.expectOne('/api/medicamentos/1/disponibilidade').flush([
       { ubs: ubs(2, 'Perto', 0.5), status: 'EM_FALTA', quantidade: 0, atualizadoEm: '' },
@@ -187,7 +187,7 @@ describe('UbsMapPage', () => {
     flushMicrotasks();
     fixture.detectChanges();
     http.expectOne(proximas(6)).flush([ubs(2, 'Perto', 0.5), ubs(3, 'Meio', 2.5)]);
-    http.expectOne('/api/medicamentos').flush(pagina([]));
+    http.expectOne('/api/medicamentos?tamanho=100').flush(pagina([]));
     http.expectOne('/api/medicamentos/1').flush(med(1, 'Metformina'));
     http
       .expectOne('/api/medicamentos/1/disponibilidade')
@@ -217,7 +217,7 @@ describe('UbsMapPage', () => {
     flushMicrotasks();
     fixture.detectChanges();
     http.expectOne(proximas(6)).flush([ubs(2, 'Perto', 0.5), ubs(3, 'Meio', 2.5)]);
-    http.expectOne('/api/medicamentos').flush(pagina([]));
+    http.expectOne('/api/medicamentos?tamanho=100').flush(pagina([]));
     fixture.detectChanges();
 
     const el = fixture.nativeElement as HTMLElement;

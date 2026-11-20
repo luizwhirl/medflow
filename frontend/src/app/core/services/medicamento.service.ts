@@ -12,11 +12,15 @@ export class MedicamentoService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = `${environment.apiUrl}/medicamentos`;
 
-  /** Primeira página da busca (20 itens, em ordem de nome), com o total encontrado. */
-  buscar(termo = '', categoria = ''): Observable<Pagina<Medicamento>> {
+  /**
+   * Primeira página da busca, em ordem de nome, com o total encontrado.
+   * Sem `tamanho`, a API devolve 20 itens (no máximo, `TAMANHO_MAXIMO_PAGINA`).
+   */
+  buscar(termo = '', categoria = '', tamanho?: number): Observable<Pagina<Medicamento>> {
     let params = new HttpParams();
     if (termo) params = params.set('busca', termo);
     if (categoria) params = params.set('categoria', categoria);
+    if (tamanho != null) params = params.set('tamanho', tamanho);
     return this.http.get<Pagina<Medicamento>>(this.baseUrl, { params });
   }
 

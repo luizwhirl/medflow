@@ -6,6 +6,7 @@ import { catchError, filter, forkJoin, map, Observable, of, switchMap } from 'rx
 import { Coordenadas, formatarDistancia, linkRota, posicaoAtual } from '../../core/geo';
 import { Disponibilidade, statusExibido, temEstoque } from '../../core/models/estoque.model';
 import { Medicamento } from '../../core/models/medicamento.model';
+import { TAMANHO_MAXIMO_PAGINA } from '../../core/models/pagina.model';
 import { STATUS_LABEL, StatusEstoque } from '../../core/models/status-estoque';
 import { Ubs, UbsProxima } from '../../core/models/ubs.model';
 import { MedicamentoService } from '../../core/services/medicamento.service';
@@ -266,7 +267,8 @@ export class UbsMapPage {
   );
 
   protected readonly medicamentos = toSignal(
-    this.medicamentoService.buscar().pipe(
+    // o maior tamanho de página, para o filtro não perder medicamentos (busca ao digitar fica para depois)
+    this.medicamentoService.buscar('', '', TAMANHO_MAXIMO_PAGINA).pipe(
       map((pagina) => pagina.itens),
       catchError(() => of([])),
     ),
