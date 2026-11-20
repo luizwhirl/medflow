@@ -1,7 +1,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { Component, input, output } from '@angular/core';
-import { TestBed, fakeAsync, flushMicrotasks } from '@angular/core/testing';
+import { TestBed, fakeAsync, flushMicrotasks, tick } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 
@@ -207,6 +207,50 @@ describe('UbsMapPage', () => {
     select.dispatchEvent(new Event('change'));
     fixture.detectChanges();
     expect(linhas(el).length).toBe(2);
+    http.verify();
+  }));
+
+  it('busca o remédio na API conforme a pessoa digita e mantém o escolhido na lista', fakeAsync(() => {
+    preparar([]);
+    const fixture = TestBed.createComponent(UbsMapPage);
+    fixture.detectChanges();
+    flushMicrotasks();
+    fixture.detectChanges();
+    http.expectOne(proximas(6)).flush([ubs(2, 'Perto', 0.5)]);
+    http.expectOne('/api/medicamentos?tamanho=100').flush(pagina([med(1, 'Metformina')]));
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    const opcoes = () =>
+      Array.from(el.querySelectorAll('select option')).map((o) => o.textContent!.trim());
+    const select = el.querySelector('select')!;
+    select.value = '1';
+    select.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+    http.expectOne('/api/medicamentos/1').flush(med(1, 'Metformina'));
+    http.expectOne('/api/medicamentos/1/disponibilidade').flush([]);
+    fixture.detectChanges();
+
+    const campo = el.querySelector('input[type="search"]') as HTMLInputElement;
+    campo.value = 'losa';
+    campo.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    tick(249);
+    http.expectNone('/api/medicamentos?busca=losa&tamanho=100');
+    tick(1);
+    http.expectOne('/api/medicamentos?busca=losa&tamanho=100').flush(pagina([med(4, 'Losartana')]));
+    fixture.detectChanges();
+    expect(opcoes()).toEqual(['Nenhum (só as unidades)', 'Metformina', 'Losartana']);
+
+    campo.value = 'xyz';
+    campo.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    tick(250);
+    http.expectOne('/api/medicamentos?busca=xyz&tamanho=100').flush(pagina([]));
+    select.value = '';
+    select.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+    expect(opcoes()).toEqual(['Nenhum (só as unidades)', 'Nenhum remédio encontrado']);
     http.verify();
   }));
 
