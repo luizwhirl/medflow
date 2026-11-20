@@ -13,7 +13,7 @@ import org.testcontainers.junit.jupiter.Testcontainers
 import kotlin.test.assertTrue
 
 /**
- * As buscas de GET /api/medicamentos usam os índices pg_trgm da V7 (PDS-22).
+ * As buscas de GET /api/medicamentos usam os índices pg_trgm da V10 (PDS-22).
  * Com 20 mil linhas e estatísticas atualizadas, o planejador escolhe o índice sozinho (sem desligar o seq scan).
  * As expressões são as mesmas que o Hibernate gera para as consultas de MedicamentoRepository.
  */

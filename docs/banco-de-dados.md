@@ -62,14 +62,14 @@ O perfil padrão da aplicação é `dev`; ambientes de produção devem ativar e
 ## Índices da busca
 
 A busca de medicamentos (`GET /api/medicamentos`) filtra com `lower(nome) LIKE '%termo%'` e `lower(categoria)`
-(`LIKE` ou `=`). Um B-tree não atende `LIKE` com curinga no início, então a `V7__indices_busca_medicamento.sql`
+(`LIKE` ou `=`). Um B-tree não atende `LIKE` com curinga no início, então a `V10__indices_busca_medicamento.sql`
 cria a extensão `pg_trgm` e dois índices GIN (`idx_medicamento_nome_trgm` e `idx_medicamento_categoria_trgm`),
 que atendem tanto o `LIKE` quanto a igualdade. O estoque da UBS já usa a chave única `uk_item_estoque`
 (`ubs_id`, `medicamento_id`) e não precisou de índice novo.
 
 `EXPLAIN ANALYZE` com 100 mil medicamentos e 100 mil itens de estoque (PostgreSQL 17):
 
-| Consulta | Sem a V7 | Com a V7 |
+| Consulta | Sem a V10 | Com a V10 |
 | --- | --- | --- |
 | Busca por termo (página de 20) | Seq Scan, 46 ms | BitmapOr nos dois índices trgm, 2,5 ms |
 | Busca por termo (contagem da página) | Seq Scan, 49 ms | BitmapOr nos dois índices trgm, 1,6 ms |

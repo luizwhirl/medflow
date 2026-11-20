@@ -6,7 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 
-// A ordem vem do Pageable. Os filtros por lower(nome) e lower(categoria) usam os índices pg_trgm da V7.
+// A ordem vem do Pageable. Os filtros por lower(nome) e lower(categoria) usam os índices pg_trgm da V10.
 interface MedicamentoRepository : JpaRepository<Medicamento, Long> {
 
     @Query(
