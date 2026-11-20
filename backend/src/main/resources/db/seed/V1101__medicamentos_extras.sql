@@ -1,4 +1,4 @@
--- Dados FICTÍCIOS para desenvolvimento local (perfil "dev"). Depende de V1000.
+-- Dados FICTÍCIOS para desenvolvimento local (perfil "dev"). Depende de V1000 e V1100.
 -- Mais 7 medicamentos da RENAME (17 no total), presentes nas 7 UBS. CATMAT apenas ilustrativos.
 -- As categorias seguem os nomes usados pela sincronização (sincronizacao/CategoriaMedicamento.kt).
 
@@ -11,24 +11,38 @@ INSERT INTO medicamento (catmat, nome, concentracao, forma_farmaceutica, categor
     ('BR0272306', 'Paracetamol',   '500 mg', 'comprimido', 'Dor e febre',  TRUE),
     ('BR0272307', 'Beclometasona', '50 mcg', 'aerossol',   'Asma',         TRUE);
 
--- Estoque: quantidade por UBS (9000101 a 9000107). O status sai da regra de app.estoque.limite-reservado (20).
+-- Estoque: (cnes, catmat, quantidade). O status sai da regra global de app.estoque.limite-reservado (20):
+-- 0 = EM_FALTA, 1 a 20 = RESERVADO, acima = DISPONIVEL. Vale porque estes 7 medicamentos não têm limite de
+-- reservado próprio; se algum ganhar um (limite por medicamento, PDS-37), atualize o CASE abaixo.
 INSERT INTO item_estoque (ubs_id, medicamento_id, status, quantidade)
 SELECT u.id, m.id,
        CASE WHEN e.quantidade = 0 THEN 'EM_FALTA' WHEN e.quantidade <= 20 THEN 'RESERVADO' ELSE 'DISPONIVEL' END,
        e.quantidade
 FROM (VALUES
-    --          101   102   103   104   105   106   107
-    ('BR0272301', ARRAY[140,   0, 260,  90,  15, 180,   0]), -- Omeprazol
-    ('BR0272302', ARRAY[200,  75,   0, 130,  18, 240,  40]), -- Enalapril
-    ('BR0272303', ARRAY[  0, 150, 110,   7, 220,   0,  22]), -- Anlodipino
-    ('BR0272304', ARRAY[ 60,   0,  14, 170,  95, 120,   0]), -- Atorvastatina
-    ('BR0272305', ARRAY[ 30,  12,  45,   0,   0,  65,   5]), -- Azitromicina
-    ('BR0272306', ARRAY[380, 290,   0, 210, 330, 450,  90]), -- Paracetamol
-    ('BR0272307', ARRAY[ 10,  24,   0,  16,  28,   0,   0])  -- Beclometasona
-) AS q (catmat, por_ubs)
-CROSS JOIN LATERAL unnest(q.por_ubs) WITH ORDINALITY AS e (quantidade, ordem)
-JOIN medicamento m ON m.catmat = q.catmat
-JOIN ubs u ON u.cnes = '900010' || e.ordem;
+    -- UBS Benedito Bentes I
+    ('9000101', 'BR0272301', 140), ('9000101', 'BR0272302', 200), ('9000101', 'BR0272303',   0), ('9000101', 'BR0272304',  60),
+    ('9000101', 'BR0272305',  30), ('9000101', 'BR0272306', 380), ('9000101', 'BR0272307',  10),
+    -- USF Village Campestre II
+    ('9000102', 'BR0272301',   0), ('9000102', 'BR0272302',  75), ('9000102', 'BR0272303', 150), ('9000102', 'BR0272304',   0),
+    ('9000102', 'BR0272305',  12), ('9000102', 'BR0272306', 290), ('9000102', 'BR0272307',  24),
+    -- UBS Clima Bom
+    ('9000103', 'BR0272301', 260), ('9000103', 'BR0272302',   0), ('9000103', 'BR0272303', 110), ('9000103', 'BR0272304',  14),
+    ('9000103', 'BR0272305',  45), ('9000103', 'BR0272306',   0), ('9000103', 'BR0272307',   0),
+    -- UBS Tabuleiro do Martins
+    ('9000104', 'BR0272301',  90), ('9000104', 'BR0272302', 130), ('9000104', 'BR0272303',   7), ('9000104', 'BR0272304', 170),
+    ('9000104', 'BR0272305',   0), ('9000104', 'BR0272306', 210), ('9000104', 'BR0272307',  16),
+    -- UBS Santos Dumont
+    ('9000105', 'BR0272301',  15), ('9000105', 'BR0272302',  18), ('9000105', 'BR0272303', 220), ('9000105', 'BR0272304',  95),
+    ('9000105', 'BR0272305',   0), ('9000105', 'BR0272306', 330), ('9000105', 'BR0272307',  28),
+    -- UBS Cidade Universitária
+    ('9000106', 'BR0272301', 180), ('9000106', 'BR0272302', 240), ('9000106', 'BR0272303',   0), ('9000106', 'BR0272304', 120),
+    ('9000106', 'BR0272305',  65), ('9000106', 'BR0272306', 450), ('9000106', 'BR0272307',   0),
+    -- USF Riacho Doce
+    ('9000107', 'BR0272301',   0), ('9000107', 'BR0272302',  40), ('9000107', 'BR0272303',  22), ('9000107', 'BR0272304',   0),
+    ('9000107', 'BR0272305',   5), ('9000107', 'BR0272306',  90), ('9000107', 'BR0272307',   0)
+) AS e (cnes, catmat, quantidade)
+JOIN ubs u ON u.cnes = e.cnes
+JOIN medicamento m ON m.catmat = e.catmat;
 
 -- Lotes vencendo em até 60 dias (a soma bate com a quantidade do item)
 INSERT INTO lote_estoque (item_estoque_id, numero_lote, validade, quantidade)

@@ -40,7 +40,7 @@ class LoteEstoqueIntegrationTests(
         val limite = LocalDate.now().plusDays(60)
         val lotes = loteRepository.findComValidadeAte(limite)
 
-        // O seed cresce (V1002); confere a ordem e o corte em vez da lista exata.
+        // O seed cresce (V1100); confere a ordem e o corte em vez da lista exata.
         assertEquals(lotes.sortedBy { it.validade }.map { it.numeroLote }, lotes.map { it.numeroLote })
         assertTrue(lotes.all { it.validade <= limite })
         assertTrue(lotes.map { it.numeroLote }.containsAll(listOf("AMX-2601", "LOS-2602", "DIP-2603")))

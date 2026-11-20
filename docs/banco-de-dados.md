@@ -4,8 +4,8 @@ PostgreSQL 17, versionado com Flyway em `backend/src/main/resources/db/`.
 
 ```text
 db/migration/   schema (todos os ambientes)       V1__schema_inicial.sql, V2__..., ...
-db/seed/        dados fictícios (só perfil dev)   V1000__dados_exemplo.sql, V1001__lotes_exemplo.sql, V1002__estoque_completo.sql,
-                                                  V1004__medicamentos_extras.sql
+db/seed/        dados fictícios (só perfil dev)   V1000__dados_exemplo.sql, V1001__lotes_exemplo.sql, V1100__estoque_completo.sql,
+                                                  V1101__medicamentos_extras.sql
                                                   afterMigrate__sincronizacao_exemplo.sql (callback)
 ```
 

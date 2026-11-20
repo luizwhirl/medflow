@@ -1,5 +1,6 @@
 package br.ufal.medflow
 
+import br.ufal.medflow.estoque.RegraStatusEstoque
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
@@ -15,16 +16,26 @@ import kotlin.test.assertTrue
 @ActiveProfiles("dev")
 @Import(TestcontainersConfiguration::class)
 @Testcontainers(disabledWithoutDocker = true)
-class SeedDevIntegrationTests(@Autowired private val jdbc: JdbcTemplate) {
+class SeedDevIntegrationTests(
+    @Autowired private val jdbc: JdbcTemplate,
+    @Autowired private val regra: RegraStatusEstoque,
+) {
 
     private fun contar(sql: String): Int = jdbc.queryForObject(sql, Int::class.java)!!
 
+    /** Medicamentos fictícios (V1000 e V1101). A sincronização da BNAFAR pode criar outros no perfil dev. */
+    private val catmatsFicticios = listOf(
+        "BR0267690", "BR0267612", "BR0268856", "BR0271157", "BR0267620",
+        "BR0267515", "BR0268280", "BR0269919", "BR0267543", "BR0268338",
+        "BR0272301", "BR0272302", "BR0272303", "BR0272304", "BR0272305", "BR0272306", "BR0272307",
+    ).joinToString(",") { "'$it'" }
+
     @Test
-    fun `todo medicamento tem posicao de estoque em todas as UBS`() {
+    fun `todo medicamento ficticio tem posicao de estoque em todas as UBS`() {
         val semPosicao = contar(
             """
             SELECT COUNT(*) FROM ubs u CROSS JOIN medicamento m
-            WHERE u.cnes LIKE '90001%'
+            WHERE u.cnes LIKE '90001%' AND m.catmat IN ($catmatsFicticios)
               AND NOT EXISTS (SELECT 1 FROM item_estoque i WHERE i.ubs_id = u.id AND i.medicamento_id = m.id)
             """,
         )
@@ -33,26 +44,25 @@ class SeedDevIntegrationTests(@Autowired private val jdbc: JdbcTemplate) {
     }
 
     @Test
-    fun `seed tem 17 medicamentos em 7 categorias`() {
-        assertEquals(17, contar("SELECT COUNT(*) FROM medicamento"))
-        assertEquals(7, contar("SELECT COUNT(DISTINCT categoria) FROM medicamento"))
+    fun `seed tem os 17 medicamentos ficticios em 7 categorias`() {
+        assertEquals(17, contar("SELECT COUNT(*) FROM medicamento WHERE catmat IN ($catmatsFicticios)"))
+        assertEquals(7, contar("SELECT COUNT(DISTINCT categoria) FROM medicamento WHERE catmat IN ($catmatsFicticios)"))
     }
 
     @Test
     fun `status do seed segue a regra de estoque`() {
-        // Regra de RegraStatusEstoque com app.estoque.limite-reservado = 20
         val divergentes = jdbc.queryForList(
             """
-            SELECT u.cnes || '/' || m.catmat FROM item_estoque i
+            SELECT u.cnes, m.catmat, i.quantidade, i.status FROM item_estoque i
             JOIN ubs u ON u.id = i.ubs_id JOIN medicamento m ON m.id = i.medicamento_id
-            WHERE i.status <> CASE WHEN i.quantidade = 0 THEN 'EM_FALTA'
-                                   WHEN i.quantidade <= 20 THEN 'RESERVADO'
-                                   ELSE 'DISPONIVEL' END
+            WHERE m.catmat IN ($catmatsFicticios)
             """,
-            String::class.java,
-        )
+        ).filter { it["status"] != regra.calcular(it["quantidade"] as Int).name }
+            .map { "${it["cnes"]}/${it["catmat"]}" }
 
-        // Exceção conhecida do V1000 (já mergeado): Insulina na UBS Clima Bom com 18 unidades como DISPONIVEL.
+        // Exceção do V1000 (já mergeado): Insulina na UBS Clima Bom com 18 unidades como DISPONIVEL. Ela pressupõe
+        // o limite de reservado por medicamento (Insulina = 10) do PDS-37; quando ele entrar, passe o limite do
+        // medicamento ao calcular() e tire esta exceção.
         assertEquals(listOf("9000103/BR0271157"), divergentes)
     }
 
