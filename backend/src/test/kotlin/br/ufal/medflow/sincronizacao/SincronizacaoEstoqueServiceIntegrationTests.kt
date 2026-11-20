@@ -14,6 +14,7 @@ import org.mockito.BDDMockito.given
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.context.bean.override.mockito.MockitoBean
@@ -236,6 +237,53 @@ class SincronizacaoEstoqueServiceIntegrationTests(
         assertEquals(Descartes(naoUbs = 1, semCoordenadas = 1, naoMedicamento = 1), resultado.descartes)
         assertEquals(listOf("9674217"), jdbc.queryForList("select cnes from ubs", String::class.java))
         assertEquals(1, medicamentoRepository.findAll().size)
+    }
+
+    @Test
+    fun `status usa o limite do medicamento e, sem ele, o global de 20`() {
+        medicamentoRepository.save(
+            Medicamento("BR0267691", "Metformina", "850 mg", "comprimido", "Diabetes", limiteReservado = 50),
+        )
+        medicamentoRepository.save(
+            Medicamento("BR0267650", "Enalapril", "5 mg", "comprimido", "Hipertensão", limiteReservado = 5),
+        )
+        fonteDevolve(
+            listOf(
+                pos(quantidade = "40"), // limite 50: reservado (o global diria disponível)
+                pos(catmat = "BR0267650U0042", descricao = "ENALAPRIL, MALEATO 5 MG COMPRIMIDO", quantidade = "10"), // limite 5: disponível (o global diria reservado)
+                pos(catmat = "BR0267663U0042", descricao = "FUROSEMIDA 40 MG COMPRIMIDO", quantidade = "20"), // sem limite: global 20, reservado
+                pos(catmat = "BR0267670U0042", descricao = "CAPTOPRIL 25 MG COMPRIMIDO", quantidade = "21"), // sem limite: global 20, disponível
+            ),
+        )
+
+        servico.sincronizar(ibge)
+
+        assertEquals(StatusEstoque.RESERVADO.name, item("BR0267691")["status"])
+        assertEquals(StatusEstoque.DISPONIVEL.name, item("BR0267650")["status"])
+        assertEquals(StatusEstoque.RESERVADO.name, item("BR0267663")["status"])
+        assertEquals(StatusEstoque.DISPONIVEL.name, item("BR0267670")["status"])
+    }
+
+    @Test
+    fun `mudar o limite do medicamento muda o status na proxima sincronizacao`() {
+        medicamentoRepository.save(Medicamento("BR0267691", "Metformina", "850 mg", "comprimido", "Diabetes"))
+        fonteDevolve(listOf(pos(quantidade = "40")), listOf(pos(quantidade = "40")))
+        servico.sincronizar(ibge)
+        assertEquals(StatusEstoque.DISPONIVEL.name, item("BR0267691")["status"])
+
+        medicamentoRepository.findByCatmatIn(listOf("BR0267691")).single().limiteReservado = 50
+        servico.sincronizar(ibge)
+
+        assertEquals(StatusEstoque.RESERVADO.name, item("BR0267691")["status"])
+    }
+
+    @Test
+    fun `limite do medicamento negativo e rejeitado pelo banco`() {
+        assertFailsWith<DataIntegrityViolationException> {
+            medicamentoRepository.saveAndFlush(
+                Medicamento("BR0267691", "Metformina", "850 mg", "comprimido", "Diabetes", limiteReservado = -1),
+            )
+        }
     }
 
     @Test
