@@ -18,10 +18,12 @@ Base: `http://localhost:8080/api`. A documentação interativa fica em `/swagger
 | POST | `/lista-desejos` | Adiciona um medicamento à lista de desejos |
 | PATCH | `/lista-desejos/{id}` | Ativa ou desativa a notificação de um item |
 | DELETE | `/lista-desejos/{id}` | Remove um item da lista de desejos |
+| GET | `/avisos` | Lista os avisos do cidadão autenticado, dos mais recentes para os mais antigos |
+| PATCH | `/avisos/lidas` | Marca como lidos todos os avisos ainda não lidos do cidadão |
 
 ## Autenticação
 
-A leitura de UBS e medicamentos (`GET /api/ubs/**` e `GET /api/medicamentos/**`), a saúde (`/actuator/health`) e a documentação (Swagger) são públicas. Todo o resto exige login. O prefixo `/api/gestao` é só do papel `GESTOR`, enquanto `/api/lista-desejos` e suas subrotas são exclusivos do papel `CIDADAO`. Rota que não existe também responde `401` sem token.
+A leitura de UBS e medicamentos (`GET /api/ubs/**` e `GET /api/medicamentos/**`), a saúde (`/actuator/health`) e a documentação (Swagger) são públicas. Todo o resto exige login. O prefixo `/api/gestao` é só do papel `GESTOR`, enquanto `/api/lista-desejos`, `/api/avisos` e suas subrotas são exclusivos do papel `CIDADAO`. Rota que não existe também responde `401` sem token.
 
 | Método | Rota | Quem | Descrição |
 | --- | --- | --- | --- |
@@ -42,7 +44,7 @@ Nas demais chamadas, envie `Authorization: Bearer <token>`. O token é um JWT as
 | Situação | Resposta |
 | --- | --- |
 | Sem token, token inválido, adulterado ou expirado | `401` com `title: "Não autenticado"` e cabeçalho `WWW-Authenticate` |
-| Papel sem permissão (cidadão em `/api/gestao` ou gestor em `/api/lista-desejos`) | `403` com `title: "Acesso negado"` |
+| Papel sem permissão (cidadão em `/api/gestao` ou gestor em `/api/lista-desejos` ou `/api/avisos`) | `403` com `title: "Acesso negado"` |
 | Login com e-mail ou senha errados | `401` com `title: "Credenciais inválidas"` (a mesma resposta nos dois casos) |
 | Cadastro com e-mail que já existe (a caixa não importa) | `409` com `title: "E-mail já cadastrado"` |
 | Corpo inválido (campo vazio, e-mail ruim, senha curta) | `400` |
@@ -163,7 +165,83 @@ As consultas de propriedade são filtradas diretamente no banco de dados pelo ID
 
 Os erros de domínio utilizam o padrão RFC 9457 (`application/problem+json`).
 
-O campo `notificar` controla a preferência de aviso. O envio efetivo das notificações será implementado na F5.
+O campo `notificar` controla a geração dos avisos persistidos pela API. Com `false`, o cidadão não recebe novos avisos relacionados àquele item. Os avisos já gerados permanecem disponíveis no histórico.
+
+## Avisos do cidadão
+
+Os avisos são registros persistidos no banco e consultados pelo cidadão pela API. Não há envio de push, e-mail ou SMS nesta funcionalidade. Todas as rotas exigem `Authorization: Bearer <token>` com papel `CIDADAO`; o usuário é identificado pelo `sub` do JWT, sem receber um `usuarioId` na URL ou no corpo.
+
+### Listar avisos
+
+`GET /api/avisos`
+
+Retorna `200 OK` com os avisos do cidadão autenticado, ordenados por `criadoEm` decrescente e, em caso de empate, pelo ID decrescente.
+
+Exemplo ilustrativo de resposta (os textos variam conforme o evento):
+
+```json
+[
+  {
+    "id": 21,
+    "tipo": "MEDICAMENTO_DISPONIVEL",
+    "titulo": "Medicamento disponível",
+    "texto": "O medicamento acompanhado está disponível na UBS selecionada.",
+    "lido": false,
+    "criadoEm": "2026-11-19T16:30:00Z"
+  },
+  {
+    "id": 18,
+    "tipo": "UBS_DADOS_ATRASADOS",
+    "titulo": "Dados da UBS desatualizados",
+    "texto": "Os dados de estoque da unidade UBS Centro estão desatualizados. Consulte a data da última atualização antes de se dirigir à unidade.",
+    "lido": true,
+    "criadoEm": "2026-11-18T12:00:00Z"
+  }
+]
+```
+
+Os campos retornados são `id`, `tipo`, `titulo`, `texto`, `lido` e `criadoEm` (instante no formato ISO 8601). Se não houver avisos, retorna `[]`.
+
+### Marcar todos os avisos como lidos
+
+`PATCH /api/avisos/lidas`
+
+Não recebe corpo na requisição. Retorna `200 OK` com a quantidade de avisos que passaram de não lidos para lidos:
+
+```json
+{
+  "atualizados": 2
+}
+```
+
+Se não houver avisos não lidos, retorna `{"atualizados": 0}`. A atualização é feita diretamente no banco e afeta apenas os avisos do cidadão autenticado. Esta operação não remove os avisos.
+
+### Geração automática dos avisos
+
+Os tipos atualmente implementados são:
+
+| Tipo | Quando é gerado |
+| --- | --- |
+| `MEDICAMENTO_DISPONIVEL` | Durante a sincronização do estoque, quando um item novo já está `DISPONIVEL` ou um item existente muda de outro status para `DISPONIVEL`. |
+| `UBS_DADOS_ATRASADOS` | Durante a verificação do job de sincronização, quando uma UBS acompanhada possui dados de estoque antigos ou não possui data de referência. |
+
+A geração considera os itens da lista de desejos com `notificar: true` no momento da verificação. O aviso de disponibilidade exige a combinação exata de UBS e medicamento acompanhados. O aviso de atraso considera a UBS acompanhada, gerando no máximo um aviso por cidadão e UBS para a mesma referência de atualização, mesmo que ele acompanhe vários medicamentos naquela unidade.
+
+Uma sincronização repetida, sem nova transição para `DISPONIVEL`, não gera outro aviso de disponibilidade. Os avisos de atraso também não são duplicados em verificações repetidas enquanto a referência de atualização da UBS permanecer igual. Uma nova transição de disponibilidade ou uma nova referência que volte a ficar atrasada pode gerar um novo aviso.
+
+O limite de atraso é configurado pela propriedade `app.avisos.atraso-dias` (padrão: `7`; exige valor positivo). Uma UBS é considerada atrasada quando `ultimaSincronizacao` está ausente ou é **anterior** ao instante atual menos esse número de dias. O campo `ultimaSincronizacao` representa a data de referência dos dados recebidos da fonte, e não necessariamente a hora da execução do job.
+
+A verificação automática de atraso faz parte de `SincronizacaoAgendada` e depende de o job estar habilitado (`app.sync.ativo=true`). A verificação ainda é tentada quando a consulta à fonte falha para um município; isso não significa que a fonte conseguiu atualizar seus dados.
+
+### Segurança e respostas de erro
+
+| Situação | Resposta |
+| --- | --- |
+| Requisição sem token ou com token inválido | `401 Unauthorized` |
+| Usuário autenticado com papel `GESTOR` | `403 Forbidden` |
+| Cidadão autenticado sem avisos | `200 OK` com `[]` na listagem ou `{"atualizados": 0}` na marcação |
+
+Não é possível consultar nem marcar avisos de outro cidadão por essas rotas. Falhas de autenticação e autorização seguem o padrão `application/problem+json`.
 
 ## Filtro por categoria
 
