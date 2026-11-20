@@ -32,6 +32,27 @@ services:
     depends_on:
       - db
 
+  # Aplica migrations + seed sem subir a API (usado por scripts/db-reset).
+  # Mantenha igual ao backend, senão o db-reset monta um banco diferente do que a API monta:
+  # - imagem: a versão do flyway-core que o Spring Boot traz (backend/build.gradle.kts; confira com
+  #   ./gradlew dependencies --configuration runtimeClasspath | grep flyway-core);
+  # - FLYWAY_LOCATIONS e FLYWAY_OUT_OF_ORDER: o perfil dev do backend/src/main/resources/application.yml.
+  flyway:
+    image: flyway/flyway:12.4.0-alpine
+    profiles: [migracao] # não sobe com o up; roda com docker compose run --rm flyway
+    environment:
+      FLYWAY_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-medflow}
+      FLYWAY_USER: ${POSTGRES_USER:-medflow}
+      FLYWAY_PASSWORD: ${POSTGRES_PASSWORD:-medflow}
+      FLYWAY_LOCATIONS: filesystem:/flyway/db/migration,filesystem:/flyway/db/seed
+      FLYWAY_OUT_OF_ORDER: "true"
+    volumes:
+      - ./backend/src/main/resources/db:/flyway/db:ro
+    command: migrate
+    depends_on:
+      db:
+        condition: service_healthy
+
   api:
     build: ./backend
     profiles: [full]
