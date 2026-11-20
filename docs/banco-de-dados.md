@@ -4,7 +4,7 @@ PostgreSQL 17, versionado com Flyway em `backend/src/main/resources/db/`.
 
 ```text
 db/migration/   schema (todos os ambientes)       V1__schema_inicial.sql, V2__..., ...
-db/seed/        dados fictícios (só perfil dev)   V1000__dados_exemplo.sql, V1001__lotes_exemplo.sql, V1006__remessas_exemplo.sql, V1007__movimentacoes_exemplo.sql
+db/seed/        dados fictícios (só perfil dev)   V1000__dados_exemplo.sql, V1001__lotes_exemplo.sql, V1006__remessas_exemplo.sql, V1007__movimentacoes_exemplo.sql, V1008__limites_reservado_exemplo.sql
 ```
 
 ## Modelo
@@ -26,7 +26,7 @@ ubs 1───* item_estoque *───1 medicamento
 | Tabela | Conteúdo | Chave natural |
 | --- | --- | --- |
 | `ubs` | Unidades de saúde, localização e última sincronização | `cnes` |
-| `medicamento` | Itens da RENAME/REMUME | `catmat` |
+| `medicamento` | Itens da RENAME/REMUME, com limite de reservado próprio (opcional) | `catmat` |
 | `usuario` | Contas autenticadas de cidadãos e gestores | `email` |
 | `item_estoque` | Status e quantidade de um medicamento numa UBS | (`ubs_id`, `medicamento_id`) |
 | `lote_estoque` | Lotes de um item de estoque, com validade (a soma dos lotes é, no máximo, `item_estoque.quantidade`: posição sem validade conta no total, mas não vira lote) | (`item_estoque_id`, `numero_lote`) |
@@ -64,6 +64,12 @@ No perfil `dev`, o Flyway utiliza `db/migration` e `db/seed`, com `out-of-order:
 No perfil `prod`, apenas `db/migration` é utilizado e `out-of-order` não é habilitado.
 
 O perfil padrão da aplicação é `dev`; ambientes de produção devem ativar explicitamente o perfil `prod`.
+
+### Limite de reservado por medicamento
+
+A migration `V11__limite_reservado_medicamento.sql` adiciona `medicamento.limite_reservado` (inteiro maior ou igual a zero, nulo por padrão). Com saldo até esse valor o item fica `RESERVADO`; quando for nulo, vale o limite global `app.estoque.limite-reservado`. A sincronização usa o limite do medicamento ao calcular o status, então mudar o valor só reflete no estoque na próxima sincronização.
+
+No seed (`V1008__limites_reservado_exemplo.sql`): Metformina 50, Losartana 30 e Insulina NPH 10. Os itens do seed criados por outros arquivos podem ter sido classificados só com o limite global; o status é recalculado na próxima sincronização.
 
 ### Movimentações de estoque
 
