@@ -24,11 +24,14 @@ docker compose up -d                 # PostgreSQL em localhost:5432 (medflow / m
 docker compose --profile tools up -d # + pgAdmin em http://localhost:5050
 ```
 
-As tabelas são criadas pelo **Flyway** quando o backend sobe. Para zerar o banco:
+As tabelas são criadas pelo **Flyway** quando o backend sobe. Para recriar o banco com as migrations e os dados de
+exemplo, sem precisar subir o backend:
 
 ```bash
-docker compose down -v
+scripts/db-reset.sh          # PowerShell: .\scripts\db-reset.ps1
 ```
+
+Salvar e restaurar o banco (`db-dump` e `db-restore`) estão em [banco-de-dados.md](banco-de-dados.md#recriar-salvar-e-restaurar-o-banco-local).
 
 ## 3. Backend
 
@@ -71,5 +74,5 @@ Sobe banco, API (`:8080`) e web servida por Nginx (`:4200`).
 ## Problemas comuns
 
 - **Porta 5432 ocupada:** mude `POSTGRES_PORT` no `.env` e `DB_URL` de acordo.
-- **`Flyway validation failed`:** uma migration já aplicada foi editada. Nunca altere migrations antigas; crie uma nova (`V2__...sql`). Em dev, `docker compose down -v` recria o banco.
+- **`Flyway validation failed`:** uma migration já aplicada foi editada. Nunca altere migrations antigas; crie uma nova (`V2__...sql`). Em dev, `scripts/db-reset.sh` recria o banco.
 - **Testes de integração "skipped":** o Docker não está rodando.

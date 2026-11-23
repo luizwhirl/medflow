@@ -1,5 +1,7 @@
 package br.ufal.medflow.ubs
 
+import br.ufal.medflow.common.PaginaResponse
+import br.ufal.medflow.common.Paginacao
 import br.ufal.medflow.common.ParametroInvalidoException
 import br.ufal.medflow.common.RecursoNaoEncontradoException
 import br.ufal.medflow.estoque.ItemEstoqueResponse
@@ -9,6 +11,8 @@ import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import jakarta.validation.constraints.DecimalMax
 import jakarta.validation.constraints.DecimalMin
+import jakarta.validation.constraints.Max
+import jakarta.validation.constraints.Min
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.bind.annotation.GetMapping
@@ -57,12 +61,18 @@ class UbsController(
     fun buscar(@PathVariable id: Long): UbsResponse =
         (ubsRepository.findByIdOrNull(id) ?: throw RecursoNaoEncontradoException("UBS", id)).toResponse()
 
+    @Operation(summary = "Estoque da UBS", description = "Em ordem de nome do medicamento, paginado.")
     @GetMapping("/{id}/estoque")
     fun estoque(
         @PathVariable id: Long,
         @RequestParam(required = false) status: StatusEstoque?,
-    ): List<ItemEstoqueResponse> =
-        ubsEstoqueService.listarItens(id, status)
+        @Parameter(description = "Página, a partir de 0.")
+        @RequestParam(defaultValue = "0") @Min(0) pagina: Int,
+        @Parameter(description = "Itens por página, de 1 a ${Paginacao.TAMANHO_MAXIMO}.")
+        @RequestParam(defaultValue = "${Paginacao.TAMANHO_PADRAO}") @Min(1) @Max(Paginacao.TAMANHO_MAXIMO.toLong())
+        tamanho: Int,
+    ): PaginaResponse<ItemEstoqueResponse> =
+        ubsEstoqueService.listarItens(id, status, Paginacao.de(pagina, tamanho, "medicamento.nome"))
 
     @GetMapping("/{id}/estoque/resumo")
     fun resumoEstoque(

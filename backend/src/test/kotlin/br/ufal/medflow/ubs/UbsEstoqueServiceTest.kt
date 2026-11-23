@@ -13,11 +13,15 @@ import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
+import org.springframework.data.domain.PageImpl
+import org.springframework.data.domain.PageRequest
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /** Testes das regras de resumo do estoque, sem banco. */
 class UbsEstoqueServiceTest {
+
+    private val pagina = PageRequest.of(0, 20)
 
     private val ubsRepository = mock(UbsRepository::class.java)
     private val itemEstoqueRepository = mock(ItemEstoqueRepository::class.java)
@@ -155,12 +159,13 @@ class UbsEstoqueServiceTest {
     @Test
     fun `listagem sem filtro retorna todos os itens`() {
         given(ubsRepository.existsById(1L)).willReturn(true)
-        given(itemEstoqueRepository.findByUbs(1L))
-            .willReturn(itens)
+        given(itemEstoqueRepository.findByUbs(1L, pagina))
+            .willReturn(PageImpl(itens, pagina, itens.size.toLong()))
 
-        val resultado = service.listarItens(1L, null)
+        val resultado = service.listarItens(1L, null, pagina)
 
-        assertEquals(4, resultado.size)
+        assertEquals(4, resultado.itens.size)
+        assertEquals(4L, resultado.totalItens)
         assertEquals(
             listOf(
                 "Medicamento A",
@@ -168,10 +173,10 @@ class UbsEstoqueServiceTest {
                 "Medicamento C",
                 "Medicamento D",
             ),
-            resultado.map { it.medicamento.nome },
+            resultado.itens.map { it.medicamento.nome },
         )
 
-        verify(itemEstoqueRepository).findByUbs(1L)
+        verify(itemEstoqueRepository).findByUbs(1L, pagina)
         verify(itemEstoqueRepository, never()).contarPorStatusDaUbs(1L)
     }
 
@@ -182,19 +187,21 @@ class UbsEstoqueServiceTest {
             itemEstoqueRepository.findByUbsEStatus(
                 1L,
                 StatusEstoque.DISPONIVEL,
+                pagina,
             ),
-        ).willReturn(itens.take(2))
+        ).willReturn(PageImpl(itens.take(2), pagina, 2))
 
-        val resultado = service.listarItens(1L, StatusEstoque.DISPONIVEL)
+        val resultado = service.listarItens(1L, StatusEstoque.DISPONIVEL, pagina)
 
-        assertEquals(2, resultado.size)
-        assertTrue(resultado.all { it.status == StatusEstoque.DISPONIVEL })
+        assertEquals(2, resultado.itens.size)
+        assertTrue(resultado.itens.all { it.status == StatusEstoque.DISPONIVEL })
 
         verify(itemEstoqueRepository).findByUbsEStatus(
             1L,
             StatusEstoque.DISPONIVEL,
+            pagina,
         )
-        verify(itemEstoqueRepository, never()).findByUbs(1L)
+        verify(itemEstoqueRepository, never()).findByUbs(1L, pagina)
         verify(itemEstoqueRepository, never()).contarPorStatusDaUbs(1L)
     }
 
@@ -203,7 +210,7 @@ class UbsEstoqueServiceTest {
         given(ubsRepository.existsById(999L)).willReturn(false)
 
         assertThrows<RecursoNaoEncontradoException> {
-            service.listarItens(999L, null)
+            service.listarItens(999L, null, pagina)
         }
 
         verifyNoInteractions(itemEstoqueRepository)
