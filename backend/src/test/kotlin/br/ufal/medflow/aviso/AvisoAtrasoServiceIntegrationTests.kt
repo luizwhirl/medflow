@@ -21,6 +21,7 @@ import org.testcontainers.junit.jupiter.Testcontainers
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
+import java.time.ZoneId
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -49,6 +50,14 @@ class AvisoAtrasoServiceIntegrationTests(
     private var instanteAtual = agora
 
     private val ibge = "2702405"
+    private val zonaMaceio = ZoneId.of("America/Maceio")
+
+    // A sincronização grava posições a meia-noite do fuso de Maceió.
+    private fun posicao(diasAntesDeHoje: Long): Instant =
+        agora.atZone(zonaMaceio).toLocalDate()
+            .minusDays(diasAntesDeHoje)
+            .atStartOfDay(zonaMaceio)
+            .toInstant()
 
     @BeforeEach
     fun prepararRelogio() {
@@ -116,7 +125,7 @@ class AvisoAtrasoServiceIntegrationTests(
 
     @Test
     fun `gera um aviso por cidadao mesmo com varios medicamentos na ubs`() {
-        val referencia = agora.minus(Duration.ofHours(48))
+        val referencia = posicao(2)
         val ubs = criarUbs("9000101", referencia)
 
         val metformina = criarMedicamento("BR0267690", "Metformina")
@@ -165,7 +174,7 @@ class AvisoAtrasoServiceIntegrationTests(
     fun `verificacoes repetidas nao geram avisos duplicados`() {
         val ubs = criarUbs(
             "9000102",
-            agora.minus(Duration.ofHours(36)),
+            posicao(2),
         )
 
         val medicamento = criarMedicamento("BR0267691", "Metformina")
@@ -186,12 +195,12 @@ class AvisoAtrasoServiceIntegrationTests(
 
         val atualizada = criarUbs(
             "9000104",
-            agora.minus(Duration.ofHours(12)),
+            posicao(0),
         )
 
         val outroMunicipio = criarUbs(
             "9000105",
-            agora.minus(Duration.ofHours(48)),
+            posicao(2),
             codigoIbge = "2704302",
         )
 
@@ -217,7 +226,7 @@ class AvisoAtrasoServiceIntegrationTests(
     fun `gera novo aviso quando dados atualizados voltam a ficar atrasados`() {
         val ubs = criarUbs(
             "9000106",
-            agora.minus(Duration.ofHours(48)),
+            posicao(2),
         )
 
         val medicamento = criarMedicamento("BR0267693", "Metformina")
@@ -230,18 +239,16 @@ class AvisoAtrasoServiceIntegrationTests(
 
         val primeiraChave = avisosDo(cidadao).single().chaveEvento
 
-        // A UBS recebe uma posição atualizada, com 12 horas de idade.
+        // A UBS recebe uma posição de ontem, ainda válida neste dia.
         val unidadeAtualizada = unidades.findById(ubs.id!!).orElseThrow()
-        unidadeAtualizada.ultimaSincronizacao =
-            agora.minus(Duration.ofHours(12))
+        unidadeAtualizada.ultimaSincronizacao = posicao(1)
         unidades.saveAndFlush(unidadeAtualizada)
 
         assertEquals(0, servico.verificarMunicipio(ibge))
         assertEquals(1, avisosDo(cidadao).size)
 
-        // Avança 13 horas. A mesma posição agora tem 25 horas
-        // de idade e passa a ser considerada atrasada.
-        instanteAtual = agora.plus(Duration.ofHours(13))
+        // No dia seguinte, a posição já é anterior a ontem.
+        instanteAtual = agora.plus(Duration.ofDays(1))
 
         assertEquals(1, servico.verificarMunicipio(ibge))
 
@@ -262,34 +269,38 @@ class AvisoAtrasoServiceIntegrationTests(
     }
 
     @Test
-    fun `respeita o limite padrao de vinte e quatro horas`() {
-        val noLimite = criarUbs(
-            "9000107",
-            agora.minus(Duration.ofHours(24)),
-        )
-
-        val ultrapassouLimite = criarUbs(
-            "9000108",
-            agora.minus(Duration.ofHours(24)).minusSeconds(1),
-        )
-
+    fun `considera atrasada somente posicao anterior a ontem no fuso de Maceio`() {
+        val ontem = criarUbs("9000107", posicao(1))
+        val anteontem = criarUbs("9000108", posicao(2))
         val medicamento = criarMedicamento("BR0267694", "Metformina")
-        val cidadao = criarDispositivo("atraso-limite@teste.com")
+        val dispositivo = criarDispositivo("atraso-limite@teste.com")
 
-        acompanhar(cidadao, noLimite, medicamento)
-        acompanhar(cidadao, ultrapassouLimite, medicamento)
+        acompanhar(dispositivo, ontem, medicamento)
+        acompanhar(dispositivo, anteontem, medicamento)
 
-        // Exatamente 24 horas não é considerado atraso.
-        // A partir de 24 horas e 1 segundo, gera aviso.
         assertEquals(1, servico.verificarMunicipio(ibge))
-
-        val encontrados = avisosDo(cidadao)
-
+        val encontrados = avisosDo(dispositivo)
         assertEquals(1, encontrados.size)
         assertTrue(
-            encontrados.single().chaveEvento.startsWith(
-                "atraso:${ultrapassouLimite.id}:",
-            ),
+            encontrados.single().chaveEvento.startsWith("atraso:${anteontem.id}:"),
         )
+    }
+
+    @Test
+    fun `nao gera aviso logo apos meia noite seguinte para posicao de ontem`() {
+        val ontem = criarUbs("9000109", posicao(0))
+        val medicamento = criarMedicamento("BR0267695", "Metformina")
+        val dispositivo = criarDispositivo("atraso-virada-dia@teste.com")
+        acompanhar(dispositivo, ontem, medicamento)
+
+        // 20/11 00:01 em Maceió; a posição de 19/11 ainda é válida.
+        instanteAtual = Instant.parse("2026-11-20T03:01:00Z")
+        assertEquals(0, servico.verificarMunicipio(ibge))
+        assertTrue(avisosDo(dispositivo).isEmpty())
+
+        // 21/11 00:01 em Maceió; a mesma posição é anterior a ontem.
+        instanteAtual = Instant.parse("2026-11-21T03:01:00Z")
+        assertEquals(1, servico.verificarMunicipio(ibge))
+        assertEquals(1, avisosDo(dispositivo).size)
     }
 }

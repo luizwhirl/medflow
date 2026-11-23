@@ -1,6 +1,5 @@
 package br.ufal.medflow.listadesejo
 
-import br.ufal.medflow.auth.Usuario
 import org.springframework.data.jpa.repository.EntityGraph
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
@@ -48,23 +47,5 @@ interface ItemListaDesejoRepository : JpaRepository<ItemListaDesejo, Long> {
         @Param("medicamentoId") medicamentoId: Long,
     ): List<UUID>
 
-    /**
-     * Cidadãos que solicitaram notificações para um medicamento
-     * específico em uma UBS.
-     *
-     * O filtro é executado diretamente no banco.
-     */
-    @Query(
-        """
-        select distinct i.usuario
-        from ItemListaDesejo i
-        where i.ubs.id = :ubsId
-          and i.medicamento.id = :medicamentoId
-          and i.notificar = true
-        """,
-    )
-    fun buscarUsuariosParaDisponibilidade(
-        @Param("ubsId") ubsId: Long,
-        @Param("medicamentoId") medicamentoId: Long,
-    ): List<Usuario>
+
 }

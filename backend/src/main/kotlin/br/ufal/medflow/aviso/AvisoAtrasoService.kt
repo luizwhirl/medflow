@@ -6,8 +6,8 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
-import java.time.Duration
 import java.time.Instant
+import java.time.ZoneId
 
 /** Identifica UBS com dados atrasados e gera avisos aos dispositivos interessados. */
 @Service
@@ -16,28 +16,32 @@ class AvisoAtrasoService(
     private val avisoRepository: AvisoRepository,
     private val relogio: Clock,
 
-    @param:Value("\${app.avisos.atraso-horas:24}")
-    private val atrasoHoras: Long,
+    @param:Value("\${app.avisos.atraso-dias:1}")
+    private val atrasoDias: Long,
 ) {
 
     init {
-        require(atrasoHoras > 0) {
-            "O prazo de atraso dos avisos deve ser maior que zero"
+        require(atrasoDias > 0) {
+            "O prazo de atraso em dias deve ser maior que zero"
         }
     }
 
     /**
      * Verifica as UBS de um município e gera avisos sobre dados atrasados.
      *
-     * A consulta ao banco considera as unidades cuja última data
-     * de referência é anterior ao limite permitido ou está ausente.
+     * Considera atrasadas as UBS sem referência ou com posição anterior
+     * ao início do dia de ontem, no fuso de Maceió (prazo padrão de 1 dia).
+     * Assim, uma posição de ontem permanece válida durante todo o dia de hoje.
      *
      * O resultado é a quantidade de avisos efetivamente inseridos.
      */
     @Transactional
     fun verificarMunicipio(codigoIbge: String): Int {
         val agora = Instant.now(relogio)
-        val limite = agora.minus(Duration.ofHours(atrasoHoras))
+        val hojeLocal = agora.atZone(ZONA_MACEIO).toLocalDate()
+        val limite = hojeLocal.minusDays(atrasoDias)
+            .atStartOfDay(ZONA_MACEIO)
+            .toInstant()
 
         val unidadesAtrasadas = ubsRepository.buscarComDadosAtrasados(
             codigoIbge,
@@ -99,5 +103,9 @@ class AvisoAtrasoService(
             ?: "sem-data"
 
         return "atraso:$ubsId:$referencia"
+    }
+
+    private companion object {
+        val ZONA_MACEIO: ZoneId = ZoneId.of("America/Maceio")
     }
 }

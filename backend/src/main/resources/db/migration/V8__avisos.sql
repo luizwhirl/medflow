@@ -1,11 +1,10 @@
--- PDS-35: avisos do cidadão.
--- Os avisos pertencem ao usuário autenticado e são removidos
--- automaticamente quando a conta é excluída.
+-- PDS-35: avisos por dispositivo (sem conta de cidadão).
+-- O identificador é o UUID salvo no navegador e enviado em X-Dispositivo-Id.
 
 CREATE TABLE aviso (
     id BIGSERIAL PRIMARY KEY,
 
-    usuario_id BIGINT NOT NULL,
+    dispositivo_id UUID NOT NULL,
 
     tipo VARCHAR(40) NOT NULL
         CHECK (tipo IN (
@@ -19,24 +18,18 @@ CREATE TABLE aviso (
     lido BOOLEAN NOT NULL DEFAULT FALSE,
     criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-    -- Identifica o evento que originou o aviso.
-    -- Evita gerar o mesmo aviso mais de uma vez para o usuário.
+    -- Impede repetir o mesmo evento para um dispositivo.
     chave_evento VARCHAR(200) NOT NULL,
 
-    CONSTRAINT fk_aviso_usuario
-        FOREIGN KEY (usuario_id)
-        REFERENCES usuario (id)
-        ON DELETE CASCADE,
-
-    CONSTRAINT uk_aviso_usuario_evento
-        UNIQUE (usuario_id, chave_evento)
+    CONSTRAINT uk_aviso_dispositivo_evento
+        UNIQUE (dispositivo_id, chave_evento)
 );
 
--- Otimiza a listagem dos avisos mais recentes de um cidadão.
-CREATE INDEX idx_aviso_usuario_criado_em
-    ON aviso (usuario_id, criado_em DESC, id DESC);
+-- Lista dos 50 avisos mais recentes do dispositivo.
+CREATE INDEX idx_aviso_dispositivo_criado_em
+    ON aviso (dispositivo_id, criado_em DESC, id DESC);
 
--- Otimiza consultas e atualizações de avisos não lidos.
-CREATE INDEX idx_aviso_usuario_nao_lido
-    ON aviso (usuario_id)
+-- Contagem e atualização dos avisos não lidos.
+CREATE INDEX idx_aviso_dispositivo_nao_lido
+    ON aviso (dispositivo_id)
     WHERE lido = FALSE;

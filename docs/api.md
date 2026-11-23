@@ -226,13 +226,15 @@ O destinatário deve ter um item de lista de desejos com `dispositivo_id` defini
 
 A geração de disponibilidade evita produzir novo aviso se o dispositivo já tiver um aviso **não lido** para a mesma UBS e medicamento. Depois de marcar esse aviso como lido, somente uma **nova transição real de estoque para disponível** poderá produzir outro. A geração ocorre na mesma transação da sincronização de estoque; falhas provocam rollback conjunto.
 
-Avisos de atraso têm chave derivada da UBS e da última referência de dados. A constraint `uk_aviso_dispositivo_evento` impede duplicação quando o job é repetido. Atraso é configurado por `app.avisos.atraso-horas`, com padrão de **24 horas** (mais de 24 horas ou sem data = atraso). O job depende de `app.sync.ativo=true`.
+Avisos de atraso têm chave derivada da UBS e da última referência de dados. A constraint `uk_aviso_dispositivo_evento` impede duplicação quando o job é repetido. Atraso é calculado por **dias de calendário no fuso `America/Maceio`**, não por uma janela móvel de horas. Por padrão, a UBS está atrasada quando a posição é **anterior ao início de ontem** ou não existe data de referência. Uma posição de ontem não dispara aviso logo após a meia-noite de hoje. A tolerância é configurada por `app.avisos.atraso-dias` (padrão `1`, inteiro positivo). O job depende de `app.sync.ativo=true`.
 
-### Migração dos dados antigos
+### Migrations e dados de exemplo
 
-A nova migration `V12_1__avisos_por_dispositivo.sql` conserva o histórico da `V8__avisos.sql`, mas muda o modelo de proprietário. Avisos antigos associados a contas não podem ser atribuídos corretamente a dispositivos; por isso, a migração **descarta esses avisos antes de remover `usuario_id`**. Essa decisão deve ser validada antes de aplicar a migration em um ambiente com dados reais. A migration também aceita a estrutura de dispositivo da lista de desejos já introduzida pelo PR #33.
+A `V8__avisos.sql` já cria avisos identificados diretamente por `dispositivo_id UUID`, sem coluna ou chave estrangeira para `usuario`. A `V12_1__avisos_por_dispositivo.sql` ajusta **somente** o schema da lista de desejos quando a migration do PR #33 ainda não estiver aplicada; suas instruções verificam se coluna e constraints já existem. Nenhuma das duas migrations apaga avisos. A equipe precisa resolver a duplicidade de versão **V6** entre o PR #33 e a migration de remessas antes do merge.
 
-Não há mais geração de avisos de demonstração vinculados à conta `rita@medflow.local`.
+Como a V8 e a V12_1 foram alteradas enquanto o PR #35 ainda está em revisão, **não se deve aplicá-las em uma base persistente que já registrou as versões anteriores** sem antes planejar o ajuste/uma recriação segura do banco de desenvolvimento. Nunca reescreva o histórico do Flyway de um ambiente compartilhado.
+
+No perfil `dev`, `AvisosDeExemplo` insere idempotentemente **três avisos fictícios** (dois não lidos, um lido) para o UUID de demonstração `15da7427-97f6-4bf1-9d99-004af964e951`. Para testá-los no frontend, use esse UUID no `localStorage` de desenvolvimento e no cabeçalho `X-Dispositivo-Id`; não o utilize como UUID de um dispositivo real.
 
 ### Integração e erros
 
