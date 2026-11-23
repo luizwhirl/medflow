@@ -24,6 +24,7 @@ class UsuariosDeExemplo(
         val exemplos = listOf(
             Triple("Dona Rita", "rita@medflow.local", PapelUsuario.CIDADAO),
             Triple("Seu Carlos", "carlos@medflow.local", PapelUsuario.GESTOR),
+            Triple("Dona Marta", "marta@medflow.local", PapelUsuario.GESTOR),
         )
         val novos = exemplos.filterNot { (_, email, _) -> usuarios.existsByEmail(email) }
             .map { (nome, email, papel) -> Usuario(nome, email, requireNotNull(senhas.encode(SENHA)), papel) }
@@ -31,9 +32,12 @@ class UsuariosDeExemplo(
             usuarios.saveAll(novos)
             log.info("Usuários de exemplo criados (só dev, senha \"{}\"): {}", SENHA, novos.joinToString { it.email })
         }
+        // Seu Carlos gerencia só a UBS Benedito Bentes I; Dona Marta não tem vínculo e vê a rede toda
+        usuarios.vincularGestor("carlos@medflow.local", CNES_DO_CARLOS)
     }
 
     companion object {
         const val SENHA = "medflow-dev-123"
+        const val CNES_DO_CARLOS = "9000101"
     }
 }
