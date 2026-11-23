@@ -2,6 +2,10 @@
 .env
 *.log
 
+# Dumps do banco local (scripts/db-dump)
+backups/
+*.dump
+
 # IDEs
 .idea/
 *.iml
