@@ -18,13 +18,13 @@ Base: `http://localhost:8080/api`. A documentação interativa fica em `/swagger
 | POST | `/lista-desejos` | Adiciona um medicamento à lista de desejos |
 | PATCH | `/lista-desejos/{id}` | Ativa ou desativa a notificação de um item |
 | DELETE | `/lista-desejos/{id}` | Remove um item da lista de desejos |
-| GET | `/avisos` | Lista os 50 avisos mais recentes do cidadão autenticado |
-| GET | `/avisos/nao-lidos/total` | Retorna a quantidade total de avisos não lidos do cidadão |
-| PATCH | `/avisos/lidas` | Marca como lidos todos os avisos ainda não lidos do cidadão |
+| GET | `/avisos` | Lista os 50 avisos mais recentes do dispositivo (`X-Dispositivo-Id`) |
+| GET | `/avisos/nao-lidos/total` | Total de avisos não lidos do dispositivo |
+| PATCH | `/avisos/lidas` | Marca como lidos os avisos do dispositivo |
 
 ## Autenticação
 
-A leitura de UBS e medicamentos (`GET /api/ubs/**` e `GET /api/medicamentos/**`), a saúde (`/actuator/health`) e a documentação (Swagger) são públicas. Todo o resto exige login. O prefixo `/api/gestao` é só do papel `GESTOR`, enquanto `/api/lista-desejos`, `/api/avisos` e suas subrotas são exclusivos do papel `CIDADAO`. Rota que não existe também responde `401` sem token.
+A leitura de UBS e medicamentos (`GET /api/ubs/**` e `GET /api/medicamentos/**`), avisos (`/api/avisos/**`), saúde (`/actuator/health`) e Swagger são públicos. O prefixo `/api/gestao` exige o papel `GESTOR`. Nesta branch, a lista de desejos ainda exige `CIDADAO`; a integração do PR #33 permitirá acesso sem login por `X-Dispositivo-Id`. As demais rotas seguem as regras de autenticação.
 
 | Método | Rota | Quem | Descrição |
 | --- | --- | --- | --- |
@@ -38,19 +38,19 @@ A leitura de UBS e medicamentos (`GET /api/ubs/**` e `GET /api/medicamentos/**`)
 { "token": "eyJhbGciOiJIUzI1NiJ9...", "tipo": "Bearer", "expiraEmSegundos": 28800, "papel": "CIDADAO" }
 ```
 
-Nas demais chamadas, envie `Authorization: Bearer <token>`. O token é um JWT assinado com HS256, vale 8 horas (`JWT_EXPIRACAO`) e leva o id da conta (`sub`), o `email` e o `papel` (`CIDADAO` ou `GESTOR`).
+Nas chamadas autenticadas, envie `Authorization: Bearer <token>`. As rotas de avisos não exigem token e utilizam `X-Dispositivo-Id`. O token é um JWT assinado com HS256, vale 8 horas (`JWT_EXPIRACAO`) e leva o id da conta (`sub`), o `email` e o `papel` (`CIDADAO` ou `GESTOR`).
 
 `POST /api/auth/cadastro` com `{"nome": "...", "email": "...", "senha": "..."}` (senha de 8 a 72 caracteres) devolve `201` com `id`, `nome`, `email` e `papel`. O papel **não** pode ser escolhido: toda conta criada por aqui é `CIDADAO`. Conta de `GESTOR` só é criada direto no banco, com a senha em BCrypt.
 
 | Situação | Resposta |
 | --- | --- |
 | Sem token, token inválido, adulterado ou expirado | `401` com `title: "Não autenticado"` e cabeçalho `WWW-Authenticate` |
-| Papel sem permissão (cidadão em `/api/gestao` ou gestor em `/api/lista-desejos` ou `/api/avisos`) | `403` com `title: "Acesso negado"` |
+| Papel sem permissão (cidadão em `/api/gestao` ou gestor em `/api/lista-desejos` nesta branch) | `403` com `title: "Acesso negado"` |
 | Login com e-mail ou senha errados | `401` com `title: "Credenciais inválidas"` (a mesma resposta nos dois casos) |
 | Cadastro com e-mail que já existe (a caixa não importa) | `409` com `title: "E-mail já cadastrado"` |
 | Corpo inválido (campo vazio, e-mail ruim, senha curta) | `400` |
 
-Todos os erros seguem o padrão `application/problem+json`. O CORS libera o cabeçalho `Authorization` para as origens de `CORS_ALLOWED_ORIGINS`.
+Todos os erros seguem o padrão `application/problem+json`. O CORS libera os cabeçalhos `Authorization` e `X-Dispositivo-Id` para as origens de `CORS_ALLOWED_ORIGINS`.
 
 Com o suporte nativo a RFC 9457 habilitado, erros gerados automaticamente pelo Spring MVC podem apresentar o campo `title` em inglês, como `"Bad Request"` (400), `"Method Not Allowed"` (405) e `"Unsupported Media Type"` (415). Já os erros tratados pelos handlers de domínio utilizam títulos em português, como `"Parâmetro inválido"` e `"Recurso não encontrado"`. Para identificar erros programaticamente, utilize o código HTTP (`status`), em vez de depender do texto de `title`.
 
@@ -168,19 +168,19 @@ Os erros de domínio utilizam o padrão RFC 9457 (`application/problem+json`).
 
 O campo `notificar` controla a geração dos avisos persistidos pela API. Com `false`, o cidadão não recebe novos avisos relacionados àquele item. Os avisos já gerados permanecem disponíveis no histórico.
 
-## Avisos do cidadão
+## Avisos do cidadão (sem login)
 
-Os avisos são registros persistidos no banco e consultados pelo cidadão pela API. Não há envio de push, e-mail ou SMS nesta funcionalidade. Todas as rotas exigem `Authorization: Bearer <token>` com papel `CIDADAO`; o usuário é identificado pelo `sub` do JWT, sem receber um `usuarioId` na URL ou no corpo.
+Os avisos são registros armazenados no banco e vinculados a um **UUID do dispositivo**, e não à conta do usuário. Não há push, SMS ou e-mail nesta funcionalidade. O navegador gera um UUID aleatório, mantém esse valor em `localStorage` e o envia no cabeçalho `X-Dispositivo-Id`, o mesmo utilizado pela lista de desejos do PR #33.
+
+**Exemplo:** `X-Dispositivo-Id: 15da7427-97f6-4bf1-9d99-004af964e951`.
+
+Não é necessário enviar `Authorization`. Os três endpoints exigem um UUID com 36 caracteres no formato canônico; se faltar ou estiver inválido, retornam `400` (`application/problem+json`). O identificador funciona como uma chave de acesso de posse do navegador, **não como autenticação forte**: quem descobrir o UUID poderá consultar ou marcar os avisos desse dispositivo. Por isso, não exponha o UUID em URLs, logs ou analytics e não grave informações pessoais nem condições de saúde detalhadas nos avisos.
 
 ### Listar avisos
 
 `GET /api/avisos`
 
-Retorna `200 OK` com **até 50 avisos mais recentes** do cidadão autenticado, ordenados por `criadoEm` decrescente e, em caso de empate, pelo ID decrescente.
-
-O limite de 50 registros é aplicado diretamente na consulta ao banco. A rota não recebe parâmetros de paginação nesta versão.
-
-Exemplo ilustrativo de resposta (os textos variam conforme o evento):
+Retorna até **50 avisos mais recentes** do dispositivo, ordenados por `criadoEm` decrescente e, em caso de empate, por `id` decrescente. Se não houver avisos, retorna `[]`.
 
 ```json
 [
@@ -191,153 +191,59 @@ Exemplo ilustrativo de resposta (os textos variam conforme o evento):
     "texto": "O medicamento acompanhado está disponível na UBS selecionada.",
     "lido": false,
     "criadoEm": "2026-11-19T16:30:00Z"
-  },
-  {
-    "id": 18,
-    "tipo": "UBS_DADOS_ATRASADOS",
-    "titulo": "Dados da UBS desatualizados",
-    "texto": "Os dados de estoque da unidade UBS Centro estão desatualizados. Consulte a data da última atualização antes de se dirigir à unidade.",
-    "lido": true,
-    "criadoEm": "2026-11-18T12:00:00Z"
   }
 ]
 ```
-
-Os campos retornados são `id`, `tipo`, `titulo`, `texto`, `lido` e `criadoEm` (instante no formato ISO 8601). Se não houver avisos, retorna `[]`.
-
-O limite de 50 considera avisos lidos e não lidos. Registros mais antigos permanecem armazenados, mas não aparecem nessa listagem.
 
 ### Contar avisos não lidos
 
 `GET /api/avisos/nao-lidos/total`
 
-Retorna `200 OK` com a quantidade total de avisos não lidos do cidadão autenticado.
-
-Exemplo de resposta:
+A contagem é executada no banco, inclusive para avisos além dos 50 mais recentes.
 
 ```json
-{
-  "naoLidos": 7
-}
+{ "naoLidos": 7 }
 ```
 
-Se não houver avisos não lidos, retorna:
-
-```json
-{
-  "naoLidos": 0
-}
-```
-
-A contagem é realizada diretamente no banco de dados e considera **todos os avisos não lidos**, inclusive os mais antigos que não aparecem entre os 50 registros retornados pela listagem.
-
-Essa rota pode ser utilizada pelo frontend para exibir a quantidade de avisos pendentes no menu de notificações, sem precisar carregar o histórico completo.
-
-### Marcar todos os avisos como lidos
+### Marcar avisos como lidos
 
 `PATCH /api/avisos/lidas`
 
-Não recebe corpo na requisição. Retorna `200 OK` com a quantidade de avisos que passaram de não lidos para lidos:
+Não recebe corpo. Marca como lidos somente os avisos do UUID informado. A atualização é feita no banco e não remove o histórico.
 
 ```json
-{
-  "atualizados": 2
-}
+{ "atualizados": 2 }
 ```
 
-Se não houver avisos não lidos, retorna `{"atualizados": 0}`. A atualização é feita diretamente no banco e afeta apenas os avisos do cidadão autenticado. Esta operação não remove os avisos.
-
-A atualização inclui todos os avisos não lidos do cidadão, inclusive aqueles que não aparecem na listagem limitada a 50 registros. Após a marcação, o contador de não lidos passa a retornar zero, desde que nenhum novo aviso tenha sido gerado.
-
-### Geração automática dos avisos
-
-Os tipos atualmente implementados são:
+### Geração automática
 
 | Tipo | Quando é gerado |
 | --- | --- |
-| `MEDICAMENTO_DISPONIVEL` | Durante a sincronização do estoque, quando um item novo já está `DISPONIVEL` ou um item existente muda de outro status para `DISPONIVEL`. |
-| `UBS_DADOS_ATRASADOS` | Durante a verificação do job de sincronização, quando uma UBS acompanhada possui dados de estoque antigos ou não possui data de referência. |
+| `MEDICAMENTO_DISPONIVEL` | Na sincronização, quando o medicamento passa a estar disponível na UBS acompanhada. |
+| `UBS_DADOS_ATRASADOS` | Na verificação de atraso dos dados da UBS acompanhada. |
 
-A geração considera os itens da lista de desejos com `notificar: true` no momento da verificação. O aviso de disponibilidade exige a combinação exata de UBS e medicamento acompanhados.
+O destinatário deve ter um item de lista de desejos com `dispositivo_id` definido e `notificar = true`. Para disponibilidade, o par UBS/medicamento deve coincidir. Para atraso, basta acompanhar a UBS.
 
-O aviso de atraso considera a UBS acompanhada, gerando no máximo um aviso por cidadão e UBS para a mesma referência de atualização, mesmo que ele acompanhe vários medicamentos naquela unidade.
+A geração de disponibilidade evita produzir novo aviso se o dispositivo já tiver um aviso **não lido** para a mesma UBS e medicamento. Depois de marcar esse aviso como lido, somente uma **nova transição real de estoque para disponível** poderá produzir outro. A geração ocorre na mesma transação da sincronização de estoque; falhas provocam rollback conjunto.
 
-**Deduplicação dos avisos de disponibilidade:**
+Avisos de atraso têm chave derivada da UBS e da última referência de dados. A constraint `uk_aviso_dispositivo_evento` impede duplicação quando o job é repetido. Atraso é configurado por `app.avisos.atraso-horas`, com padrão de **24 horas** (mais de 24 horas ou sem data = atraso). O job depende de `app.sync.ativo=true`.
 
-Uma sincronização repetida, sem nova transição para `DISPONIVEL`, não gera outro aviso de disponibilidade.
+### Migração dos dados antigos
 
-Quando há uma nova transição para `DISPONIVEL`, o serviço verifica se o cidadão já possui um aviso de disponibilidade **não lido** para a mesma combinação de UBS e medicamento.
+A nova migration `V12_1__avisos_por_dispositivo.sql` conserva o histórico da `V8__avisos.sql`, mas muda o modelo de proprietário. Avisos antigos associados a contas não podem ser atribuídos corretamente a dispositivos; por isso, a migração **descarta esses avisos antes de remover `usuario_id`**. Essa decisão deve ser validada antes de aplicar a migration em um ambiente com dados reais. A migration também aceita a estrutura de dispositivo da lista de desejos já introduzida pelo PR #33.
 
-- Se já existe um aviso não lido, outro não é criado.
-- Se não existe aviso não lido, a transição pode gerar um novo aviso.
-- Marcar um aviso como lido não gera automaticamente outro; é necessária uma nova transição de disponibilidade.
+Não há mais geração de avisos de demonstração vinculados à conta `rita@medflow.local`.
 
-Assim, oscilações de status entre `DISPONIVEL` e `RESERVADO` não acumulam avisos não lidos para a mesma combinação de UBS e medicamento durante o processamento sequencial.
-
-Essa verificação de avisos não lidos não constitui um mecanismo de exclusão mútua entre sincronizações concorrentes. A coordenação de execuções simultâneas deve ser tratada separadamente.
-
-**Deduplicação dos avisos de atraso:**
-
-Os avisos de atraso utilizam uma chave de evento associada à UBS e à referência de atualização de seus dados. Verificações repetidas não geram avisos duplicados enquanto essa referência permanecer igual.
-
-Se a UBS receber dados novos e, posteriormente, essa nova referência voltar a ficar atrasada, um novo aviso poderá ser gerado.
-
-**Prazo para considerar uma UBS atrasada:**
-
-O limite é configurado pela propriedade `app.avisos.atraso-horas`, com valor padrão de **24 horas**. A propriedade exige um número positivo de horas.
-
-Uma UBS é considerada atrasada quando `ultimaSincronizacao` está ausente ou é **anterior** ao instante atual menos o prazo configurado.
-
-Com o valor padrão:
-
-| Tempo desde a última referência | Resultado |
-| --- | --- |
-| Menos de 24 horas | Atualizada |
-| Exatamente 24 horas | Ainda não ultrapassou o limite |
-| Mais de 24 horas | Atrasada |
-| Sem data de referência | Atrasada |
-
-O campo `ultimaSincronizacao` representa a data de referência dos dados recebidos da fonte, e não necessariamente a hora da execução do job.
-
-O padrão de 24 horas segue o critério informado para o painel da gestão. Nesta implementação, a configuração pertence ao serviço de avisos; o compartilhamento de uma configuração única com o painel depende da integração das funcionalidades.
-
-A verificação automática de atraso faz parte de `SincronizacaoAgendada` e depende de o job estar habilitado (`app.sync.ativo=true`). A verificação ainda é tentada quando a consulta à fonte falha para um município; isso não significa que a fonte conseguiu atualizar seus dados.
-
-### Dados de demonstração no perfil dev
-
-No perfil `dev`, o componente `AvisosDeExemplo` cria três avisos fictícios para a conta `rita@medflow.local`:
-
-| Aviso | Tipo | Estado inicial |
-| --- | --- | --- |
-| Medicamento disponível (exemplo) | `MEDICAMENTO_DISPONIVEL` | Não lido |
-| Dados da UBS desatualizados (exemplo) | `UBS_DADOS_ATRASADOS` | Não lido |
-| Aviso já lido (exemplo) | `MEDICAMENTO_DISPONIVEL` | Lido |
-
-Esses registros permitem testar a listagem, o contador e a marcação de avisos como lidos no frontend.
-
-Em um banco de desenvolvimento sem avisos anteriores, após a criação dos exemplos, `GET /api/avisos` retorna três registros e `GET /api/avisos/nao-lidos/total` retorna `{"naoLidos": 2}`.
-
-Os avisos são inseridos após a criação das contas de exemplo. Suas chaves de evento são fixas e a constraint `uk_aviso_usuario_evento` impede duplicações nas reinicializações.
-
-Os avisos de demonstração não são recriados caso já existam, mesmo que tenham sido marcados como lidos. Portanto, a contagem de não lidos pode ser diferente de dois após o uso da aplicação.
-
-Esses registros não são criados nos perfis `test` ou `prod`.
-
-A conta `carlos@medflow.local` possui papel `GESTOR` e não recebe esses avisos de demonstração. Ela também não tem permissão para acessar os endpoints exclusivos de cidadãos.
-
-### Segurança e respostas de erro
+### Integração e erros
 
 | Situação | Resposta |
 | --- | --- |
-| Requisição sem token ou com token inválido | `401 Unauthorized` |
-| Usuário autenticado com papel `GESTOR` | `403 Forbidden` |
-| Cidadão sem avisos na listagem | `200 OK` com `[]` |
-| Cidadão sem avisos não lidos | `200 OK` com `{"naoLidos": 0}` no contador |
-| Cidadão sem avisos para marcar como lidos | `200 OK` com `{"atualizados": 0}` |
+| UUID ausente ou inválido | `400 Bad Request` (`Parâmetro inválido`) |
+| UUID válido sem avisos | `200 OK` com `[]` |
+| UUID válido sem avisos não lidos | `200 OK` com `{"naoLidos": 0}` |
+| UUID válido sem avisos para marcar | `200 OK` com `{"atualizados": 0}` |
 
-Não é possível consultar nem marcar avisos de outro cidadão por essas rotas. A API utiliza o identificador do usuário autenticado presente no JWT.
-
-Falhas de autenticação e autorização seguem o padrão `application/problem+json`.
+A API não verifica uma sessão ou conta de cidadão. A separação dos registros usa exclusivamente `dispositivo_id`; não exponha esse identificador a terceiros. A lista de desejos deve adotar o mesmo UUID no frontend, conforme o PR #33.
 
 ## Filtro por categoria
 

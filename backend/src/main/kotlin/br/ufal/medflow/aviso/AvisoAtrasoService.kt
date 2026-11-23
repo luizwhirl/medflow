@@ -9,7 +9,7 @@ import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 
-/** Identifica UBS com dados atrasados e gera avisos aos cidadãos interessados. */
+/** Identifica UBS com dados atrasados e gera avisos aos dispositivos interessados. */
 @Service
 class AvisoAtrasoService(
     private val ubsRepository: UbsRepository,
@@ -50,7 +50,7 @@ class AvisoAtrasoService(
     }
 
     /**
-     * Insere um aviso por cidadão interessado na UBS.
+     * Insere um aviso por dispositivo interessado na UBS.
      *
      * A chave é estável enquanto a data de referência
      * da unidade não mudar. A constraint de unicidade

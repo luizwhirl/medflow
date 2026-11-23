@@ -28,7 +28,8 @@ import javax.crypto.spec.SecretKeySpec
 /**
  * API sem sessão: cada requisição leva um JWT (HS256).
  * Leitura de UBS e medicamentos é pública.
- * Lista de desejos e avisos são exclusivos do papel CIDADAO.
+ * Avisos são públicos e isolados pelo UUID do aparelho (sem login).
+ * A lista de desejos também deverá ser pública após a integração do PR #33.
  * O prefixo /api/gestao é exclusivo do papel GESTOR.
  * O restante exige login.
  */
@@ -58,11 +59,11 @@ class SecurityConfig(private val props: JwtProperties) {
                 authorize("/swagger-ui/**", permitAll)
                 authorize("/v3/api-docs/**", permitAll)
 
-                // Funcionalidades exclusivas dos cidadãos.
+                // A lista de desejos ainda usa JWT nesta branch, até entrar o PR #33.
                 authorize("/api/lista-desejos", hasRole("CIDADAO"))
                 authorize("/api/lista-desejos/**", hasRole("CIDADAO"))
-                authorize("/api/avisos", hasRole("CIDADAO"))
-                authorize("/api/avisos/**", hasRole("CIDADAO"))
+                authorize("/api/avisos", permitAll)
+                authorize("/api/avisos/**", permitAll)
 
                 // Funcionalidades exclusivas dos gestores.
                 authorize("/api/gestao/**", hasRole("GESTOR"))

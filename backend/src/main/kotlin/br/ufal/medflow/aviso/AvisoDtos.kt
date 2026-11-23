@@ -2,7 +2,7 @@ package br.ufal.medflow.aviso
 
 import java.time.Instant
 
-/** Dados de um aviso retornados ao cidadão autenticado. */
+/** Dados de um aviso retornados ao dispositivo. */
 data class AvisoResponse(
     val id: Long,
     val tipo: TipoAviso,
@@ -17,7 +17,7 @@ data class AvisosLidosResponse(
     val atualizados: Int,
 )
 
-/** Quantidade total de avisos não lidos do cidadão autenticado. */
+/** Quantidade total de avisos não lidos do dispositivo. */
 data class AvisosNaoLidosResponse(
     val naoLidos: Long,
 )

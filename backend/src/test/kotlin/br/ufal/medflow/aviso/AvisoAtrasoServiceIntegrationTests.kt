@@ -1,11 +1,6 @@
 package br.ufal.medflow.aviso
 
 import br.ufal.medflow.TestcontainersConfiguration
-import br.ufal.medflow.auth.PapelUsuario
-import br.ufal.medflow.auth.Usuario
-import br.ufal.medflow.auth.UsuarioRepository
-import br.ufal.medflow.listadesejo.ItemListaDesejo
-import br.ufal.medflow.listadesejo.ItemListaDesejoRepository
 import br.ufal.medflow.medicamento.Medicamento
 import br.ufal.medflow.medicamento.MedicamentoRepository
 import br.ufal.medflow.ubs.TipoUnidade
@@ -18,6 +13,7 @@ import org.mockito.BDDMockito.given
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
+import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.transaction.annotation.Transactional
@@ -25,6 +21,7 @@ import org.testcontainers.junit.jupiter.Testcontainers
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
+import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
@@ -38,12 +35,11 @@ import kotlin.test.assertTrue
 @Transactional
 class AvisoAtrasoServiceIntegrationTests(
     @Autowired private val servico: AvisoAtrasoService,
-    @Autowired private val usuarios: UsuarioRepository,
     @Autowired private val unidades: UbsRepository,
     @Autowired private val medicamentos: MedicamentoRepository,
-    @Autowired private val listaDesejos: ItemListaDesejoRepository,
     @Autowired private val avisos: AvisoRepository,
     @Autowired private val em: EntityManager,
+    @Autowired private val jdbc: JdbcTemplate,
 ) {
 
     @MockitoBean
@@ -94,40 +90,28 @@ class AvisoAtrasoServiceIntegrationTests(
             ),
         )
 
-    private fun criarCidadao(email: String): Usuario =
-        usuarios.saveAndFlush(
-            Usuario(
-                nome = "Cidadão Teste",
-                email = email,
-                senhaHash = "hash-teste",
-                papel = PapelUsuario.CIDADAO,
-            ),
-        )
+    private fun criarDispositivo(chave: String): UUID =
+        UUID.nameUUIDFromBytes(chave.toByteArray(Charsets.UTF_8))
 
     private fun acompanhar(
-        usuario: Usuario,
+        dispositivo: UUID,
         ubs: Ubs,
         medicamento: Medicamento,
         notificar: Boolean = true,
     ) {
-        listaDesejos.saveAndFlush(
-            ItemListaDesejo(
-                usuario = usuario,
-                ubs = ubs,
-                medicamento = medicamento,
-                notificar = notificar,
-            ),
+        jdbc.update(
+            """
+            INSERT INTO item_lista_desejo (dispositivo_id, ubs_id, medicamento_id, notificar)
+            VALUES (?, ?, ?, ?)
+            """.trimIndent(),
+            dispositivo, ubs.id!!, medicamento.id!!, notificar,
         )
     }
 
-    /** Consulta os avisos efetivamente gravados no banco. */
-    private fun avisosDo(usuario: Usuario): List<Aviso> {
+    private fun avisosDo(dispositivo: UUID): List<Aviso> {
         em.flush()
         em.clear()
-
-        return avisos.findAllByUsuarioIdOrderByCriadoEmDescIdDesc(
-            requireNotNull(usuario.id),
-        )
+        return avisos.findAllByDispositivoIdOrderByCriadoEmDescIdDesc(dispositivo)
     }
 
     @Test
@@ -138,9 +122,9 @@ class AvisoAtrasoServiceIntegrationTests(
         val metformina = criarMedicamento("BR0267690", "Metformina")
         val losartana = criarMedicamento("BR0268856", "Losartana")
 
-        val primeiro = criarCidadao("atraso-primeiro@teste.com")
-        val segundo = criarCidadao("atraso-segundo@teste.com")
-        val desativado = criarCidadao("atraso-desativado@teste.com")
+        val primeiro = criarDispositivo("atraso-primeiro@teste.com")
+        val segundo = criarDispositivo("atraso-segundo@teste.com")
+        val desativado = criarDispositivo("atraso-desativado@teste.com")
 
         acompanhar(primeiro, ubs, metformina)
         acompanhar(primeiro, ubs, losartana)
@@ -185,7 +169,7 @@ class AvisoAtrasoServiceIntegrationTests(
         )
 
         val medicamento = criarMedicamento("BR0267691", "Metformina")
-        val cidadao = criarCidadao("atraso-repetido@teste.com")
+        val cidadao = criarDispositivo("atraso-repetido@teste.com")
 
         acompanhar(cidadao, ubs, medicamento)
 
@@ -212,7 +196,7 @@ class AvisoAtrasoServiceIntegrationTests(
         )
 
         val medicamento = criarMedicamento("BR0267692", "Metformina")
-        val cidadao = criarCidadao("atraso-sem-data@teste.com")
+        val cidadao = criarDispositivo("atraso-sem-data@teste.com")
 
         acompanhar(cidadao, semData, medicamento)
         acompanhar(cidadao, atualizada, medicamento)
@@ -237,7 +221,7 @@ class AvisoAtrasoServiceIntegrationTests(
         )
 
         val medicamento = criarMedicamento("BR0267693", "Metformina")
-        val cidadao = criarCidadao("atraso-novo-periodo@teste.com")
+        val cidadao = criarDispositivo("atraso-novo-periodo@teste.com")
 
         acompanhar(cidadao, ubs, medicamento)
 
@@ -290,7 +274,7 @@ class AvisoAtrasoServiceIntegrationTests(
         )
 
         val medicamento = criarMedicamento("BR0267694", "Metformina")
-        val cidadao = criarCidadao("atraso-limite@teste.com")
+        val cidadao = criarDispositivo("atraso-limite@teste.com")
 
         acompanhar(cidadao, noLimite, medicamento)
         acompanhar(cidadao, ultrapassouLimite, medicamento)

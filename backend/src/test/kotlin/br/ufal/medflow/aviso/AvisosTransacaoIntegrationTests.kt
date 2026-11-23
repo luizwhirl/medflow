@@ -1,13 +1,8 @@
 package br.ufal.medflow.aviso
 
 import br.ufal.medflow.TestcontainersConfiguration
-import br.ufal.medflow.auth.PapelUsuario
-import br.ufal.medflow.auth.Usuario
-import br.ufal.medflow.auth.UsuarioRepository
 import br.ufal.medflow.integracao.FonteEstoque
 import br.ufal.medflow.integracao.PosicaoEstoque
-import br.ufal.medflow.listadesejo.ItemListaDesejo
-import br.ufal.medflow.listadesejo.ItemListaDesejoRepository
 import br.ufal.medflow.medicamento.Medicamento
 import br.ufal.medflow.medicamento.MedicamentoRepository
 import br.ufal.medflow.sincronizacao.SincronizacaoEstoqueService
@@ -27,6 +22,7 @@ import org.springframework.transaction.support.TransactionTemplate
 import org.testcontainers.junit.jupiter.Testcontainers
 import java.math.BigDecimal
 import java.time.LocalDate
+import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
@@ -37,10 +33,8 @@ import kotlin.test.assertFailsWith
 @Testcontainers(disabledWithoutDocker = true)
 class AvisosTransacaoIntegrationTests(
     @Autowired private val sincronizacao: SincronizacaoEstoqueService,
-    @Autowired private val usuarios: UsuarioRepository,
     @Autowired private val unidades: UbsRepository,
     @Autowired private val medicamentos: MedicamentoRepository,
-    @Autowired private val listaDesejos: ItemListaDesejoRepository,
     @Autowired private val jdbc: JdbcTemplate,
     @Autowired private val transactionManager: PlatformTransactionManager,
 ) {
@@ -50,11 +44,11 @@ class AvisosTransacaoIntegrationTests(
 
     private val ibge = "2702405"
 
-    private fun quantidadeDeAvisos(usuarioId: Long): Long =
+    private fun quantidadeDeAvisos(dispositivoId: UUID): Long =
         jdbc.queryForObject(
-            "SELECT COUNT(*) FROM aviso WHERE usuario_id = ?",
+            "SELECT COUNT(*) FROM aviso WHERE dispositivo_id = ?",
             Long::class.java,
-            usuarioId,
+            dispositivoId,
         ) ?: 0L
 
     private fun quantidadeDeItens(ubsId: Long): Long =
@@ -66,14 +60,7 @@ class AvisosTransacaoIntegrationTests(
 
     @Test
     fun `rollback da transacao reverte estoque e avisos juntos`() {
-        val usuario = usuarios.saveAndFlush(
-            Usuario(
-                nome = "Cidadão Teste",
-                email = "rollback-avisos-${System.nanoTime()}@teste.com",
-                senhaHash = "hash-teste",
-                papel = PapelUsuario.CIDADAO,
-            ),
-        )
+        val dispositivoId = UUID.randomUUID()
 
         val ubs = unidades.saveAndFlush(
             Ubs(
@@ -99,18 +86,16 @@ class AvisosTransacaoIntegrationTests(
             ),
         )
 
-        val usuarioId = requireNotNull(usuario.id)
         val ubsId = requireNotNull(ubs.id)
         val medicamentoId = requireNotNull(medicamento.id)
 
         try {
-            listaDesejos.saveAndFlush(
-                ItemListaDesejo(
-                    usuario = usuario,
-                    ubs = ubs,
-                    medicamento = medicamento,
-                    notificar = true,
-                ),
+            jdbc.update(
+                """
+                INSERT INTO item_lista_desejo (dispositivo_id, ubs_id, medicamento_id, notificar)
+                VALUES (?, ?, ?, TRUE)
+                """.trimIndent(),
+                dispositivoId, ubsId, medicamentoId,
             )
 
             given(fonte.buscarPosicoes(ibge, null))
@@ -139,7 +124,7 @@ class AvisosTransacaoIntegrationTests(
                 )
 
             assertEquals(0L, quantidadeDeItens(ubsId))
-            assertEquals(0L, quantidadeDeAvisos(usuarioId))
+            assertEquals(0L, quantidadeDeAvisos(dispositivoId))
 
             // A sincronização participa da transação externa.
             // Simulamos uma falha depois das gravações, mas antes
@@ -157,7 +142,7 @@ class AvisosTransacaoIntegrationTests(
                         )
                         assertEquals(
                             1L,
-                            quantidadeDeAvisos(usuarioId),
+                            quantidadeDeAvisos(dispositivoId),
                         )
 
                         throw IllegalStateException(
@@ -174,17 +159,17 @@ class AvisosTransacaoIntegrationTests(
             )
             assertEquals(
                 0L,
-                quantidadeDeAvisos(usuarioId),
+                quantidadeDeAvisos(dispositivoId),
             )
         } finally {
             // Limpa apenas os dados criados por este teste.
             jdbc.update(
-                "DELETE FROM aviso WHERE usuario_id = ?",
-                usuarioId,
+                "DELETE FROM aviso WHERE dispositivo_id = ?",
+                dispositivoId,
             )
             jdbc.update(
-                "DELETE FROM item_lista_desejo WHERE usuario_id = ?",
-                usuarioId,
+                "DELETE FROM item_lista_desejo WHERE dispositivo_id = ?",
+                dispositivoId,
             )
             jdbc.update(
                 """
@@ -198,10 +183,6 @@ class AvisosTransacaoIntegrationTests(
             jdbc.update(
                 "DELETE FROM item_estoque WHERE ubs_id = ?",
                 ubsId,
-            )
-            jdbc.update(
-                "DELETE FROM usuario WHERE id = ?",
-                usuarioId,
             )
             jdbc.update(
                 "DELETE FROM ubs WHERE id = ?",

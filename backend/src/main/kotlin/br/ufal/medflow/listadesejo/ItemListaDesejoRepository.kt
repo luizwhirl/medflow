@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.EntityGraph
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
+import java.util.UUID
 
 /** Acesso aos itens da lista de desejos, sempre filtrados pelo proprietário quando aplicável. */
 interface ItemListaDesejoRepository : JpaRepository<ItemListaDesejo, Long> {
@@ -25,6 +26,27 @@ interface ItemListaDesejoRepository : JpaRepository<ItemListaDesejo, Long> {
         ubsId: Long,
         medicamentoId: Long,
     ): Boolean
+
+    /**
+     * Dispositivos sem login que acompanham a UBS e o medicamento.
+     * Consulta nativa para compatibilidade com a migração do PR #33,
+     * inclusive antes de o mapeamento do dispositivo ser integrado ao JPA.
+     */
+    @Query(
+        value = """
+            SELECT DISTINCT i.dispositivo_id
+            FROM item_lista_desejo i
+            WHERE i.ubs_id = :ubsId
+              AND i.medicamento_id = :medicamentoId
+              AND i.notificar = TRUE
+              AND i.dispositivo_id IS NOT NULL
+        """,
+        nativeQuery = true,
+    )
+    fun buscarDispositivosParaDisponibilidade(
+        @Param("ubsId") ubsId: Long,
+        @Param("medicamentoId") medicamentoId: Long,
+    ): List<UUID>
 
     /**
      * Cidadãos que solicitaram notificações para um medicamento

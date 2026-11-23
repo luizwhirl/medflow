@@ -1,13 +1,8 @@
 package br.ufal.medflow.aviso
 
 import br.ufal.medflow.TestcontainersConfiguration
-import br.ufal.medflow.auth.PapelUsuario
-import br.ufal.medflow.auth.Usuario
-import br.ufal.medflow.auth.UsuarioRepository
 import br.ufal.medflow.integracao.FonteEstoque
 import br.ufal.medflow.integracao.PosicaoEstoque
-import br.ufal.medflow.listadesejo.ItemListaDesejo
-import br.ufal.medflow.listadesejo.ItemListaDesejoRepository
 import br.ufal.medflow.medicamento.Medicamento
 import br.ufal.medflow.medicamento.MedicamentoRepository
 import br.ufal.medflow.sincronizacao.SincronizacaoEstoqueService
@@ -21,12 +16,14 @@ import org.mockito.BDDMockito.given
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
+import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.transaction.annotation.Transactional
 import org.testcontainers.junit.jupiter.Testcontainers
 import java.math.BigDecimal
 import java.time.LocalDate
+import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
@@ -40,12 +37,11 @@ import kotlin.test.assertTrue
 @Transactional
 class AvisosSincronizacaoIntegrationTests(
     @Autowired private val sincronizacao: SincronizacaoEstoqueService,
-    @Autowired private val usuarios: UsuarioRepository,
     @Autowired private val unidades: UbsRepository,
     @Autowired private val medicamentos: MedicamentoRepository,
-    @Autowired private val listaDesejos: ItemListaDesejoRepository,
     @Autowired private val avisos: AvisoRepository,
     @Autowired private val em: EntityManager,
+    @Autowired private val jdbc: JdbcTemplate,
 ) {
 
     @MockitoBean
@@ -117,46 +113,32 @@ class AvisosSincronizacaoIntegrationTests(
         }
     }
 
-    /** Cria um cidadão com um medicamento na lista de desejos. */
-    private fun criarCidadao(
-        email: String,
+    /** O UUID representa um navegador que acompanha o medicamento, sem criar conta. */
+    private fun criarDispositivo(
+        chave: String,
         notificar: Boolean = true,
-    ): Usuario {
-        val usuario = usuarios.saveAndFlush(
-            Usuario(
-                nome = "Cidadão Teste",
-                email = email,
-                senhaHash = "hash-teste",
-                papel = PapelUsuario.CIDADAO,
-            ),
+    ): UUID {
+        val dispositivo = UUID.nameUUIDFromBytes(chave.toByteArray(Charsets.UTF_8))
+        jdbc.update(
+            """
+            INSERT INTO item_lista_desejo (dispositivo_id, ubs_id, medicamento_id, notificar)
+            VALUES (?, ?, ?, ?)
+            """.trimIndent(),
+            dispositivo, ubs.id!!, medicamento.id!!, notificar,
         )
-
-        listaDesejos.saveAndFlush(
-            ItemListaDesejo(
-                usuario = usuario,
-                ubs = ubs,
-                medicamento = medicamento,
-                notificar = notificar,
-            ),
-        )
-
-        return usuario
+        return dispositivo
     }
 
-    /** Consulta avisos persistidos, descartando o cache do JPA. */
-    private fun avisosDo(usuario: Usuario): List<Aviso> {
+    private fun avisosDo(dispositivo: UUID): List<Aviso> {
         em.flush()
         em.clear()
-
-        return avisos.findAllByUsuarioIdOrderByCriadoEmDescIdDesc(
-            requireNotNull(usuario.id),
-        )
+        return avisos.findAllByDispositivoIdOrderByCriadoEmDescIdDesc(dispositivo)
     }
 
     @Test
     fun `gera avisos na primeira disponibilidade do medicamento`() {
-        val primeiro = criarCidadao("primeiro-sync@teste.com")
-        val segundo = criarCidadao("segundo-sync@teste.com")
+        val primeiro = criarDispositivo("primeiro-sync@teste.com")
+        val segundo = criarDispositivo("segundo-sync@teste.com")
 
         fonteDevolve("100")
 
@@ -188,7 +170,7 @@ class AvisosSincronizacaoIntegrationTests(
 
     @Test
     fun `sincronizacoes repetidas nao duplicam avisos`() {
-        val cidadao = criarCidadao("repeticao-sync@teste.com")
+        val cidadao = criarDispositivo("repeticao-sync@teste.com")
 
         // A quantidade muda, mas o medicamento permanece disponível.
         fonteDevolve("100", "150", "150")
@@ -205,7 +187,7 @@ class AvisosSincronizacaoIntegrationTests(
 
     @Test
     fun `nao duplica aviso nao lido quando medicamento volta a ficar disponivel`() {
-        val cidadao = criarCidadao("reposicao-sync@teste.com")
+        val cidadao = criarDispositivo("reposicao-sync@teste.com")
 
         // Sem estoque, reposição, falta novamente e nova reposição.
         fonteDevolve("0", "100", "0", "100")
@@ -239,7 +221,7 @@ class AvisosSincronizacaoIntegrationTests(
 
     @Test
     fun `gera novo aviso apos cidadao ler a disponibilidade anterior`() {
-        val cidadao = criarCidadao("leitura-sync@teste.com")
+        val cidadao = criarDispositivo("leitura-sync@teste.com")
 
         // Primeira reposição, nova falta e segunda reposição.
         fonteDevolve("0", "100", "0", "100")
@@ -254,7 +236,7 @@ class AvisosSincronizacaoIntegrationTests(
 
         // O cidadão marca o primeiro aviso como lido.
         val atualizados = avisos.marcarTodosComoLidos(
-            requireNotNull(cidadao.id),
+            cidadao,
         )
 
         assertEquals(1, atualizados)
@@ -295,8 +277,8 @@ class AvisosSincronizacaoIntegrationTests(
 
     @Test
     fun `leitura de um cidadao nao libera duplicatas para outro`() {
-        val primeiro = criarCidadao("leitura-primeiro@teste.com")
-        val segundo = criarCidadao("leitura-segundo@teste.com")
+        val primeiro = criarDispositivo("leitura-primeiro@teste.com")
+        val segundo = criarDispositivo("leitura-segundo@teste.com")
 
         fonteDevolve("100", "0", "100")
 
@@ -309,7 +291,7 @@ class AvisosSincronizacaoIntegrationTests(
         // Somente o primeiro cidadão marca o aviso como lido.
         assertEquals(
             1,
-            avisos.marcarTodosComoLidos(requireNotNull(primeiro.id)),
+            avisos.marcarTodosComoLidos(primeiro),
         )
 
         // O medicamento fica indisponível e depois disponível.
@@ -330,12 +312,12 @@ class AvisosSincronizacaoIntegrationTests(
 
     @Test
     fun `nao avisa cidadao que desativou notificacoes`() {
-        val interessado = criarCidadao(
+        val interessado = criarDispositivo(
             "interessado-sync@teste.com",
             notificar = true,
         )
 
-        val desativado = criarCidadao(
+        val desativado = criarDispositivo(
             "desativado-sync@teste.com",
             notificar = false,
         )
@@ -350,7 +332,7 @@ class AvisosSincronizacaoIntegrationTests(
 
     @Test
     fun `gera aviso quando estoque reservado passa a disponivel`() {
-        val cidadao = criarCidadao("reservado-sync@teste.com")
+        val cidadao = criarDispositivo("reservado-sync@teste.com")
 
         // Pela regra de estoque existente, 5 unidades ficam RESERVADAS.
         fonteDevolve("5", "100")
