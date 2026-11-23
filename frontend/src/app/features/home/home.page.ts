@@ -20,6 +20,7 @@ import { PreferenciasService } from '../../core/services/preferencias.service';
 import { UbsService } from '../../core/services/ubs.service';
 import { Button } from '../../shared/components/button';
 import { Chip } from '../../shared/components/chip';
+import { Funcionamento } from '../../shared/components/funcionamento';
 import { MapaIlustrado } from '../../shared/components/mapa-ilustrado';
 import { SearchField } from '../../shared/components/search-field';
 import { StatusBadge } from '../../shared/components/status-badge';
@@ -50,6 +51,7 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
     StatusBadge,
     SyncIndicator,
     MapaIlustrado,
+    Funcionamento,
   ],
   template: `
     <ng-template #pilula>
@@ -285,6 +287,7 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
                   <p class="text-sm text-content-muted">{{ distancia(p.distancia) }}</p>
                 }
                 <h3 class="mt-1 truncate text-lg font-bold">{{ p.ubs.nome }}</h3>
+                <app-funcionamento class="mt-1 block text-sm" [ubs]="p.ubs" />
                 @if (remedios().length) {
                   <div
                     class="mt-3 h-2 overflow-hidden rounded-full bg-outline"
@@ -335,6 +338,7 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
                 }
                 {{ u.bairro }}
               </p>
+              <app-funcionamento class="mt-2 block" [ubs]="u" />
               <div class="mt-5 flex gap-3">
                 <a appButton class="flex-1" [routerLink]="['/ubs', u.id]">Ver estoque</a>
                 <a

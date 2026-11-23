@@ -14,6 +14,7 @@ import { PreferenciasService } from '../../core/services/preferencias.service';
 import { UbsService } from '../../core/services/ubs.service';
 import { Button } from '../../shared/components/button';
 import { Chip } from '../../shared/components/chip';
+import { Funcionamento } from '../../shared/components/funcionamento';
 import { MapaIlustrado } from '../../shared/components/mapa-ilustrado';
 import { StatusBadge } from '../../shared/components/status-badge';
 import { SyncIndicator } from '../../shared/components/sync-indicator';
@@ -41,7 +42,16 @@ const ICONE = {
 
 @Component({
   selector: 'app-ubs-detail-page',
-  imports: [NgTemplateOutlet, RouterLink, Button, Chip, MapaIlustrado, StatusBadge, SyncIndicator],
+  imports: [
+    NgTemplateOutlet,
+    RouterLink,
+    Button,
+    Chip,
+    Funcionamento,
+    MapaIlustrado,
+    StatusBadge,
+    SyncIndicator,
+  ],
   template: `
     <ng-template #icone let-d>
       <svg
@@ -111,7 +121,10 @@ const ICONE = {
                       *ngTemplateOutlet="icone; context: { $implicit: icones.relogio }"
                     />
                   </dt>
-                  <dd>{{ u.horario ?? 'Horário não informado' }}</dd>
+                  <dd>
+                    {{ u.horario ?? 'Horário não informado' }}
+                    <app-funcionamento class="block" [ubs]="u" />
+                  </dd>
                 </div>
                 <div class="flex gap-3">
                   <dt class="text-content-muted">
