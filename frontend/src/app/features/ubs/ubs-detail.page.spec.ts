@@ -100,10 +100,19 @@ describe('UbsDetailPage', () => {
     fixture.componentRef.setInput('id', '7');
     fixture.detectChanges();
     const reqUbs = http.expectOne('/api/ubs/7');
-    const reqEstoque = http.expectOne('/api/ubs/7/estoque');
+    // O estoque vem paginado (100 itens por página); com até 100 itens, uma página só.
+    const reqEstoque = http.expectOne((r) => r.url === '/api/ubs/7/estoque');
+    expect(reqEstoque.request.params.get('pagina')).toBe('0');
+    expect(reqEstoque.request.params.get('tamanho')).toBe('100');
     if (dados) {
       reqUbs.flush(dados);
-      reqEstoque.flush(estoque);
+      reqEstoque.flush({
+        itens: estoque,
+        pagina: 0,
+        tamanho: 100,
+        totalItens: estoque.length,
+        totalPaginas: estoque.length ? 1 : 0,
+      });
     } else if (status === 0) {
       reqUbs.error(new ProgressEvent('error')); // sem conexão
     } else {
