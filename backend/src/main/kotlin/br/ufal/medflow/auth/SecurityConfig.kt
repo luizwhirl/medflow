@@ -26,11 +26,9 @@ import java.time.Clock
 import javax.crypto.spec.SecretKeySpec
 
 /**
- * API sem sessão: cada requisição leva um JWT (HS256).
- * Leitura de UBS e medicamentos é pública.
- * Lista de desejos e perfil são exclusivos do papel CIDADAO.
- * O prefixo /api/gestao é exclusivo do papel GESTOR.
- * O restante exige login.
+ * API sem sessão: cada requisição leva um JWT (HS256). Leitura de UBS e medicamentos é pública,
+ * a lista de desejos é do papel CIDADAO, o prefixo `/api/gestao` é só do papel GESTOR
+ * e o restante exige login.
  */
 @Configuration
 @EnableWebSecurity
@@ -46,7 +44,7 @@ class SecurityConfig(private val props: JwtProperties) {
             csrf { disable() } // sem sessão nem cookie, não há o que forjar
             sessionManagement { sessionCreationPolicy = SessionCreationPolicy.STATELESS }
             authorizeHttpRequests {
-                // Erros tratados pelo Spring são encaminhados para /error.
+                // erro tratado pelo Spring (400, 404, 405, 415...) é encaminhado para /error e passa pelo filtro de novo
                 authorize(DispatcherTypeRequestMatcher(DispatcherType.ERROR), permitAll)
                 authorize(HttpMethod.OPTIONS, "/**", permitAll)
                 authorize(HttpMethod.POST, "/api/auth/login", permitAll)
@@ -57,16 +55,9 @@ class SecurityConfig(private val props: JwtProperties) {
                 authorize("/swagger-ui.html", permitAll)
                 authorize("/swagger-ui/**", permitAll)
                 authorize("/v3/api-docs/**", permitAll)
-
-                // Funcionalidades exclusivas dos cidadãos.
                 authorize("/api/lista-desejos", hasRole("CIDADAO"))
                 authorize("/api/lista-desejos/**", hasRole("CIDADAO"))
-                authorize("/api/me", hasRole("CIDADAO"))
-                authorize("/api/me/**", hasRole("CIDADAO"))
-
-                // Funcionalidades exclusivas dos gestores.
                 authorize("/api/gestao/**", hasRole("GESTOR"))
-
                 authorize(anyRequest, authenticated)
             }
             oauth2ResourceServer {
@@ -82,7 +73,7 @@ class SecurityConfig(private val props: JwtProperties) {
         return http.build()
     }
 
-    /** A claim papel vira a autoridade ROLE_CIDADAO ou ROLE_GESTOR. */
+    /** A claim `papel` (CIDADAO ou GESTOR) vira a autoridade ROLE_CIDADAO ou ROLE_GESTOR. */
     private fun conversorDePapel() = JwtAuthenticationConverter().apply {
         setJwtGrantedAuthoritiesConverter(
             JwtGrantedAuthoritiesConverter().apply {
