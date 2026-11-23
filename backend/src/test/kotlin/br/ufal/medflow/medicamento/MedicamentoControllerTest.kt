@@ -1,6 +1,7 @@
 package br.ufal.medflow.medicamento
 
 import br.ufal.medflow.auth.SecurityConfig
+import br.ufal.medflow.common.Paginacao
 import br.ufal.medflow.common.ParametroInvalidoException
 import br.ufal.medflow.common.RecursoNaoEncontradoException
 import br.ufal.medflow.estoque.ItemEstoqueRepository
@@ -11,6 +12,7 @@ import org.mockito.Mockito.verify
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
 import org.springframework.context.annotation.Import
+import org.springframework.data.domain.PageImpl
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
@@ -19,6 +21,11 @@ import org.springframework.test.web.servlet.get
 @WebMvcTest(MedicamentoController::class)
 @Import(SecurityConfig::class) // a segurança real: leitura pública, como em produção
 class MedicamentoControllerTest(@Autowired private val mockMvc: MockMvc) {
+
+    private companion object {
+        /** Página padrão da API: a primeira, 20 itens, em ordem de nome. */
+        val PADRAO = Paginacao.de(0, Paginacao.TAMANHO_PADRAO, "nome")
+    }
 
     @MockitoBean
     private lateinit var medicamentoRepository: MedicamentoRepository
@@ -47,35 +54,37 @@ class MedicamentoControllerTest(@Autowired private val mockMvc: MockMvc) {
         id = 2,
     )
 
+    private fun pagina(vararg itens: Medicamento) = PageImpl(itens.toList(), PADRAO, itens.size.toLong())
+
     @Test
     fun `busca ignora espacos nas pontas do termo`() {
-        given(medicamentoRepository.buscar("metformina"))
-            .willReturn(listOf(metformina))
+        given(medicamentoRepository.buscar("metformina", PADRAO))
+            .willReturn(pagina(metformina))
 
         mockMvc.get("/api/medicamentos") {
             param("busca", "  metformina ")
         }.andExpect {
             status { isOk() }
-            jsonPath("$[0].nome") { value("Metformina") }
-            jsonPath("$[0].formaFarmaceutica") { value("comprimido") }
+            jsonPath("$.itens[0].nome") { value("Metformina") }
+            jsonPath("$.itens[0].formaFarmaceutica") { value("comprimido") }
         }
 
-        verify(medicamentoRepository).buscar("metformina")
+        verify(medicamentoRepository).buscar("metformina", PADRAO)
     }
 
     @Test
     fun `sem termo de busca lista todos os medicamentos`() {
-        given(medicamentoRepository.findAllByOrderByNomeAsc())
-            .willReturn(listOf(ibuprofeno, metformina))
+        given(medicamentoRepository.findAll(PADRAO))
+            .willReturn(pagina(ibuprofeno, metformina))
 
         mockMvc.get("/api/medicamentos").andExpect {
             status { isOk() }
-            jsonPath("$.length()") { value(2) }
-            jsonPath("$[0].nome") { value("Ibuprofeno") }
-            jsonPath("$[1].nome") { value("Metformina") }
+            jsonPath("$.itens.length()") { value(2) }
+            jsonPath("$.itens[0].nome") { value("Ibuprofeno") }
+            jsonPath("$.itens[1].nome") { value("Metformina") }
         }
 
-        verify(medicamentoRepository).findAllByOrderByNomeAsc()
+        verify(medicamentoRepository).findAll(PADRAO)
     }
 
     @Test
@@ -88,19 +97,19 @@ class MedicamentoControllerTest(@Autowired private val mockMvc: MockMvc) {
 
     @Test
     fun `filtra medicamentos por categoria`() {
-        given(medicamentoRepository.buscarPorCategoria("Diabetes"))
-            .willReturn(listOf(metformina))
+        given(medicamentoRepository.buscarPorCategoria("Diabetes", PADRAO))
+            .willReturn(pagina(metformina))
 
         mockMvc.get("/api/medicamentos") {
             param("categoria", "Diabetes")
         }.andExpect {
             status { isOk() }
-            jsonPath("$.length()") { value(1) }
-            jsonPath("$[0].nome") { value("Metformina") }
-            jsonPath("$[0].categoria") { value("Diabetes") }
+            jsonPath("$.itens.length()") { value(1) }
+            jsonPath("$.itens[0].nome") { value("Metformina") }
+            jsonPath("$.itens[0].categoria") { value("Diabetes") }
         }
 
-        verify(medicamentoRepository).buscarPorCategoria("Diabetes")
+        verify(medicamentoRepository).buscarPorCategoria("Diabetes", PADRAO)
     }
 
     @Test
@@ -109,38 +118,40 @@ class MedicamentoControllerTest(@Autowired private val mockMvc: MockMvc) {
             medicamentoRepository.buscarPorCategoriaETermo(
                 "metformina",
                 "Diabetes",
+                PADRAO,
             ),
-        ).willReturn(listOf(metformina))
+        ).willReturn(pagina(metformina))
 
         mockMvc.get("/api/medicamentos") {
             param("busca", "metformina")
             param("categoria", "Diabetes")
         }.andExpect {
             status { isOk() }
-            jsonPath("$.length()") { value(1) }
-            jsonPath("$[0].nome") { value("Metformina") }
-            jsonPath("$[0].categoria") { value("Diabetes") }
+            jsonPath("$.itens.length()") { value(1) }
+            jsonPath("$.itens[0].nome") { value("Metformina") }
+            jsonPath("$.itens[0].categoria") { value("Diabetes") }
         }
 
         verify(medicamentoRepository).buscarPorCategoriaETermo(
             "metformina",
             "Diabetes",
+            PADRAO,
         )
     }
 
     @Test
     fun `categoria inexistente retorna lista vazia`() {
-        given(medicamentoRepository.buscarPorCategoria("Inexistente"))
-            .willReturn(emptyList())
+        given(medicamentoRepository.buscarPorCategoria("Inexistente", PADRAO))
+            .willReturn(pagina())
 
         mockMvc.get("/api/medicamentos") {
             param("categoria", "Inexistente")
         }.andExpect {
             status { isOk() }
-            jsonPath("$.length()") { value(0) }
+            jsonPath("$.itens.length()") { value(0) }
         }
 
-        verify(medicamentoRepository).buscarPorCategoria("Inexistente")
+        verify(medicamentoRepository).buscarPorCategoria("Inexistente", PADRAO)
     }
 
     @Test

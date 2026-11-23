@@ -1,6 +1,8 @@
 package br.ufal.medflow.ubs
 
 import br.ufal.medflow.auth.SecurityConfig
+import br.ufal.medflow.common.PaginaResponse
+import br.ufal.medflow.common.Paginacao
 import br.ufal.medflow.common.RecursoNaoEncontradoException
 import br.ufal.medflow.estoque.ResumoEstoqueUbsResponse
 import br.ufal.medflow.estoque.StatusEstoque
@@ -22,6 +24,11 @@ import java.util.Optional
 @WebMvcTest(UbsController::class)
 @Import(SecurityConfig::class) // a segurança real: leitura pública, como em produção
 class UbsControllerTest(@Autowired private val mockMvc: MockMvc) {
+
+    private companion object {
+        /** Página padrão do estoque: a primeira, 20 itens, em ordem de nome do medicamento. */
+        val ESTOQUE_PADRAO = Paginacao.de(0, Paginacao.TAMANHO_PADRAO, "medicamento.nome")
+    }
 
     @MockitoBean
     private lateinit var ubsRepository: UbsRepository
@@ -263,34 +270,36 @@ class UbsControllerTest(@Autowired private val mockMvc: MockMvc) {
     }
 
     @Test
-    fun `estoque mantem retorno em lista`() {
-        given(ubsEstoqueService.listarItens(1L, null))
-            .willReturn(emptyList())
+    fun `estoque retorna o formato paginado`() {
+        given(ubsEstoqueService.listarItens(1L, null, ESTOQUE_PADRAO))
+            .willReturn(PaginaResponse(emptyList(), 0, 20, 0, 0))
 
         mockMvc.get("/api/ubs/1/estoque").andExpect {
             status { isOk() }
-            jsonPath("$") { isArray() }
-            jsonPath("$.length()") { value(0) }
+            jsonPath("$.itens") { isArray() }
+            jsonPath("$.itens.length()") { value(0) }
+            jsonPath("$.totalItens") { value(0) }
         }
 
-        verify(ubsEstoqueService).listarItens(1L, null)
+        verify(ubsEstoqueService).listarItens(1L, null, ESTOQUE_PADRAO)
     }
 
     @Test
     fun `estoque aceita filtro por status`() {
-        given(ubsEstoqueService.listarItens(1L, StatusEstoque.DISPONIVEL))
-            .willReturn(emptyList())
+        given(ubsEstoqueService.listarItens(1L, StatusEstoque.DISPONIVEL, ESTOQUE_PADRAO))
+            .willReturn(PaginaResponse(emptyList(), 0, 20, 0, 0))
 
         mockMvc.get("/api/ubs/1/estoque") {
             param("status", "DISPONIVEL")
         }.andExpect {
             status { isOk() }
-            jsonPath("$") { isArray() }
+            jsonPath("$.itens") { isArray() }
         }
 
         verify(ubsEstoqueService).listarItens(
             1L,
             StatusEstoque.DISPONIVEL,
+            ESTOQUE_PADRAO,
         )
     }
 
@@ -346,7 +355,7 @@ class UbsControllerTest(@Autowired private val mockMvc: MockMvc) {
 
     @Test
     fun `estoque de UBS inexistente retorna 404`() {
-        given(ubsEstoqueService.listarItens(999L, null))
+        given(ubsEstoqueService.listarItens(999L, null, ESTOQUE_PADRAO))
             .willThrow(RecursoNaoEncontradoException("UBS", 999L))
 
         mockMvc.get("/api/ubs/999/estoque").andExpect {

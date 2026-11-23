@@ -1,11 +1,23 @@
 import { Component, computed, inject, linkedSignal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { catchError, filter, forkJoin, map, Observable, of, switchMap } from 'rxjs';
+import {
+  catchError,
+  debounce,
+  distinctUntilChanged,
+  filter,
+  forkJoin,
+  map,
+  Observable,
+  of,
+  switchMap,
+  timer,
+} from 'rxjs';
 
 import { Coordenadas, formatarDistancia, linkRota, posicaoAtual } from '../../core/geo';
 import { Disponibilidade, statusExibido, temEstoque } from '../../core/models/estoque.model';
 import { Medicamento } from '../../core/models/medicamento.model';
+import { TAMANHO_MAXIMO_PAGINA } from '../../core/models/pagina.model';
 import { STATUS_LABEL, StatusEstoque } from '../../core/models/status-estoque';
 import { Ubs, UbsProxima } from '../../core/models/ubs.model';
 import { MedicamentoService } from '../../core/services/medicamento.service';
@@ -73,20 +85,32 @@ interface LinhaUbs {
 
         <label class="mt-4 block">
           <span class="mb-1 block text-sm font-semibold">Remédio</span>
-          <select
+          <input
+            type="search"
             class="control w-full"
-            [value]="escolha()"
-            (change)="escolha.set($any($event.target).value)"
-          >
-            @if (meusIds().length) {
-              <option value="meus">Meus remédios ({{ meusIds().length }})</option>
-            }
-            <option value="">Nenhum (só as unidades)</option>
-            @for (m of medicamentos(); track m.id) {
-              <option [value]="m.id">{{ m.nome }} {{ m.concentracao }}</option>
-            }
-          </select>
+            placeholder="Digite para buscar (ex.: Metformina)"
+            [value]="termoRemedio()"
+            (input)="termoRemedio.set($any($event.target).value)"
+          />
         </label>
+        <select
+          aria-label="Remédio"
+          class="control mt-2 w-full"
+          [value]="escolha()"
+          (change)="escolha.set($any($event.target).value)"
+        >
+          @if (meusIds().length) {
+            <option value="meus">Meus remédios ({{ meusIds().length }})</option>
+          }
+          <option value="">Nenhum (só as unidades)</option>
+          @for (m of opcoes(); track m.id) {
+            <option [value]="m.id">{{ m.nome }} {{ m.concentracao }}</option>
+          } @empty {
+            @if (termoRemedio().trim()) {
+              <option disabled>Nenhum remédio encontrado</option>
+            }
+          }
+        </select>
 
         <div
           class="-mx-4 mt-3 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] md:-mx-7 md:px-7"
@@ -265,8 +289,22 @@ export class UbsMapPage {
     { initialValue: [] as (Ubs | UbsProxima)[] },
   );
 
-  protected readonly medicamentos = toSignal(
-    this.medicamentoService.buscar().pipe(catchError(() => of([]))),
+  /** Texto do campo de busca do remédio; a lista do select vem da API, filtrada por ele. */
+  protected readonly termoRemedio = signal('');
+
+  private readonly medicamentos = toSignal(
+    toObservable(this.termoRemedio).pipe(
+      map((termo) => termo.trim()),
+      // espera a pessoa parar de digitar; sem termo (lista inicial), busca na hora
+      debounce((termo) => (termo ? timer(250) : of(0))),
+      distinctUntilChanged(),
+      switchMap((termo) =>
+        this.medicamentoService.buscar(termo, '', TAMANHO_MAXIMO_PAGINA).pipe(
+          map((pagina) => pagina.itens),
+          catchError(() => of([])),
+        ),
+      ),
+    ),
     { initialValue: [] as Medicamento[] },
   );
 
@@ -277,6 +315,15 @@ export class UbsMapPage {
   private readonly idsEscolhidos = computed(() => {
     const e = this.escolha();
     return e === 'meus' ? this.meusIds() : e ? [Number(e)] : [];
+  });
+
+  /** Opções do select: o resultado da busca, mais o remédio escolhido se a busca não o trouxer. */
+  protected readonly opcoes = computed(() => {
+    const lista = this.medicamentos();
+    const e = this.escolha();
+    if (!e || e === 'meus' || lista.some((m) => m.id === Number(e))) return lista;
+    const escolhido = this.escolhidos().find((x) => x.medicamento.id === Number(e));
+    return escolhido ? [escolhido.medicamento, ...lista] : lista;
   });
 
   /** Remédios escolhidos com a disponibilidade de cada um. */

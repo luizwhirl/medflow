@@ -24,11 +24,14 @@ docker compose up -d                 # PostgreSQL em localhost:5432 (medflow / m
 docker compose --profile tools up -d # + pgAdmin em http://localhost:5050
 ```
 
-As tabelas são criadas pelo **Flyway** quando o backend sobe. Para zerar o banco:
+As tabelas são criadas pelo **Flyway** quando o backend sobe. Para recriar o banco com as migrations e os dados de
+exemplo, sem precisar subir o backend:
 
 ```bash
-docker compose down -v
+scripts/db-reset.sh          # PowerShell: .\scripts\db-reset.ps1
 ```
+
+Salvar e restaurar o banco (`db-dump` e `db-restore`) estão em [banco-de-dados.md](banco-de-dados.md#recriar-salvar-e-restaurar-o-banco-local).
 
 ## 3. Backend
 
@@ -62,14 +65,34 @@ Se não tiver Chrome instalado, aponte `CHROME_BIN` para outro navegador Chromiu
 
 ## 5. Tudo em containers (opcional)
 
+Serve para quem não tem JDK ou Node, ou está com problema no Gradle local. Só o Docker é necessário:
+
 ```bash
 docker compose --profile full up -d --build
 ```
 
-Sobe banco, API (`:8080`) e web servida por Nginx (`:4200`).
+Sobe o banco, a API e a web (Nginx) **com os dados de exemplo**, porque a API roda no perfil `dev`:
+
+- Web: http://localhost:4200 (o Nginx encaminha `/api` para a API)
+- API: http://localhost:8080 · Swagger: http://localhost:8080/swagger-ui.html
+- Contas de exemplo: veja [api.md](api.md#autenticação)
+
+O primeiro build leva alguns minutos (baixa as dependências do Gradle e do npm). Para parar: `docker compose --profile full down`; para zerar o banco, acrescente `-v`.
+
+Variáveis (no `.env` ou no ambiente; veja `.env.example`):
+
+| Variável | Padrão | Para quê |
+| --- | --- | --- |
+| `API_PORT` | `8080` | Porta da API no seu computador |
+| `WEB_PORT` | `4200` | Porta da web (a API libera o CORS para ela) |
+| `SPRING_PROFILES_ACTIVE` | `dev` | Perfil da API. `prod` não carrega o seed nem as contas de exemplo e **exige `JWT_SECRET`** |
+| `JWT_SECRET`, `JWT_EXPIRACAO` | do perfil | Repassados à API só quando definidos |
+
+Atenção: se o seu terminal já tem `SPRING_PROFILES_ACTIVE` exportada, o compose usa esse valor.
 
 ## Problemas comuns
 
-- **Porta 5432 ocupada:** mude `POSTGRES_PORT` no `.env` e `DB_URL` de acordo.
-- **`Flyway validation failed`:** uma migration já aplicada foi editada. Nunca altere migrations antigas; crie uma nova (`V2__...sql`). Em dev, `docker compose down -v` recria o banco.
+- **Porta 5432 ocupada:** mude `POSTGRES_PORT` no `.env` e `DB_URL` de acordo. Na stack em containers, `API_PORT` e `WEB_PORT` fazem o mesmo para a API e a web.
+- **Telas vazias na stack em containers:** a API subiu fora do perfil `dev`. Confira `SPRING_PROFILES_ACTIVE` (o padrão é `dev`) e refaça com `docker compose --profile full up -d --build`; se o banco já foi criado sem o seed, use `docker compose --profile full down -v` antes.
+- **`Flyway validation failed`:** uma migration já aplicada foi editada. Nunca altere migrations antigas; crie uma nova (`V2__...sql`). Em dev, `scripts/db-reset.sh` recria o banco.
 - **Testes de integração "skipped":** o Docker não está rodando.

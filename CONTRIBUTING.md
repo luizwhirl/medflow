@@ -2,14 +2,15 @@
 
 ## Fluxo de trabalho
 
-1. Crie uma branch a partir da `main` atualizada:
+1. Crie uma branch a partir da `develop` atualizada:
    - `feat/<descricao>` para funcionalidade
    - `fix/<descricao>` para correção
    - `docs/<descricao>`, `chore/<descricao>`, `refactor/<descricao>`
 2. Faça commits pequenos e com mensagem clara (veja abaixo).
-3. Abra um Pull Request para a `main` preenchendo o template, com pelo menos **1 revisor**.
+3. Abra um Pull Request para a `develop` preenchendo o template, com pelo menos **1 revisor**.
    O título começa com o ticket do Jira entre colchetes (veja [Título do Pull Request](#título-do-pull-request)).
 4. O CI precisa passar (build + testes de backend e frontend) antes do merge.
+5. A `main` só recebe a `develop` quando fechamos uma entrega; ninguém abre PR de feature direto para ela.
 
 ## Mensagens de commit
 

@@ -6,9 +6,9 @@ Base: `http://localhost:8080/api`. A documentação interativa fica em `/swagger
 | --- | --- | --- |
 | GET | `/ubs` | Lista as unidades por nome. Com `lat` e `lng`, da mais próxima para a mais distante; com `abertas=true`, só as abertas agora (veja abaixo) |
 | GET | `/ubs/{id}` | Detalhe de uma unidade, com o horário de funcionamento |
-| GET | `/ubs/{id}/estoque` | Lista os itens do estoque da UBS, com filtro opcional por status |
+| GET | `/ubs/{id}/estoque` | Itens do estoque da UBS, paginados, com filtro opcional por status |
 | GET | `/ubs/{id}/estoque/resumo` | Resumo do estoque da UBS, com contagens por status e filtro opcional |
-| GET | `/medicamentos?busca=` | Lista medicamentos; `busca` filtra por nome ou categoria |
+| GET | `/medicamentos?busca=` | Medicamentos paginados, por nome; `busca` filtra por nome ou categoria |
 | GET | `/medicamentos?categoria=` | Filtra medicamentos por categoria; pode ser combinado com `busca` |
 | GET | `/medicamentos/categorias` | Lista as categorias distintas dos medicamentos cadastrados |
 | GET | `/medicamentos/{id}` | Detalhe de um medicamento |
@@ -165,6 +165,33 @@ Os erros de domínio utilizam o padrão RFC 9457 (`application/problem+json`).
 
 O campo `notificar` controla a preferência de aviso. O envio efetivo das notificações será implementado na F5.
 
+## Paginação
+
+`GET /api/medicamentos` e `GET /api/ubs/{id}/estoque` respondem sempre no mesmo formato:
+
+`GET /api/medicamentos?busca=met&pagina=0&tamanho=20`
+
+```json
+{
+  "itens": [{ "id": 1, "catmat": "BR0267690", "nome": "Metformina", "...": "..." }],
+  "pagina": 0,
+  "tamanho": 20,
+  "totalItens": 1,
+  "totalPaginas": 1
+}
+```
+
+| Parâmetro | Padrão | Regra |
+| --- | --- | --- |
+| `pagina` | `0` | a partir de 0 |
+| `tamanho` | `20` | de 1 a 100 |
+
+Fora da regra retorna `400` (`application/problem+json`). Página além do fim vem com `itens` vazio e os totais preenchidos. A ordem é por nome (do medicamento, no estoque), com o `id` desempatando, então a mesma página traz sempre os mesmos itens.
+
+Ficam sem paginação, por terem tamanho limitado: `/ubs/{id}/estoque/resumo` (as contagens precisam do estoque inteiro), `/medicamentos/{id}/disponibilidade` (uma linha por UBS, e a busca do front conta "Em X de Y UBS" com a lista completa) e `/medicamentos/categorias`.
+
+A busca por nome e categoria usa índices `pg_trgm` (veja [banco-de-dados.md](banco-de-dados.md#índices-da-busca)).
+
 ## Filtro por categoria
 
 Filtrar medicamentos pela categoria:
@@ -179,7 +206,7 @@ Listar as categorias disponíveis:
 
 `GET /api/medicamentos/categorias`
 
-A categoria é filtrada sem diferenciar letras maiúsculas de minúsculas. Se nenhuma categoria corresponder, a listagem de medicamentos retorna uma lista vazia.
+A categoria é filtrada sem diferenciar letras maiúsculas de minúsculas. Se nenhuma categoria corresponder, a listagem de medicamentos retorna uma página vazia (`itens: []`, `totalItens: 0`).
 
 Status de estoque: `DISPONIVEL`, `RESERVADO`, `EM_FALTA`.
 
@@ -209,7 +236,7 @@ Sem parâmetros, a rota lista as unidades por nome, como sempre. Com `lat` e `ln
 ]
 ```
 
-Sem `raioKm` a busca usa 20 km, para não varrer todas as unidades do banco. A caixa de latitude/longitude (índice `idx_ubs_localizacao`) descarta as unidades distantes antes da conta de distância. Para raios grandes a resposta pode ser longa; a paginação virá com a PDS-22.
+Sem `raioKm` a busca usa 20 km, para não varrer todas as unidades do banco. A caixa de latitude/longitude (índice `idx_ubs_localizacao`) descarta as unidades distantes antes da conta de distância. Para raios grandes a resposta pode ser longa: esta rota ainda não é paginada.
 
 ## Horário de funcionamento e "aberta agora"
 
@@ -261,7 +288,7 @@ Consultar a lista de itens do estoque de uma UBS:
 
 `GET /api/ubs/{id}/estoque`
 
-A resposta é uma lista JSON de itens do estoque, mantendo o formato original da API.
+A resposta segue o [formato paginado](#paginação), em ordem de nome do medicamento (`?pagina=` e `?tamanho=`).
 
 Filtrar a lista por status:
 
@@ -295,7 +322,7 @@ Exemplo de resposta do resumo filtrado, para uma UBS sem itens em falta:
 
 O parâmetro `status` é opcional nas duas rotas e aceita os valores `DISPONIVEL`, `RESERVADO` e `EM_FALTA`.
 
-Sem o parâmetro, todos os itens do estoque são retornados.
+Sem o parâmetro, entram itens de todos os status (em `/estoque`, paginados).
 
 No endpoint `/estoque/resumo`, as contagens sempre representam o estoque completo da UBS, mesmo quando o filtro por status é aplicado à lista `itens`.
 
