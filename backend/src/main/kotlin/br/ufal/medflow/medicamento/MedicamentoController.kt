@@ -1,10 +1,16 @@
 package br.ufal.medflow.medicamento
 
+import br.ufal.medflow.common.PaginaResponse
+import br.ufal.medflow.common.Paginacao
 import br.ufal.medflow.common.RecursoNaoEncontradoException
+import br.ufal.medflow.common.toPaginaResponse
 import br.ufal.medflow.estoque.DisponibilidadeResponse
 import br.ufal.medflow.estoque.ItemEstoqueRepository
 import br.ufal.medflow.estoque.ResumoDisponibilidadeResponse
 import br.ufal.medflow.estoque.toDisponibilidadeResponse
+import io.swagger.v3.oas.annotations.Parameter
+import jakarta.validation.constraints.Max
+import jakarta.validation.constraints.Min
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.bind.annotation.GetMapping
@@ -22,33 +28,40 @@ class MedicamentoController(
     private val medicamentoDisponibilidadeService: MedicamentoDisponibilidadeService,
 ) {
 
-    /** Lista medicamentos; `busca` e `categoria` podem ser combinados. */
+    /** Lista medicamentos em ordem de nome, paginado; `busca` e `categoria` podem ser combinados. */
     @GetMapping
     fun listar(
         @RequestParam(required = false) busca: String?,
         @RequestParam(required = false) categoria: String?,
-    ): List<MedicamentoResponse> {
+        @Parameter(description = "Página, a partir de 0.")
+        @RequestParam(defaultValue = "0") @Min(0) pagina: Int,
+        @Parameter(description = "Itens por página, de 1 a ${Paginacao.TAMANHO_MAXIMO}.")
+        @RequestParam(defaultValue = "${Paginacao.TAMANHO_PADRAO}") @Min(1) @Max(Paginacao.TAMANHO_MAXIMO.toLong())
+        tamanho: Int,
+    ): PaginaResponse<MedicamentoResponse> {
         val termo = busca?.trim().orEmpty()
         val categoriaFiltrada = categoria?.trim().orEmpty()
+        val paginacao = Paginacao.de(pagina, tamanho, "nome")
 
         val resultado = when {
             termo.isNotEmpty() && categoriaFiltrada.isNotEmpty() ->
                 medicamentoRepository.buscarPorCategoriaETermo(
                     termo,
                     categoriaFiltrada,
+                    paginacao,
                 )
 
             categoriaFiltrada.isNotEmpty() ->
-                medicamentoRepository.buscarPorCategoria(categoriaFiltrada)
+                medicamentoRepository.buscarPorCategoria(categoriaFiltrada, paginacao)
 
             termo.isNotEmpty() ->
-                medicamentoRepository.buscar(termo)
+                medicamentoRepository.buscar(termo, paginacao)
 
             else ->
-                medicamentoRepository.findAllByOrderByNomeAsc()
+                medicamentoRepository.findAll(paginacao)
         }
 
-        return resultado.map { it.toResponse() }
+        return resultado.toPaginaResponse { it.toResponse() }
     }
 
     /** Lista as categorias distintas dos medicamentos cadastrados. */

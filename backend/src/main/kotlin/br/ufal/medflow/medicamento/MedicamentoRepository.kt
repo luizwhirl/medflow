@@ -1,9 +1,12 @@
 package br.ufal.medflow.medicamento
 
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 
+// A ordem vem do Pageable. Os filtros por lower(nome) e lower(categoria) usam os índices pg_trgm da V10.
 interface MedicamentoRepository : JpaRepository<Medicamento, Long> {
 
     @Query(
@@ -11,21 +14,20 @@ interface MedicamentoRepository : JpaRepository<Medicamento, Long> {
         select m from Medicamento m
         where lower(m.nome) like lower(concat('%', :termo, '%'))
            or lower(m.categoria) like lower(concat('%', :termo, '%'))
-        order by m.nome
         """,
     )
-    fun buscar(@Param("termo") termo: String): List<Medicamento>
+    fun buscar(@Param("termo") termo: String, pagina: Pageable): Page<Medicamento>
 
     @Query(
         """
         select m from Medicamento m
         where lower(m.categoria) = lower(:categoria)
-        order by m.nome
         """,
     )
     fun buscarPorCategoria(
         @Param("categoria") categoria: String,
-    ): List<Medicamento>
+        pagina: Pageable,
+    ): Page<Medicamento>
 
     @Query(
         """
@@ -35,13 +37,13 @@ interface MedicamentoRepository : JpaRepository<Medicamento, Long> {
             or lower(m.categoria) like lower(concat('%', :termo, '%'))
         )
         and lower(m.categoria) = lower(:categoria)
-        order by m.nome
         """,
     )
     fun buscarPorCategoriaETermo(
         @Param("termo") termo: String,
         @Param("categoria") categoria: String,
-    ): List<Medicamento>
+        pagina: Pageable,
+    ): Page<Medicamento>
 
     @Query(
         """
@@ -51,8 +53,6 @@ interface MedicamentoRepository : JpaRepository<Medicamento, Long> {
         """,
     )
     fun listarCategorias(): List<String>
-
-    fun findAllByOrderByNomeAsc(): List<Medicamento>
 
     fun findByCatmatIn(catmats: Collection<String>): List<Medicamento>
 }

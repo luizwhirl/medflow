@@ -1,5 +1,7 @@
 package br.ufal.medflow.estoque
 
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
@@ -33,6 +35,23 @@ interface ItemEstoqueRepository : JpaRepository<ItemEstoque, Long> {
         @Param("ubsId") ubsId: Long,
         @Param("status") status: StatusEstoque,
     ): List<ItemEstoque>
+
+    /** Estoque paginado da UBS (a ordem vem do Pageable; a contagem não pode ter join fetch). */
+    @Query(
+        value = "select i from ItemEstoque i join fetch i.medicamento m where i.ubs.id = :ubsId",
+        countQuery = "select count(i) from ItemEstoque i where i.ubs.id = :ubsId",
+    )
+    fun findByUbs(@Param("ubsId") ubsId: Long, pagina: Pageable): Page<ItemEstoque>
+
+    @Query(
+        value = "select i from ItemEstoque i join fetch i.medicamento m where i.ubs.id = :ubsId and i.status = :status",
+        countQuery = "select count(i) from ItemEstoque i where i.ubs.id = :ubsId and i.status = :status",
+    )
+    fun findByUbsEStatus(
+        @Param("ubsId") ubsId: Long,
+        @Param("status") status: StatusEstoque,
+        pagina: Pageable,
+    ): Page<ItemEstoque>
 
     @Query(
         """

@@ -33,7 +33,7 @@ class MedflowApiIntegrationTests(@Autowired private val mockMvc: MockMvc) {
     fun `busca medicamento por nome sem diferenciar maiusculas`() {
         mockMvc.get("/api/medicamentos") { param("busca", "metFORmina") }.andExpect {
             status { isOk() }
-            jsonPath("$[0].catmat") { value("BR0267690") }
+            jsonPath("$.itens[0].catmat") { value("BR0267690") }
         }
     }
 

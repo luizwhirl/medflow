@@ -83,6 +83,27 @@ A migration `V6__remessas.sql` cria `remessa` e `remessa_evento`. A etapa atual 
 
 A BNAFAR pública não informa remessas em trânsito, então não há fonte oficial. No perfil `dev`, o seed `V1006__remessas_exemplo.sql` cria seis remessas em etapas diferentes (uma delas já concluída).
 
+## Índices da busca
+
+A busca de medicamentos (`GET /api/medicamentos`) filtra com `lower(nome) LIKE '%termo%'` e `lower(categoria)`
+(`LIKE` ou `=`). Um B-tree não atende `LIKE` com curinga no início, então a `V10__indices_busca_medicamento.sql`
+cria a extensão `pg_trgm` e dois índices GIN (`idx_medicamento_nome_trgm` e `idx_medicamento_categoria_trgm`),
+que atendem tanto o `LIKE` quanto a igualdade. O estoque da UBS já usa a chave única `uk_item_estoque`
+(`ubs_id`, `medicamento_id`) e não precisou de índice novo.
+
+`EXPLAIN ANALYZE` com 100 mil medicamentos e 100 mil itens de estoque (PostgreSQL 17):
+
+| Consulta | Sem a V10 | Com a V10 |
+| --- | --- | --- |
+| Busca por termo (página de 20) | Seq Scan, 46 ms | BitmapOr nos dois índices trgm, 2,5 ms |
+| Busca por termo (contagem da página) | Seq Scan, 49 ms | BitmapOr nos dois índices trgm, 1,6 ms |
+| Filtro exato por categoria | Seq Scan, 19 ms | Bitmap Index Scan em `idx_medicamento_categoria_trgm`, 8,5 ms |
+| Estoque da UBS (página de 20) | Bitmap Index Scan em `uk_item_estoque`, ~1 ms | igual |
+
+Com poucas linhas (como no seed) o planejador prefere o Seq Scan, o que é o certo nesse tamanho. Termos com menos de
+3 letras não formam trigramas e também caem no Seq Scan. O teste `IndicesBuscaMedicamentoIntegrationTests` gera
+volume e confere que os planos usam os índices.
+
 ## Regras para migrations
 
 1. **Nunca edite** uma migration que já foi para a `main`. Crie uma nova com o próximo número disponível, respeitando as versões já utilizadas pela equipe.
