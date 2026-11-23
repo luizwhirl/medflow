@@ -25,6 +25,7 @@ import { PreferenciasService } from '../../core/services/preferencias.service';
 import { UbsService } from '../../core/services/ubs.service';
 import { Button } from '../../shared/components/button';
 import { Chip } from '../../shared/components/chip';
+import { Funcionamento } from '../../shared/components/funcionamento';
 import { Mapa, PinoMapa } from '../../shared/components/mapa';
 
 export const RAIOS_KM = [1, 3, 6, 10] as const;
@@ -65,7 +66,7 @@ interface LinhaUbs {
 
 @Component({
   selector: 'app-ubs-map-page',
-  imports: [RouterLink, Mapa, Chip, Button],
+  imports: [RouterLink, Mapa, Chip, Button, Funcionamento],
   template: `
     <div class="flex flex-col md:-mx-8 md:-my-8 md:h-dvh md:flex-row xl:-mx-14">
       <!-- Painel lateral -->
@@ -122,6 +123,7 @@ interface LinhaUbs {
               escolha() === 'meus' ? 'Com meus remédios' : 'Com o remédio'
             }}</app-chip>
           }
+          <app-chip [(selecionado)]="soAbertas">Abertas agora</app-chip>
           @if (posicao()) {
             @for (r of raios; track r) {
               <app-chip
@@ -166,6 +168,7 @@ interface LinhaUbs {
                     }
                     {{ l.referencia ? 'Sua UBS' : l.ubs.bairro }}
                   </span>
+                  <app-funcionamento class="mt-0.5 block text-sm" [ubs]="l.ubs" />
                   @if (l.resumo) {
                     <span class="mt-1 block font-semibold" [class]="texto[l.tom]">{{
                       l.resumo
@@ -217,10 +220,11 @@ interface LinhaUbs {
                 {{ distancia(a.distancia) }} ·
               }
               {{ a.ubs.bairro }}
-              @if (a.ubs.horario) {
+              @if (a.ubs.abertaAgora == null && a.ubs.horario) {
                 · {{ a.ubs.horario }}
               }
             </p>
+            <app-funcionamento class="mt-1 block" [ubs]="a.ubs" />
             @if (a.itens.length) {
               <ul class="mt-4 flex flex-wrap gap-2">
                 @for (i of a.itens; track i.medicamento.id) {
@@ -266,6 +270,8 @@ export class UbsMapPage {
 
   protected readonly raioKm = signal<number | null>(6);
   protected readonly soComRemedios = signal(false);
+  /** Chip "Abertas agora": só as UBS abertas segundo a API (`abertaAgora`). */
+  protected readonly soAbertas = signal(false);
   /** `undefined` enquanto o navegador não respondeu; `null` se a localização foi negada. */
   private readonly localizacao = signal<Coordenadas | null | undefined>(undefined);
   protected readonly posicao = computed(() => this.localizacao() ?? null);
@@ -348,24 +354,28 @@ export class UbsMapPage {
   protected readonly linhas = computed((): LinhaUbs[] => {
     const escolhidos = this.escolhidos();
     const refId = this.preferencias.ubsReferenciaId();
-    return this.unidades()
-      .map((ubs) => {
-        const itens = escolhidos.flatMap(({ medicamento, disponibilidade }) => {
-          const d = disponibilidade.find((x) => x.ubs.id === ubs.id);
-          return d ? [{ medicamento, d }] : [];
-        });
-        const disponiveis = itens.filter((i) => temEstoque(i.d)).length;
-        return {
-          ubs,
-          distancia: 'distanciaKm' in ubs ? ubs.distanciaKm : null,
-          referencia: ubs.id === refId,
-          itens,
-          disponiveis,
-          ...this.classificar(escolhidos.length, itens, disponiveis),
-        };
-      })
-      .filter((l) => !this.soComRemedios() || escolhidos.length === 0 || l.disponiveis > 0)
-      .map((l, i) => ({ ...l, numero: i + 1 }));
+    return (
+      this.unidades()
+        .map((ubs) => {
+          const itens = escolhidos.flatMap(({ medicamento, disponibilidade }) => {
+            const d = disponibilidade.find((x) => x.ubs.id === ubs.id);
+            return d ? [{ medicamento, d }] : [];
+          });
+          const disponiveis = itens.filter((i) => temEstoque(i.d)).length;
+          return {
+            ubs,
+            distancia: 'distanciaKm' in ubs ? ubs.distanciaKm : null,
+            referencia: ubs.id === refId,
+            itens,
+            disponiveis,
+            ...this.classificar(escolhidos.length, itens, disponiveis),
+          };
+        })
+        .filter((l) => !this.soComRemedios() || escolhidos.length === 0 || l.disponiveis > 0)
+        // sem horário cadastrado, a situação é desconhecida: fica de fora, como no `abertas=true` da API
+        .filter((l) => !this.soAbertas() || l.ubs.abertaAgora === true)
+        .map((l, i) => ({ ...l, numero: i + 1 }))
+    );
   });
 
   protected readonly selecionado = linkedSignal<LinhaUbs[], number | null>({
