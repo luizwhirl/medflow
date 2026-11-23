@@ -130,6 +130,48 @@ describe('UbsMapPage', () => {
     http.verify();
   }));
 
+  it('"Abertas agora" deixa só as UBS abertas e os cartões dizem até quando', fakeAsync(() => {
+    preparar([]);
+    const fixture = TestBed.createComponent(UbsMapPage);
+    fixture.detectChanges();
+    flushMicrotasks();
+    fixture.detectChanges();
+    http.expectOne(proximas(6)).flush([
+      // aberta, fechada (fora do horário ou fim de semana) e sem horário cadastrado
+      {
+        ...ubs(2, 'Perto', 0.5),
+        abertaAgora: true,
+        fechaAs: '17:00',
+        fechaEm: '2999-01-01T17:00:00-03:00',
+      },
+      { ...ubs(3, 'Meio', 2.5), abertaAgora: false, fechaAs: null, fechaEm: null },
+      { ...ubs(4, 'Longe', 4), abertaAgora: null },
+    ]);
+    http.expectOne('/api/medicamentos?tamanho=100').flush(pagina([]));
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(linhas(el)).toEqual([
+      '1 Perto 500 m · Sua UBS Aberta até 17h',
+      '2 Meio 2,5 km · Centro Fechada agora',
+      '3 Longe 4,0 km · Centro',
+    ]);
+    expect(el.querySelector('article')!.textContent).toContain('Aberta até 17h');
+
+    const abertas = Array.from(el.querySelectorAll('app-chip button')).find(
+      (b) => b.textContent!.trim() === 'Abertas agora',
+    ) as HTMLButtonElement;
+    abertas.click();
+    fixture.detectChanges();
+    // filtra no navegador, sem nova chamada; a UBS sem horário também sai
+    expect(linhas(el)).toEqual(['1 Perto 500 m · Sua UBS Aberta até 17h']);
+
+    abertas.click();
+    fixture.detectChanges();
+    expect(linhas(el).length).toBe(3);
+    http.verify();
+  }));
+
   it('sem localização, lista todas as UBS por nome e sem distância', fakeAsync(() => {
     preparar([], false);
     const fixture = TestBed.createComponent(UbsMapPage);

@@ -138,6 +138,52 @@ describe('MedicamentoSearchPage', () => {
     http.verify();
   }));
 
+  it('"Abertas agora" conta só as UBS que a API diz estarem abertas', fakeAsync(() => {
+    const fixture = TestBed.createComponent(MedicamentoSearchPage);
+    fixture.detectChanges();
+    flushMicrotasks();
+    fixture.detectChanges();
+    http.expectOne('/api/medicamentos/categorias').flush([]);
+    http.expectOne('/api/ubs?lat=0&lng=0&raioKm=5').flush([ubs(1, 'Perto', 1), ubs(2, 'Meio', 3)]);
+    tick(250);
+    http
+      .expectOne('/api/medicamentos')
+      .flush(pagina([metformina, { ...metformina, id: 2, nome: 'Glibenclamida' }]));
+    http.expectOne('/api/medicamentos/1/disponibilidade').flush([
+      { ubs: ubs(1, 'Perto', 1), status: 'DISPONIVEL', quantidade: 9, atualizadoEm: '' },
+      { ubs: ubs(2, 'Meio', 3), status: 'DISPONIVEL', quantidade: 9, atualizadoEm: '' },
+    ]);
+    http
+      .expectOne('/api/medicamentos/2/disponibilidade')
+      .flush([{ ubs: ubs(1, 'Perto', 1), status: 'DISPONIVEL', quantidade: 9, atualizadoEm: '' }]);
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(resultados(el)).toEqual([
+      'Metformina 850 mg comprimido Em 2 de 2 UBS próximas',
+      'Glibenclamida 850 mg comprimido Em 1 de 1 UBS próximas',
+    ]);
+
+    const abertas = Array.from(el.querySelectorAll('app-chip button')).find((b) =>
+      b.textContent!.includes('Abertas agora'),
+    ) as HTMLButtonElement;
+    abertas.click();
+    fixture.detectChanges();
+    // Só a "Meio" está aberta: a "Perto" sai das contas
+    http.expectOne('/api/ubs?abertas=true').flush([ubs(2, 'Meio', 3)]);
+    fixture.detectChanges();
+    expect(resultados(el)).toEqual([
+      'Metformina 850 mg comprimido Em 1 de 1 UBS próximas abertas',
+      'Glibenclamida 850 mg comprimido Nenhuma UBS a até 5 km aberta agora',
+    ]);
+
+    // Desligar o chip volta às contas anteriores sem nova chamada
+    abertas.click();
+    fixture.detectChanges();
+    expect(resultados(el)[0]).toContain('2 de 2');
+    http.verify();
+  }));
+
   it('filtra pela categoria escolhida no chip', fakeAsync(() => {
     const fixture = TestBed.createComponent(MedicamentoSearchPage);
     fixture.detectChanges();
@@ -190,11 +236,27 @@ describe('MedicamentoSearchPage', () => {
     http
       .expectOne('/api/ubs?lat=0&lng=0&medicamentoId=1')
       .flush([ubs(1, 'UBS Benedito Bentes I', 0.26), ubs(3, 'UBS Clima Bom', 2.4)]);
+    // O horário vem da lista de UBS: a disponibilidade do medicamento não o traz
+    http.expectOne('/api/ubs').flush([
+      { ...ubs(1, 'UBS Benedito Bentes I', 0.26), abertaAgora: false, fechaAs: null },
+      {
+        ...ubs(3, 'UBS Clima Bom', 2.4),
+        abertaAgora: true,
+        fechaAs: '17:00',
+        fechaEm: '2999-01-01T17:00:00-03:00',
+      },
+    ]);
     tick(250);
     http.expectOne('/api/medicamentos').flush(pagina([]));
     fixture.detectChanges();
 
     const el = fixture.nativeElement as HTMLElement;
+    const linhaOnde = (nome: string) =>
+      Array.from(el.querySelectorAll('[aria-labelledby="titulo-onde"] li'))
+        .find((li) => li.textContent!.includes(nome))!
+        .textContent!.replace(/\s+/g, ' ');
+    expect(linhaOnde('UBS Clima Bom')).toContain('Aberta até 17h');
+    expect(linhaOnde('UBS Benedito Bentes I')).toContain('Fechada agora');
     const alerta = el.querySelector('[role="status"]')!.textContent!.replace(/\s+/g, ' ');
     expect(alerta).toContain('Em falta na UBS Benedito Bentes I');
     expect(alerta).toContain('a UBS Clima Bom (2,4 km) tem estoque');
@@ -227,6 +289,7 @@ describe('MedicamentoSearchPage', () => {
     http
       .expectOne('/api/ubs?lat=0&lng=0&medicamentoId=1')
       .flush([ubs(1, 'UBS Benedito Bentes I', 0.26), ubs(3, 'UBS Clima Bom', 2.4)]);
+    http.expectOne('/api/ubs').flush([]);
     tick(250);
     http.expectOne('/api/medicamentos').flush(pagina([]));
     fixture.detectChanges();
