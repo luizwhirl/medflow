@@ -3,7 +3,9 @@ package br.ufal.medflow.ubs
 import br.ufal.medflow.TestcontainersConfiguration
 import org.hamcrest.Matchers.containsInAnyOrder
 import org.hamcrest.Matchers.hasItem
+import org.hamcrest.Matchers.hasItems
 import org.hamcrest.Matchers.not
+import org.hamcrest.Matchers.nullValue
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
@@ -15,6 +17,7 @@ import org.springframework.context.annotation.Primary
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
+import org.springframework.transaction.annotation.Transactional
 import org.testcontainers.junit.jupiter.Testcontainers
 import java.time.Clock
 import java.time.Instant
@@ -55,11 +58,49 @@ class HorarioFuncionamentoIntegrationTests(
     }
 
     @Test
+    fun `fechaEm traz data, hora e fuso de Maceio`() {
+        mockMvc.get("/api/ubs/{id}", idPorCnes("9000101")).andExpect {
+            status { isOk() }
+            jsonPath("$.fechaAs") { value("17:00") }
+            jsonPath("$.fechaEm") { value("2026-11-20T17:00:00-03:00") }
+        }
+    }
+
+    @Test
     fun `abertas=true deixa de fora a unidade fechada`() {
         mockMvc.get("/api/ubs") { param("abertas", "true") }.andExpect {
             status { isOk() }
-            jsonPath("$.length()") { value(6) }
+            jsonPath("$[*].cnes") { value(hasItems(*ABERTAS_NA_SEXTA)) }
             jsonPath("$[*].cnes") { value(not(hasItem("9000107"))) }
+        }
+    }
+
+    @Test
+    @Transactional
+    fun `UBS sem horario cadastrado fica sem turnos, com abertaAgora nulo e fora do filtro`() {
+        val semHorario = ubsRepository.save(
+            Ubs(
+                cnes = "9999901",
+                nome = "UBS Sem Horário",
+                tipo = TipoUnidade.UBS,
+                bairro = "Centro",
+                endereco = "Rua B, 2",
+                codigoIbgeMunicipio = "2704302",
+                latitude = -9.66,
+                longitude = -35.73,
+            ),
+        )
+
+        mockMvc.get("/api/ubs/{id}", semHorario.id).andExpect {
+            status { isOk() }
+            jsonPath("$.horarios") { isEmpty() }
+            jsonPath("$.abertaAgora") { value(nullValue()) }
+            jsonPath("$.fechaAs") { value(nullValue()) }
+            jsonPath("$.fechaEm") { value(nullValue()) }
+        }
+        mockMvc.get("/api/ubs") { param("abertas", "true") }.andExpect {
+            status { isOk() }
+            jsonPath("$[*].cnes") { value(not(hasItem("9999901"))) }
         }
     }
 
@@ -72,7 +113,7 @@ class HorarioFuncionamentoIntegrationTests(
             param("abertas", "true")
         }.andExpect {
             status { isOk() }
-            jsonPath("$.length()") { value(6) }
+            jsonPath("$[*].cnes") { value(hasItems(*ABERTAS_NA_SEXTA)) }
             jsonPath("$[*].cnes") { value(not(hasItem("9000107"))) }
             jsonPath("$[0].distanciaKm") { exists() }
         }
@@ -87,5 +128,10 @@ class HorarioFuncionamentoIntegrationTests(
             jsonPath("$.horarios[0].fecha") { value("14:00") }
             jsonPath("$.abertaAgora") { value(false) }
         }
+    }
+
+    private companion object {
+        /** Unidades do seed abertas na sexta às 10:00 (todas menos a 9000107, que atende de segunda a quinta). */
+        val ABERTAS_NA_SEXTA = arrayOf("9000101", "9000102", "9000103", "9000104", "9000105", "9000106")
     }
 }

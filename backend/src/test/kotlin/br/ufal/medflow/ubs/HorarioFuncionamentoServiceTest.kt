@@ -7,6 +7,7 @@ import org.mockito.Mockito.verifyNoInteractions
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalTime
+import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -29,11 +30,13 @@ class HorarioFuncionamentoServiceTest {
         val tarde = servico("2026-11-20T19:30:00Z").buscar(listOf(1L)).getValue(1L)
         assertEquals(true, tarde.abertaAgora)
         assertEquals(LocalTime.of(17, 0), tarde.fechaAs)
+        assertEquals(OffsetDateTime.parse("2026-11-20T17:00:00-03:00"), tarde.fechaEm)
 
         // Sábado, 02:00 UTC = sexta 23:00 em Maceió: fechada
         val noite = servico("2026-11-21T02:00:00Z").buscar(listOf(1L)).getValue(1L)
         assertEquals(false, noite.abertaAgora)
         assertNull(noite.fechaAs)
+        assertNull(noite.fechaEm)
     }
 
     @Test

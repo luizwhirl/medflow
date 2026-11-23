@@ -7,9 +7,8 @@ CREATE TABLE horario_funcionamento (
     dia_semana SMALLINT NOT NULL CHECK (dia_semana BETWEEN 1 AND 7),
     abre       TIME     NOT NULL,
     -- Se fecha for menor que abre, o turno termina no dia seguinte (ex.: 19:00 às 07:00).
+    -- Se fecha for igual a abre, o turno dura 24 h (ex.: 00:00 às 00:00, para unidades que não fecham).
     fecha      TIME     NOT NULL,
-    CONSTRAINT ck_horario_funcionamento_duracao CHECK (abre <> fecha),
+    -- O índice desta constraint começa por ubs_id e também atende a busca dos turnos por UBS.
     CONSTRAINT uk_horario_funcionamento UNIQUE (ubs_id, dia_semana, abre)
 );
-
-CREATE INDEX idx_horario_funcionamento_ubs ON horario_funcionamento (ubs_id);

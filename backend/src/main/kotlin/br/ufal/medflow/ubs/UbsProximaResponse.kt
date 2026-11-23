@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.annotation.JsonFormat
 import java.time.Instant
 import java.time.LocalTime
+import java.time.OffsetDateTime
 
 /**
  * UBS da listagem (GET /api/ubs). Os três últimos campos só aparecem quando fazem sentido:
@@ -29,11 +30,14 @@ data class UbsProximaResponse(
     val horarios: List<HorarioResponse> = emptyList(),
     /** `null` quando a UBS não tem horário cadastrado. */
     val abertaAgora: Boolean? = null,
-    /** Hora em que fecha, só quando está aberta. */
+    /** Hora em que fecha (`HH:mm`), só quando está aberta e tem hora de fechar. */
     @get:JsonFormat(pattern = "HH:mm") val fechaAs: LocalTime? = null,
+    /** Data e hora em que fecha, com fuso: num turno que vira a noite, é no dia seguinte. */
+    @get:JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "America/Maceio")
+    val fechaEm: OffsetDateTime? = null,
 ) {
     fun com(funcionamento: FuncionamentoUbs?) = funcionamento?.let {
-        copy(horarios = it.horarios, abertaAgora = it.abertaAgora, fechaAs = it.fechaAs)
+        copy(horarios = it.horarios, abertaAgora = it.abertaAgora, fechaAs = it.fechaAs, fechaEm = it.fechaEm)
     } ?: this
 }
 

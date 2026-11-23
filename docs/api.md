@@ -222,6 +222,7 @@ Toda UBS em `GET /api/ubs` (com ou sem `lat`/`lng`) e em `GET /api/ubs/{id}` tra
 | `horarios` | Turnos por dia da semana (`SEGUNDA` ... `DOMINGO`), com `abre` e `fecha` em `HH:mm`. Vazio quando a unidade não tem horário cadastrado |
 | `abertaAgora` | `true` ou `false` no horário atual de Maceió (`America/Maceio`); `null` quando a unidade não tem horário cadastrado |
 | `fechaAs` | Hora em que fecha (`HH:mm`), só quando está aberta; senão `null` |
+| `fechaEm` | Data e hora em que fecha, com fuso (ex.: `2026-11-21T07:00:00-03:00`). Num turno que vira a noite, é no dia seguinte. `null` quando está fechada ou quando não tem hora de fechar (unidade 24 h) |
 
 Com `abertas=true`, a lista fica só com as unidades abertas agora; quem não tem horário cadastrado fica de fora. `abertas=false` ou sem o parâmetro não filtra. O filtro vale junto com `lat`, `lng`, `raioKm` e `medicamentoId`.
 
@@ -229,8 +230,16 @@ Regras:
 
 - Um turno vale de `abre` (inclusive) até `fecha` (exclusive): às 17:00 uma unidade "7h às 17h" já está fechada.
 - Se `fecha` for antes de `abre`, o turno vira a noite e termina no dia seguinte (ex.: sexta, 19:00 às 07:00 vale até sábado, 07:00).
+- Se `abre` for igual a `fecha`, o turno dura 24 h (ex.: `00:00` às `00:00`).
 - Turnos emendados (07:00–12:00 e 12:00–17:00) contam como um só: `fechaAs` é `17:00`.
+- Se os turnos emendados cobrem a semana inteira (unidade 24 h todos os dias), `abertaAgora` é `true` e `fechaAs`/`fechaEm` ficam `null`.
 - Dias sem turno (fim de semana, na maioria das unidades) ficam fechados.
+- Unidade sem nenhum turno cadastrado tem `horarios: []` e `abertaAgora: null` (situação desconhecida), e fica de fora com `abertas=true`.
+
+Limitações conhecidas:
+
+- O cálculo usa o fuso de Maceió (`America/Maceio`) para todas as unidades. Para UBS de estados com outro fuso (Acre, Amazonas, Mato Grosso, entre outros), `abertaAgora` fica deslocado. Quando o app atender outros estados, o fuso deve passar a vir da UF da unidade.
+- Por enquanto só o seed do perfil `dev` preenche `horario_funcionamento`; as unidades sincronizadas da BNAFAR chegam sem turnos e ficam com `abertaAgora: null`.
 
 ```json
 {

@@ -35,7 +35,7 @@ class DiaSemanaConverter : AttributeConverter<DiaSemana, Short> {
 
 /**
  * Um turno de atendimento da UBS num dia da semana. Se [fecha] for antes de [abre], o turno termina no dia
- * seguinte (ex.: 19:00 às 07:00).
+ * seguinte (ex.: 19:00 às 07:00); se for igual, o turno dura 24 h (ex.: 00:00 às 00:00).
  */
 @Entity
 @Table(name = "horario_funcionamento")

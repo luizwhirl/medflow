@@ -6,6 +6,7 @@ import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.LocalDateTime
 import java.time.LocalTime
+import java.time.OffsetDateTime
 
 data class HorarioResponse(
     val diaSemana: DiaSemana,
@@ -13,11 +14,16 @@ data class HorarioResponse(
     @get:JsonFormat(pattern = "HH:mm") val fecha: LocalTime,
 )
 
-/** Horários de uma UBS e a situação dela agora. */
+/**
+ * Horários de uma UBS e a situação dela agora. [fechaEm] é a data e hora de fechamento (pode ser no dia
+ * seguinte, num turno que vira a noite); [fechaAs] é só a hora, para exibir. Os dois ficam `null` quando a
+ * unidade está fechada ou funciona sem parar.
+ */
 data class FuncionamentoUbs(
     val horarios: List<HorarioResponse>,
     val abertaAgora: Boolean,
     val fechaAs: LocalTime?,
+    val fechaEm: OffsetDateTime? = null,
 )
 
 @Service
@@ -41,7 +47,8 @@ class HorarioFuncionamentoService(
                 FuncionamentoUbs(
                     horarios = turnos.map { HorarioResponse(it.diaSemana, it.abre, it.fecha) },
                     abertaAgora = situacao.aberta,
-                    fechaAs = situacao.fechaAs,
+                    fechaAs = situacao.fechaEm?.toLocalTime(),
+                    fechaEm = situacao.fechaEm?.atZone(FUSO_UBS)?.toOffsetDateTime(),
                 )
             }
     }
