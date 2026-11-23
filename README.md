@@ -45,6 +45,12 @@ cd frontend && npm install && npm start   # Web em http://localhost:4200
 
 O perfil `dev` (padrão) já carrega dados fictícios de exemplo. Guia completo em [docs/setup.md](docs/setup.md).
 
+Sem JDK nem Node, só com Docker (banco, API e web com os dados de exemplo em http://localhost:4200):
+
+```bash
+docker compose --profile full up -d --build
+```
+
 ## Documentação
 
 - [Setup do ambiente](docs/setup.md)

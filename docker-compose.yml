@@ -1,7 +1,7 @@
 # Infraestrutura de desenvolvimento local.
 #   docker compose up -d                 -> só o PostgreSQL
 #   docker compose --profile tools up -d -> PostgreSQL + pgAdmin
-#   docker compose --profile full up -d  -> PostgreSQL + API + Web (tudo em container)
+#   docker compose --profile full up -d --build -> PostgreSQL + API + Web (tudo em container, com os dados de exemplo)
 name: medflow
 
 services:
@@ -57,13 +57,19 @@ services:
     build: ./backend
     profiles: [full]
     environment:
-      DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-medflow}
-      DB_USER: ${POSTGRES_USER:-medflow}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-medflow}
-      CORS_ALLOWED_ORIGINS: http://localhost:4200
-      SPRING_PROFILES_ACTIVE: dev # de propósito: dados de exemplo e o segredo JWT de desenvolvimento. Para outro ambiente, use prod e defina JWT_SECRET
+      - DB_URL=jdbc:postgresql://db:5432/${POSTGRES_DB:-medflow}
+      - DB_USER=${POSTGRES_USER:-medflow}
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-medflow}
+      - CORS_ALLOWED_ORIGINS=http://localhost:${WEB_PORT:-4200}
+      # dev por padrão: carrega os dados de exemplo e usa o segredo JWT de desenvolvimento.
+      # Para outro ambiente, use SPRING_PROFILES_ACTIVE=prod (sem seed) e defina JWT_SECRET.
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-dev}
+      # Sem valor: só chegam ao container se estiverem definidos no ambiente ou no .env
+      # (um valor vazio no dev derrubaria o segredo padrão).
+      - JWT_SECRET
+      - JWT_EXPIRACAO
     ports:
-      - "8080:8080"
+      - "${API_PORT:-8080}:8080"
     depends_on:
       db:
         condition: service_healthy
@@ -72,7 +78,7 @@ services:
     build: ./frontend
     profiles: [full]
     ports:
-      - "4200:80"
+      - "${WEB_PORT:-4200}:80"
     depends_on:
       - api
 
