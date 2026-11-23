@@ -57,6 +57,8 @@ No perfil `dev` existem duas contas de exemplo, com a senha `medflow-dev-123`: `
 
 ## Perfil do cidadão
 
+O endpoint `GET /api/auth/eu` retorna os dados básicos da conta autenticada e pode ser utilizado por cidadãos e gestores. Já `GET /api/me` é exclusivo do papel `CIDADAO` e retorna, além dos dados básicos, a UBS de referência, o bairro, a localização aproximada e as preferências do perfil.
+
 A API de perfil permite que o cidadão configure seus dados pessoais de apresentação, sua UBS de referência, uma localização aproximada e preferências da interface.
 
 Essas informações podem ser utilizadas pela tela inicial, pela saudação "Olá, ...", pelo card "Minha UBS de referência", pelo botão "Definir como minha UBS" e pela tela de Perfil.
@@ -86,8 +88,8 @@ Exemplo de resposta para um perfil já configurado:
     "endereco": "Rua do Posto, 300"
   },
   "bairro": "Clima Bom",
-  "latitudeAproximada": -9.562,
-  "longitudeAproximada": -35.742,
+  "latitudeAproximada": -9.56,
+  "longitudeAproximada": -35.74,
   "letraMaior": true,
   "salvarBuscasRecentes": true,
   "buscasRecentes": [
@@ -176,8 +178,8 @@ Por exemplo, para definir a UBS de ID 3, o frontend envia:
   "nome": "Rita Maria",
   "ubsReferenciaId": 3,
   "bairro": "Clima Bom",
-  "latitudeAproximada": -9.562,
-  "longitudeAproximada": -35.742,
+  "latitudeAproximada": -9.56,
+  "longitudeAproximada": -35.74,
   "letraMaior": true,
   "salvarBuscasRecentes": false,
   "buscasRecentes": []
@@ -206,7 +208,7 @@ Latitude e longitude devem ser fornecidas juntas:
 - Longitude deve estar entre -180 e 180.
 - Valores não finitos são rejeitados.
 
-As coordenadas válidas são arredondadas para três casas decimais antes de serem armazenadas.
+As coordenadas válidas são arredondadas para duas casas decimais antes de serem armazenadas.
 
 Por exemplo:
 
@@ -221,8 +223,8 @@ São armazenadas e retornadas como:
 
 ```json
 {
-  "latitudeAproximada": -9.562,
-  "longitudeAproximada": -35.742
+  "latitudeAproximada": -9.56,
+  "longitudeAproximada": -35.74
 }
 ```
 
@@ -296,7 +298,7 @@ Resulta no histórico:
 
 Se `salvarBuscasRecentes` for `false`, o serviço remove as buscas anteriormente armazenadas e retorna uma lista vazia, independentemente dos termos enviados dentro do limite aceito.
 
-A atualização do perfil e a substituição do histórico ocorrem na mesma transação.
+Cada `PUT /api/me` substitui integralmente o histórico anterior pela lista enviada em `buscasRecentes`; os termos não são adicionados ao histórico existente. A atualização do perfil e a substituição do histórico ocorrem na mesma transação.
 
 Nesta versão, o histórico **não é registrado automaticamente** pelas consultas realizadas em `GET /api/medicamentos?busca=`.
 

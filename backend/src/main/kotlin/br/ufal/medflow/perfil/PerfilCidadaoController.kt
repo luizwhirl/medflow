@@ -1,7 +1,7 @@
 package br.ufal.medflow.perfil
 
+import br.ufal.medflow.auth.CredenciaisInvalidasException
 import jakarta.validation.Valid
-import org.springframework.http.HttpStatus
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.web.bind.annotation.GetMapping
@@ -9,7 +9,6 @@ import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
-import org.springframework.web.server.ResponseStatusException
 
 /**
  * API de perfil do cidadão autenticado.
@@ -51,17 +50,14 @@ class PerfilCidadaoController(
     /**
      * Extrai o ID do cidadão da claim sub.
      *
-     * Rejeita tokens sem identificador ou com um ID inválido,
-     * evitando erros de conversão e acesso indevido.
+     * Tokens sem identificador válido são rejeitados
+     * seguindo o tratamento de autenticação do projeto.
      */
     private fun obterUsuarioId(jwt: Jwt): Long {
         val usuarioId = jwt.subject?.toLongOrNull()
 
         if (usuarioId == null || usuarioId <= 0L) {
-            throw ResponseStatusException(
-                HttpStatus.UNAUTHORIZED,
-                "Token sem identificador de usuário válido",
-            )
+            throw CredenciaisInvalidasException()
         }
 
         return usuarioId

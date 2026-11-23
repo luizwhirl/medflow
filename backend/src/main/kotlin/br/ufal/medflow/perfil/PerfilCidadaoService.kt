@@ -1,13 +1,14 @@
 package br.ufal.medflow.perfil
 
+import br.ufal.medflow.auth.CredenciaisInvalidasException
 import br.ufal.medflow.auth.Usuario
 import br.ufal.medflow.auth.UsuarioRepository
+import br.ufal.medflow.common.ParametroInvalidoException
+import br.ufal.medflow.common.RecursoNaoEncontradoException
 import br.ufal.medflow.ubs.Ubs
 import br.ufal.medflow.ubs.UbsRepository
-import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import org.springframework.web.server.ResponseStatusException
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.util.Locale
@@ -15,7 +16,7 @@ import java.util.Locale
 /**
  * Consulta e atualização do perfil do cidadão autenticado.
  *
- * O ID do cidadão será obtido do JWT pelo controller.
+ * O ID do cidadão é obtido do JWT pelo controller.
  * Nenhuma operação permite escolher o proprietário do perfil.
  */
 @Service
@@ -40,6 +41,9 @@ class PerfilCidadaoService(
     /**
      * Substitui os dados editáveis do perfil.
      *
+     * As validações de tamanho, preenchimento e intervalos
+     * numéricos são realizadas pelo AtualizarPerfilRequest.
+     *
      * A atualização do usuário e do histórico de buscas
      * ocorre na mesma transação.
      */
@@ -50,8 +54,7 @@ class PerfilCidadaoService(
     ): PerfilCidadaoResponse {
         val usuario = buscarUsuario(usuarioId)
 
-        // Valida e normaliza os dados antes de modificar o perfil.
-        val nome = normalizarNome(request.nome)
+        val nome = normalizarEspacos(request.nome)
         val bairro = normalizarBairro(request.bairro)
 
         val localizacao = validarLocalizacao(
@@ -77,7 +80,7 @@ class PerfilCidadaoService(
         usuario.letraMaior = request.letraMaior
         usuario.salvarBuscasRecentes = request.salvarBuscasRecentes
 
-        // Atualiza o histórico somente do cidadão autenticado.
+        // Substitui o histórico apenas do cidadão autenticado.
         // A remoção e a inserção ocorrem na mesma transação.
         buscas.removerPorUsuario(usuarioId)
 
@@ -100,72 +103,47 @@ class PerfilCidadaoService(
         return montarResposta(usuario, termos)
     }
 
+    /**
+     * O usuário deve existir e corresponder ao ID do JWT.
+     */
     private fun buscarUsuario(usuarioId: Long): Usuario =
         usuarios.findById(usuarioId).orElseThrow {
-            ResponseStatusException(
-                HttpStatus.UNAUTHORIZED,
-                "Usuário autenticado não encontrado",
-            )
+            CredenciaisInvalidasException()
         }
 
     /**
-     * Consulta a UBS por ID.
+     * A UBS de referência é opcional.
      *
-     * Uma UBS inexistente retorna 404.
-     * Um ID não positivo retorna 400.
+     * Sua existência é verificada diretamente no banco.
+     * A validação de ID positivo já ocorre no DTO.
      */
     private fun buscarUbsReferencia(ubsId: Long?): Ubs? {
-        if (ubsId == null) return null
-
-        if (ubsId <= 0) {
-            requisicaoInvalida(
-                "O ID da UBS de referência deve ser positivo",
-            )
+        if (ubsId == null) {
+            return null
         }
 
         return unidades.findById(ubsId).orElseThrow {
-            ResponseStatusException(
-                HttpStatus.NOT_FOUND,
-                "UBS $ubsId não encontrada",
-            )
+            RecursoNaoEncontradoException("UBS", ubsId)
         }
     }
 
-    private fun normalizarNome(nome: String): String {
-        val normalizado = normalizarEspacos(nome)
-
-        if (normalizado.isBlank()) {
-            requisicaoInvalida("O nome não pode estar vazio")
-        }
-
-        if (normalizado.length > 120) {
-            requisicaoInvalida(
-                "O nome deve possuir no máximo 120 caracteres",
-            )
-        }
-
-        return normalizado
-    }
-
-    private fun normalizarBairro(bairro: String?): String? {
-        val normalizado = bairro
+    /**
+     * Remove espaços extras do bairro.
+     *
+     * Um valor vazio é armazenado como null.
+     * O limite de caracteres é validado pelo DTO.
+     */
+    private fun normalizarBairro(bairro: String?): String? =
+        bairro
             ?.let(::normalizarEspacos)
             ?.takeIf { it.isNotBlank() }
-
-        if (normalizado != null && normalizado.length > 120) {
-            requisicaoInvalida(
-                "O bairro deve possuir no máximo 120 caracteres",
-            )
-        }
-
-        return normalizado
-    }
 
     /**
      * Latitude e longitude devem ser informadas juntas.
      *
-     * A precisão é limitada a três casas decimais para
-     * representar uma localização aproximada.
+     * A validação dos intervalos é feita pelo DTO.
+     * O serviço verifica a combinação dos campos e
+     * limita a precisão armazenada a duas casas decimais.
      */
     private fun validarLocalizacao(
         latitude: Double?,
@@ -176,20 +154,17 @@ class PerfilCidadaoService(
         }
 
         if (latitude == null || longitude == null) {
-            requisicaoInvalida(
+            throw ParametroInvalidoException(
+                "localizacaoAproximada",
                 "Latitude e longitude devem ser informadas juntas",
             )
         }
 
-        if (!latitude.isFinite() || latitude !in -90.0..90.0) {
-            requisicaoInvalida(
-                "A latitude deve estar entre -90 e 90",
-            )
-        }
-
-        if (!longitude.isFinite() || longitude !in -180.0..180.0) {
-            requisicaoInvalida(
-                "A longitude deve estar entre -180 e 180",
+        // Garante valores finitos antes do arredondamento.
+        if (!latitude.isFinite() || !longitude.isFinite()) {
+            throw ParametroInvalidoException(
+                "localizacaoAproximada",
+                "Latitude e longitude devem ser números finitos",
             )
         }
 
@@ -197,37 +172,39 @@ class PerfilCidadaoService(
             arredondarCoordenada(longitude)
     }
 
+    /**
+     * Duas casas decimais oferecem precisão aproximada
+     * na escala de 1 km, suficiente para sugerir UBS
+     * próximas sem armazenar uma posição muito precisa.
+     */
     private fun arredondarCoordenada(valor: Double): Double =
         BigDecimal.valueOf(valor)
-            .setScale(3, RoundingMode.HALF_UP)
+            .setScale(2, RoundingMode.HALF_UP)
             .toDouble()
 
     /**
-     * Valida o histórico e remove termos duplicados.
+     * Normaliza os termos e remove duplicações.
      *
-     * A primeira ocorrência de cada termo é preservada.
-     * A comparação ignora diferenças entre maiúsculas
-     * e minúsculas.
+     * O limite de 10 elementos é validado pelo DTO.
+     * As regras de cada termo são verificadas aqui,
+     * pois o DTO não possui validações individuais
+     * para os elementos da lista.
      */
     private fun normalizarBuscas(
         termos: List<String>,
     ): List<String> {
-        if (termos.size > 10) {
-            requisicaoInvalida(
-                "O histórico deve conter no máximo 10 buscas",
-            )
-        }
-
         val normalizados = termos.map(::normalizarEspacos)
 
         if (normalizados.any { it.isBlank() }) {
-            requisicaoInvalida(
+            throw ParametroInvalidoException(
+                "buscasRecentes",
                 "O histórico não pode conter buscas vazias",
             )
         }
 
         if (normalizados.any { it.length > 120 }) {
-            requisicaoInvalida(
+            throw ParametroInvalidoException(
+                "buscasRecentes",
                 "Cada busca deve possuir no máximo 120 caracteres",
             )
         }
@@ -241,10 +218,10 @@ class PerfilCidadaoService(
         valor.trim().replace(Regex("\\s+"), " ")
 
     /**
-     * Monta a resposta da API sem expor senha ou hash.
+     * Monta a resposta sem expor senha ou hash.
      *
-     * Durante a atualização, os termos já normalizados
-     * podem ser reutilizados sem consultar o banco novamente.
+     * Durante a atualização, os termos normalizados
+     * são reutilizados sem consultar o banco novamente.
      */
     private fun montarResposta(
         usuario: Usuario,
@@ -280,10 +257,4 @@ class PerfilCidadaoService(
             buscasRecentes = termos,
         )
     }
-
-    private fun requisicaoInvalida(mensagem: String): Nothing =
-        throw ResponseStatusException(
-            HttpStatus.BAD_REQUEST,
-            mensagem,
-        )
 }

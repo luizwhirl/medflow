@@ -75,11 +75,6 @@ class PerfilCidadaoIntegrationTests(
     private fun token(usuario: Usuario): String =
         jwtService.emitir(usuario).token
 
-    /**
-     * Monta o JSON de atualização do perfil.
-     *
-     * Os valores usados aqui são controlados pelos próprios testes.
-     */
     private fun corpoAtualizacao(
         nome: String = "Rita Maria",
         ubsId: Long? = null,
@@ -171,11 +166,12 @@ class PerfilCidadaoIntegrationTests(
 
             jsonPath("$.bairro") { value("Clima Bom") }
 
+            // Duas casas decimais para maior privacidade.
             jsonPath("$.latitudeAproximada") {
-                value(-9.562)
+                value(-9.56)
             }
             jsonPath("$.longitudeAproximada") {
-                value(-35.742)
+                value(-35.74)
             }
 
             jsonPath("$.letraMaior") { value(true) }
@@ -203,8 +199,15 @@ class PerfilCidadaoIntegrationTests(
                 value(requireNotNull(ubs.id).toInt())
             }
             jsonPath("$.bairro") { value("Clima Bom") }
-            jsonPath("$.letraMaior") { value(true) }
 
+            jsonPath("$.latitudeAproximada") {
+                value(-9.56)
+            }
+            jsonPath("$.longitudeAproximada") {
+                value(-35.74)
+            }
+
+            jsonPath("$.letraMaior") { value(true) }
             jsonPath("$.buscasRecentes.length()") { value(2) }
             jsonPath("$.buscasRecentes[0]") {
                 value("Metformina")
@@ -217,6 +220,10 @@ class PerfilCidadaoIntegrationTests(
 
         assertEquals("Rita Maria", usuarioPersistido.nome)
         assertEquals(ubs.id, usuarioPersistido.ubsReferencia?.id)
+
+        // Verifica também os valores persistidos no banco.
+        assertEquals(-9.56, usuarioPersistido.latitudeAproximada)
+        assertEquals(-35.74, usuarioPersistido.longitudeAproximada)
 
         val historico = buscas.listarPorUsuario(
             requireNotNull(cidadao.id),
@@ -240,6 +247,15 @@ class PerfilCidadaoIntegrationTests(
             )
         }.andExpect {
             status { isNotFound() }
+
+            // Confirma o tratamento padronizado do projeto.
+            jsonPath("$.title") {
+                value("Recurso não encontrado")
+            }
+            jsonPath("$.status") { value(404) }
+            jsonPath("$.detail") {
+                value("UBS 999999 não encontrado(a)")
+            }
         }
 
         em.clear()
@@ -282,6 +298,15 @@ class PerfilCidadaoIntegrationTests(
             )
         }.andExpect {
             status { isBadRequest() }
+
+            // Erro de domínio no padrão RFC 9457.
+            jsonPath("$.title") {
+                value("Parâmetro inválido")
+            }
+            jsonPath("$.status") { value(400) }
+            jsonPath("$.detail") {
+                value("Latitude e longitude devem ser informadas juntas")
+            }
         }
 
         em.clear()
@@ -367,7 +392,6 @@ class PerfilCidadaoIntegrationTests(
         val usuarioId = requireNotNull(cidadao.id)
         val authorization = "Bearer ${token(cidadao)}"
 
-        // Primeira atualização: duas buscas recentes.
         mockMvc.put("/api/me") {
             header("Authorization", authorization)
             contentType = MediaType.APPLICATION_JSON
@@ -385,13 +409,9 @@ class PerfilCidadaoIntegrationTests(
             }
         }
 
-        // Os testes compartilham uma transação externa.
-        // Flush e clear simulam contextos de persistência
-        // separados, como ocorre entre requisições reais.
         em.flush()
         em.clear()
 
-        // Segunda atualização: substitui as buscas anteriores.
         mockMvc.put("/api/me") {
             header("Authorization", authorization)
             contentType = MediaType.APPLICATION_JSON
@@ -412,8 +432,6 @@ class PerfilCidadaoIntegrationTests(
             }
         }
 
-        // Confere o estado real do banco, sem entidades
-        // anteriormente carregadas no EntityManager.
         em.flush()
         em.clear()
 
@@ -425,7 +443,6 @@ class PerfilCidadaoIntegrationTests(
             termosPersistidos,
         )
 
-        // GET deve refletir somente o histórico mais recente.
         mockMvc.get("/api/me") {
             header("Authorization", authorization)
         }.andExpect {

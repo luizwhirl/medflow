@@ -1,6 +1,8 @@
 package br.ufal.medflow.perfil
 
+import br.ufal.medflow.auth.CredenciaisInvalidasException
 import br.ufal.medflow.auth.SecurityConfig
+import br.ufal.medflow.common.RecursoNaoEncontradoException
 import org.junit.jupiter.api.Test
 import org.mockito.BDDMockito.given
 import org.mockito.Mockito.verify
@@ -8,7 +10,6 @@ import org.mockito.Mockito.verifyNoInteractions
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
 import org.springframework.context.annotation.Import
-import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.security.oauth2.jwt.JwtDecoder
@@ -16,7 +17,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.put
-import org.springframework.web.server.ResponseStatusException
 
 /**
  * Testes da camada web do perfil do cidadão.
@@ -102,8 +102,8 @@ class PerfilCidadaoControllerTest(
     /**
      * Configura um token reconhecido pelo JwtDecoder simulado.
      *
-     * A conversão da claim papel para ROLE_CIDADAO ou
-     * ROLE_GESTOR continua sendo feita pelo SecurityConfig.
+     * A conversão da claim papel para ROLE_CIDADAO
+     * ou ROLE_GESTOR é feita pelo SecurityConfig.
      */
     private fun autenticar(
         token: String,
@@ -133,15 +133,21 @@ class PerfilCidadaoControllerTest(
 
             jsonPath("$.id") { value(7) }
             jsonPath("$.nome") { value("Dona Rita") }
-            jsonPath("$.email") { value("rita@medflow.local") }
+            jsonPath("$.email") {
+                value("rita@medflow.local")
+            }
 
             jsonPath("$.ubsReferencia") { value(null) }
             jsonPath("$.bairro") { value(null) }
 
             jsonPath("$.letraMaior") { value(false) }
-            jsonPath("$.salvarBuscasRecentes") { value(false) }
+            jsonPath("$.salvarBuscasRecentes") {
+                value(false)
+            }
 
-            jsonPath("$.buscasRecentes.length()") { value(0) }
+            jsonPath("$.buscasRecentes.length()") {
+                value(0)
+            }
         }
 
         verify(perfilService).consultar(usuarioId)
@@ -174,13 +180,21 @@ class PerfilCidadaoControllerTest(
             }
 
             jsonPath("$.bairro") { value("Clima Bom") }
-            jsonPath("$.latitudeAproximada") { value(-9.56) }
-            jsonPath("$.longitudeAproximada") { value(-35.74) }
+            jsonPath("$.latitudeAproximada") {
+                value(-9.56)
+            }
+            jsonPath("$.longitudeAproximada") {
+                value(-35.74)
+            }
 
             jsonPath("$.letraMaior") { value(true) }
-            jsonPath("$.salvarBuscasRecentes") { value(true) }
+            jsonPath("$.salvarBuscasRecentes") {
+                value(true)
+            }
 
-            jsonPath("$.buscasRecentes.length()") { value(2) }
+            jsonPath("$.buscasRecentes.length()") {
+                value(2)
+            }
             jsonPath("$.buscasRecentes[0]") {
                 value("Metformina")
             }
@@ -196,7 +210,7 @@ class PerfilCidadaoControllerTest(
     }
 
     @Test
-    fun `ubs de referencia inexistente retorna 404`() {
+    fun `ubs de referencia inexistente retorna 404 padronizado`() {
         autenticar("token-ubs-inexistente")
 
         val request = requestAtualizacao.copy(
@@ -206,10 +220,7 @@ class PerfilCidadaoControllerTest(
         given(
             perfilService.atualizar(usuarioId, request),
         ).willThrow(
-            ResponseStatusException(
-                HttpStatus.NOT_FOUND,
-                "UBS 999 não encontrada",
-            ),
+            RecursoNaoEncontradoException("UBS", 999L),
         )
 
         mockMvc.put("/api/me") {
@@ -224,6 +235,10 @@ class PerfilCidadaoControllerTest(
             )
         }.andExpect {
             status { isNotFound() }
+            jsonPath("$.title") {
+                value("Recurso não encontrado")
+            }
+            jsonPath("$.status") { value(404) }
         }
 
         verify(perfilService).atualizar(usuarioId, request)
@@ -342,7 +357,7 @@ class PerfilCidadaoControllerTest(
     }
 
     @Test
-    fun `token com identificador nao numerico retorna 401`() {
+    fun `token com identificador nao numerico retorna 401 padronizado`() {
         autenticar(
             token = "token-sub-invalido",
             id = "usuario-invalido",
@@ -355,9 +370,37 @@ class PerfilCidadaoControllerTest(
             )
         }.andExpect {
             status { isUnauthorized() }
+            jsonPath("$.title") {
+                value("Credenciais inválidas")
+            }
         }
 
         verifyNoInteractions(perfilService)
+    }
+
+    @Test
+    fun `usuario nao encontrado retorna 401 padronizado`() {
+        autenticar("token-usuario-inexistente")
+
+        given(
+            perfilService.consultar(usuarioId),
+        ).willThrow(
+            CredenciaisInvalidasException(),
+        )
+
+        mockMvc.get("/api/me") {
+            header(
+                "Authorization",
+                "Bearer token-usuario-inexistente",
+            )
+        }.andExpect {
+            status { isUnauthorized() }
+            jsonPath("$.title") {
+                value("Credenciais inválidas")
+            }
+        }
+
+        verify(perfilService).consultar(usuarioId)
     }
 
     @Test
@@ -385,7 +428,9 @@ class PerfilCidadaoControllerTest(
             status { isOk() }
 
             jsonPath("$.id") { value(42) }
-            jsonPath("$.nome") { value("Outro Cidadão") }
+            jsonPath("$.nome") {
+                value("Outro Cidadão")
+            }
         }
 
         verify(perfilService).consultar(42L)
