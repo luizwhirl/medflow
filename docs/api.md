@@ -347,6 +347,84 @@ Para o gestor sem vínculo e sem `ubsId`, a resposta é `{ "ubs": null, "restrit
 
 Atenção: hoje **gestor sem vínculo vê a rede toda**. Esquecer de preencher o vínculo no cadastro dá acesso total; esse comportamento foi escolhido para o MVP e está para confirmação do produto. Se mudar, a visão da rede passa a ser explícita (coluna ou papel próprio) e o gestor sem vínculo e sem essa permissão recebe `403`.
 
+## Painel da gestão
+
+Rotas do painel, só para o papel `GESTOR`, todas com `GET` e `?ubsId=` opcional. Elas seguem o [escopo do gestor](#escopo-do-gestor): com vínculo, só a UBS dele; sem vínculo, a rede toda ou a UBS pedida.
+
+| Rota | O que mostra |
+| --- | --- |
+| `/api/gestao/indicadores` | KPIs do painel |
+| `/api/gestao/remanejamento` | Sugestões de remanejamento entre UBS da mesma cidade |
+| `/api/gestao/demanda-reprimida` | Pacientes da lista de desejos esperando um item sem estoque, e os medicamentos mais desejados |
+| `/api/gestao/lotes-vencendo` | Lotes com saldo que vencem até `dias` dias (padrão 60), inclusive os já vencidos |
+| `/api/gestao/sincronizacao-atrasada` | UBS que nunca sincronizaram ou sincronizaram há mais de `horas` horas (padrão 24) |
+
+Parâmetros de tamanho: `limite` (remanejamento e demanda, 1 a 100, padrão 20; lotes, 1 a 200, padrão 50), `dias` (1 a 365) e `horas` (1 a 720). Fora disso, `400`.
+
+### Indicadores
+
+```json
+{
+  "ubs": { "id": 1, "nome": "UBS Benedito Bentes I", "cnes": "9000101" },
+  "restrito": true,
+  "ultimaSincronizacao": "2026-11-23T14:00:00Z",
+  "itensEmFalta": 3,
+  "emFaltaComRemessa": 2,
+  "abaixoDoMinimo": 4,
+  "remessasACaminho": 2,
+  "proximaRemessa": "2026-11-25",
+  "pacientesAguardando": 12,
+  "medicamentosAguardados": 5,
+  "lotesVencendo": 2,
+  "ubsComSincronizacaoAtrasada": 0
+}
+```
+
+- **Mínimo** de um medicamento: o `limite_reservado` dele ou, sem ele, `app.estoque.limite-reservado`. `abaixoDoMinimo` conta itens com saldo maior que zero e até o mínimo; `itensEmFalta` conta os de saldo zero.
+- `emFaltaComRemessa`: itens em falta que têm remessa em andamento (sem a etapa `DISPONIVEL`) para a mesma UBS.
+- `pacientesAguardando` e `medicamentosAguardados`: pessoas e medicamentos distintos da lista de desejos em que o item não está disponível na UBS desejada (ou ela ainda não tem posição dele).
+- `ultimaSincronizacao`: a da UBS do escopo; na rede, a mais recente.
+- Sem fonte de dados, ficam de fora: `prazoReposicaoDias` e a contagem de buscas (`buscas`) que o front de demonstração usa. Em "mais procurados" entra o número de pacientes da lista de desejos.
+
+### Remanejamento
+
+Quem tem saldo até o mínimo (e abaixo do dobro dele) recebe de quem tem **mais que o dobro** do mínimo, na mesma cidade, pela UBS de origem mais próxima. A quantidade sugerida é a menor entre o que falta para chegar ao dobro do mínimo e a sobra da origem. Em falta primeiro; depois, as maiores quantidades.
+
+```json
+[
+  {
+    "medicamento": { "id": 1, "nome": "Metformina 850 mg" },
+    "destino": { "id": 1, "nome": "UBS Benedito Bentes I" },
+    "quantidadeDestino": 0,
+    "minimo": 50,
+    "origem": { "id": 3, "nome": "UBS Clima Bom" },
+    "quantidadeOrigem": 220,
+    "distanciaKm": 2.4,
+    "quantidadeSugerida": 100
+  }
+]
+```
+
+### Demanda reprimida
+
+```json
+{
+  "itens": [
+    { "ubs": { "id": 1, "nome": "UBS Benedito Bentes I" }, "medicamento": { "id": 1, "nome": "Metformina 850 mg" },
+      "pacientesAguardando": 2, "status": "EM_FALTA", "quantidade": 0 }
+  ],
+  "maisProcurados": [
+    { "medicamento": { "id": 1, "nome": "Metformina 850 mg" }, "pacientes": 2 }
+  ]
+}
+```
+
+`status` e `quantidade` são `null` quando a UBS ainda não tem posição do medicamento. `maisProcurados` conta a lista de desejos em qualquer situação do estoque.
+
+### Lotes vencendo e sincronização atrasada
+
+Cada lote traz `numeroLote`, `validade`, `quantidade`, `diasParaVencer` (negativo se já venceu), o medicamento e a UBS. O "hoje" é o de Maceió. Cada UBS atrasada traz `ultimaSincronizacao` (`null` se nunca sincronizou, e essas vêm primeiro) e `atrasoHoras`.
+
 ## Exemplos
 
 `GET /api/medicamentos/1/disponibilidade`
