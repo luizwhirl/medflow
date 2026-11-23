@@ -200,7 +200,6 @@ class SincronizacaoEstoqueService(
             val quantidade = lista.sumOf { it.posicao.quantidadeInteira().toLong() }.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
             val medicamento = medicamentoPorCatmat.porChave.getValue(chave.second)
 
-            // Preserva o limite de reserva por medicamento da develop.
             val status = regraStatus.calcular(quantidade, limiteDoMedicamento = medicamento.limiteReservado)
 
             val atualizadoEm = lista.maxOf { it.posicao.dataPosicao }.comoInstante()
