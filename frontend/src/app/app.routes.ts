@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 
+import { marcarAvisosComoLidos } from './core/guards/avisos.guard';
 import { Shell } from './layout/shell';
 
 const emBreve = () => import('./features/em-breve/em-breve.page').then((m) => m.EmBrevePage);
@@ -72,6 +73,8 @@ export const routes: Routes = [
         path: 'avisos',
         title: 'Avisos · UBS Conecta',
         data: { titulo: 'Avisos' },
+        // Abrir os avisos os marca como lidos (a API só marca todos de uma vez).
+        canActivate: [marcarAvisosComoLidos],
         loadComponent: () => import('./features/em-breve/em-breve.page').then((m) => m.EmBrevePage),
       },
       {
