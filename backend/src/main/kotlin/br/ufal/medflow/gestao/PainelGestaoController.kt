@@ -32,6 +32,19 @@ class PainelGestaoController(private val painel: PainelGestaoService) {
     ): IndicadoresResponse = painel.indicadores(usuarioId(jwt), ubsId)
 
     @Operation(
+        summary = "Itens que pedem atenção",
+        description = "Itens sem saldo ou com saldo até o mínimo, com pacientes aguardando e a remessa prevista. " +
+            "Em falta primeiro, depois abaixo do mínimo e, por fim, os com pedido enviado.",
+    )
+    @GetMapping("/itens-atencao")
+    fun itensAtencao(
+        @AuthenticationPrincipal jwt: Jwt,
+        @Parameter(description = UBS_ID) @RequestParam(required = false) @Positive ubsId: Long?,
+        @Parameter(description = "Quantos itens trazer (1 a 200). Sem ele, 50.")
+        @RequestParam(defaultValue = "50") @Min(1) @Max(200) limite: Int,
+    ): List<ItemAtencaoResponse> = painel.itensAtencao(usuarioId(jwt), ubsId, limite)
+
+    @Operation(
         summary = "Sugestões de remanejamento",
         description = "Quem tem saldo até o mínimo recebe de quem tem mais que o dobro do mínimo, na mesma cidade, " +
             "pela UBS mais próxima. Em falta primeiro.",

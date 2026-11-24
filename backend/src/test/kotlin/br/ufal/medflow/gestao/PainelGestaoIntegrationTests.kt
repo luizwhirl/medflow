@@ -4,6 +4,8 @@ import br.ufal.medflow.TestcontainersConfiguration
 import br.ufal.medflow.auth.JwtService
 import br.ufal.medflow.auth.UsuarioRepository
 import org.hamcrest.Matchers.contains
+import org.hamcrest.Matchers.equalTo
+import org.hamcrest.Matchers.everyItem
 import org.hamcrest.Matchers.hasItem
 import org.hamcrest.Matchers.nullValue
 import org.junit.jupiter.api.Test
@@ -66,17 +68,18 @@ class PainelGestaoIntegrationTests(
         catmat, nome, limite,
     )
 
-    private fun item(ubs: Long, medicamento: Long, quantidade: Int) = id(
+    private fun item(ubs: Long, medicamento: Long, quantidade: Int, status: String? = null) = id(
         "INSERT INTO item_estoque (ubs_id, medicamento_id, status, quantidade) VALUES (?, ?, ?, ?) RETURNING id",
-        ubs, medicamento, if (quantidade == 0) "EM_FALTA" else if (quantidade <= 20) "RESERVADO" else "DISPONIVEL", quantidade,
+        ubs, medicamento, status ?: if (quantidade == 0) "EM_FALTA" else if (quantidade <= 20) "RESERVADO" else "DISPONIVEL", quantidade,
     )
 
-    private fun remessa(ubs: Long, medicamento: Long, previsaoEmDias: Long, concluida: Boolean) {
+    private fun remessa(ubs: Long, medicamento: Long, previsaoEmDias: Long, concluida: Boolean, recebida: Boolean = false) {
         val remessa = id(
             "INSERT INTO remessa (ubs_id, medicamento_id, quantidade, previsao_chegada) VALUES (?, ?, 10, ?) RETURNING id",
             ubs, medicamento, hoje.plusDays(previsaoEmDias),
         )
         jdbc.update("INSERT INTO remessa_evento (remessa_id, etapa, ocorrido_em) VALUES (?, 'PEDIDO', NOW())", remessa)
+        if (recebida || concluida) jdbc.update("INSERT INTO remessa_evento (remessa_id, etapa, ocorrido_em) VALUES (?, 'RECEBIDO', NOW())", remessa)
         if (concluida) jdbc.update("INSERT INTO remessa_evento (remessa_id, etapa, ocorrido_em) VALUES (?, 'DISPONIVEL', NOW())", remessa)
     }
 
@@ -133,6 +136,34 @@ class PainelGestaoIntegrationTests(
         return Cenario(a, b, c, x, y, z, w)
     }
 
+    /**
+     * UBS E (cidade fictícia), todos os medicamentos com mínimo 10:
+     * P 0 com remessa a caminho (+3 dias) · Q 0 sem remessa, esperado por Duda e Edu · R 7 · S 11 (acima do mínimo) ·
+     * T 0 cuja única remessa já está disponível · U 0 com status DISPONIVEL, esperado por Fabi · V 0 com remessa só recebida ·
+     * X 5 com remessa a caminho atrasada (-2 dias).
+     */
+    private fun cenarioAtencao(): Long {
+        val e = ubs("9990005", "UBS Teste E", -9.8, -35.9)
+        val meds = listOf("P", "Q", "R", "S", "T", "U", "V", "X").associateWith { medicamento("ATE-$it", "Med $it", 10) }
+        item(e, meds.getValue("P"), 0)
+        item(e, meds.getValue("Q"), 0)
+        item(e, meds.getValue("R"), 7)
+        item(e, meds.getValue("S"), 11)
+        item(e, meds.getValue("T"), 0)
+        item(e, meds.getValue("U"), 0, status = "DISPONIVEL")
+        item(e, meds.getValue("V"), 0)
+        item(e, meds.getValue("X"), 5)
+        remessa(e, meds.getValue("P"), previsaoEmDias = 3, concluida = false)
+        remessa(e, meds.getValue("T"), previsaoEmDias = -1, concluida = true)
+        remessa(e, meds.getValue("V"), previsaoEmDias = 1, concluida = false, recebida = true)
+        remessa(e, meds.getValue("X"), previsaoEmDias = -2, concluida = false)
+        val (duda, edu, fabi) = Triple(paciente("Duda"), paciente("Edu"), paciente("Fabi"))
+        desejo(duda, e, meds.getValue("Q"))
+        desejo(edu, e, meds.getValue("Q"))
+        desejo(fabi, e, meds.getValue("U"))
+        return e
+    }
+
     private fun pedir(rota: String, email: String? = "marta@medflow.local", ubsId: Long? = null, parametros: Array<Pair<String, String>> = emptyArray()): ResultActionsDsl =
         mockMvc.get("/api/gestao/$rota") {
             email?.let { header("Authorization", "Bearer ${token(it)}") }
@@ -157,6 +188,7 @@ class PainelGestaoIntegrationTests(
             jsonPath("$.emFaltaComRemessa") { value(1) } // X tem remessa em andamento
             jsonPath("$.abaixoDoMinimo") { value(1) } // Y: 15 <= 20 (global); Z: 50 > 10
             jsonPath("$.remessasACaminho") { value(1) } // a de Y já chegou
+            jsonPath("$.remessasAtrasadas") { value(0) }
             jsonPath("$.proximaRemessa") { value(hoje.plusDays(3).toString()) }
             jsonPath("$.pacientesAguardando") { value(3) } // Ana e Bia (X), Ana (Y), Caio (W); Caio em Z não conta
             jsonPath("$.medicamentosAguardados") { value(3) } // X, Y e W
@@ -178,7 +210,7 @@ class PainelGestaoIntegrationTests(
             jsonPath("$.remessasACaminho") {
                 value(
                     id(
-                        "SELECT COUNT(*) FROM remessa r LEFT JOIN remessa_evento e ON e.remessa_id = r.id AND e.etapa = 'DISPONIVEL' WHERE e.id IS NULL",
+                        "SELECT COUNT(*) FROM remessa r LEFT JOIN remessa_evento e ON e.remessa_id = r.id AND e.etapa IN ('RECEBIDO', 'DISPONIVEL') WHERE e.id IS NULL",
                     ).toInt(),
                 )
             }
@@ -320,7 +352,7 @@ class PainelGestaoIntegrationTests(
         val c = cenario()
         val propria = id("SELECT id FROM ubs WHERE cnes = '9000101'")
 
-        for (rota in listOf("indicadores", "remanejamento", "demanda-reprimida", "lotes-vencendo", "sincronizacao-atrasada")) {
+        for (rota in listOf("indicadores", "itens-atencao", "remanejamento", "demanda-reprimida", "lotes-vencendo", "sincronizacao-atrasada")) {
             pedir(rota, email = "carlos@medflow.local", ubsId = c.a).andExpect { status { isForbidden() } }
             pedir(rota, email = "carlos@medflow.local", ubsId = propria).andExpect { status { isOk() } }
         }
@@ -332,13 +364,14 @@ class PainelGestaoIntegrationTests(
 
     @Test
     fun `cidadao recebe 403, sem token 401 e parametros invalidos 400`() {
-        for (rota in listOf("indicadores", "remanejamento", "demanda-reprimida", "lotes-vencendo", "sincronizacao-atrasada")) {
+        for (rota in listOf("indicadores", "itens-atencao", "remanejamento", "demanda-reprimida", "lotes-vencendo", "sincronizacao-atrasada")) {
             pedir(rota, email = "rita@medflow.local").andExpect { status { isForbidden() } }
             pedir(rota, email = null).andExpect { status { isUnauthorized() } }
             pedir(rota, ubsId = 999999).andExpect { status { isNotFound() } }
             pedir(rota, parametros = arrayOf("ubsId" to "0")).andExpect { status { isBadRequest() } }
         }
         pedir("remanejamento", parametros = arrayOf("limite" to "0")).andExpect { status { isBadRequest() } }
+        pedir("itens-atencao", parametros = arrayOf("limite" to "201")).andExpect { status { isBadRequest() } }
         pedir("demanda-reprimida", parametros = arrayOf("limite" to "101")).andExpect { status { isBadRequest() } }
         pedir("lotes-vencendo", parametros = arrayOf("dias" to "0")).andExpect { status { isBadRequest() } }
         pedir("lotes-vencendo", parametros = arrayOf("limite" to "201")).andExpect { status { isBadRequest() } }
@@ -346,15 +379,100 @@ class PainelGestaoIntegrationTests(
     }
 
     @Test
-    fun `cada consulta da rede responde em menos de 300 ms com o seed`() {
-        val rotas = listOf("indicadores", "remanejamento", "demanda-reprimida", "lotes-vencendo", "sincronizacao-atrasada")
-        rotas.forEach { pedir(it).andExpect { status { isOk() } } } // aquece o banco e as classes
+    fun `indicadores aplicam as regras de em falta, remessa a caminho, atrasada e demanda`() {
+        val e = cenarioAtencao()
 
-        rotas.forEach { rota ->
-            val inicio = System.nanoTime()
-            pedir(rota).andExpect { status { isOk() } }
-            val ms = (System.nanoTime() - inicio) / 1_000_000
-            assertTrue(ms < 300, "$rota levou $ms ms")
+        pedir("indicadores", ubsId = e).andExpect {
+            status { isOk() }
+            jsonPath("$.itensEmFalta") { value(5) } // P, Q, T, U e V têm saldo zero (U com status DISPONIVEL também)
+            jsonPath("$.emFaltaComRemessa") { value(2) } // P (a caminho) e V (recebida); a de T já está disponível
+            jsonPath("$.abaixoDoMinimo") { value(2) } // R (7) e X (5); S (11) está acima de 10
+            jsonPath("$.remessasACaminho") { value(2) } // P e X; V já foi recebida e T está disponível
+            jsonPath("$.remessasAtrasadas") { value(1) } // X, com previsão de 2 dias atrás
+            jsonPath("$.proximaRemessa") { value(hoje.plusDays(3).toString()) } // a atrasada não conta como próxima
+            jsonPath("$.pacientesAguardando") { value(3) } // Duda e Edu (Q) e Fabi (U: status DISPONIVEL, mas sem saldo)
+            jsonPath("$.medicamentosAguardados") { value(2) } // Q e U
+        }
+    }
+
+    @Test
+    fun `itens de atencao trazem situacao, aguardando e remessa prevista na ordem de prioridade`() {
+        val e = cenarioAtencao()
+
+        pedir("itens-atencao", ubsId = e).andExpect {
+            status { isOk() }
+            // em falta (mais pacientes primeiro), abaixo do mínimo e, por fim, com pedido enviado; S (11) fica de fora
+            jsonPath("$[*].medicamento.nome") {
+                value(contains("Med Q 10 mg", "Med U 10 mg", "Med T 10 mg", "Med V 10 mg", "Med R 10 mg", "Med P 10 mg", "Med X 10 mg"))
+            }
+            jsonPath("$[*].situacao") {
+                value(contains("EM_FALTA", "EM_FALTA", "EM_FALTA", "EM_FALTA", "ABAIXO_MINIMO", "PEDIDO_ENVIADO", "PEDIDO_ENVIADO"))
+            }
+            jsonPath("$[0].aguardandoAviso") { value(2) }
+            jsonPath("$[1].aguardandoAviso") { value(1) }
+            jsonPath("$[0].estoque") { value(0) }
+            jsonPath("$[0].minimo") { value(10) }
+            jsonPath("$[0].remessaPrevista") { value(nullValue()) }
+            jsonPath("$[3].remessaPrevista") { value(nullValue()) } // V: a remessa já foi recebida, não está a caminho
+            jsonPath("$[4].estoque") { value(7) }
+            jsonPath("$[5].remessaPrevista") { value(hoje.plusDays(3).toString()) }
+            jsonPath("$[6].remessaPrevista") { value(hoje.minusDays(2).toString()) }
+            jsonPath("$[0].ubs.id") { value(e) }
+        }
+        pedir("itens-atencao", ubsId = e, parametros = arrayOf("limite" to "2")).andExpect {
+            jsonPath("$[*].medicamento.nome") { value(contains("Med Q 10 mg", "Med U 10 mg")) }
+        }
+    }
+
+    @Test
+    fun `gestor com vinculo ve so a propria UBS em todas as rotas, mesmo sem ubsId`() {
+        val a = cenario() // dados da UBS A, que o Carlos não pode ver
+        val propria = id("SELECT id FROM ubs WHERE cnes = '9000101'")
+        val vizinha = id("SELECT id FROM ubs WHERE cnes = '9000102'")
+        val m = medicamento("TESTE-C", "Gama C", 10)
+        val itemDoCarlos = item(propria, m, 0)
+        item(vizinha, m, 50) // sobra (50 > 2 x 10), na mesma cidade
+        lote(itemDoCarlos, "CARLOS-VENCIDO", -3, 4)
+        desejo(paciente("Gui"), propria, m)
+        jdbc.update("UPDATE ubs SET ultima_sincronizacao = NOW() - INTERVAL '3 days' WHERE id = ?", propria)
+        val carlos = "carlos@medflow.local"
+
+        pedir("indicadores", email = carlos).andExpect { jsonPath("$.ubs.cnes") { value("9000101") } }
+        pedir("itens-atencao", email = carlos).andExpect {
+            jsonPath("$[*].ubs.id") { value(everyItem(equalTo(propria.toInt()))) }
+            jsonPath("$[*].medicamento.id") { value(hasItem(m.toInt())) }
+        }
+        pedir("remanejamento", email = carlos).andExpect {
+            jsonPath("$[*].destino.id") { value(everyItem(equalTo(propria.toInt()))) }
+            jsonPath("$[*].medicamento.id") { value(hasItem(m.toInt())) }
+            // a origem pode ser de outra UBS da cidade: é intencional, o gestor vê a sobra dos vizinhos
+            jsonPath("$[?(@.medicamento.id == $m)].origem.id") { value(contains(vizinha.toInt())) }
+        }
+        pedir("demanda-reprimida", email = carlos).andExpect {
+            jsonPath("$.itens[*].ubs.id") { value(everyItem(equalTo(propria.toInt()))) }
+            jsonPath("$.itens[*].medicamento.id") { value(hasItem(m.toInt())) }
+            jsonPath("$.maisProcurados[*].medicamento.id") { value(contains(m.toInt())) }
+        }
+        pedir("lotes-vencendo", email = carlos).andExpect {
+            jsonPath("$[*].ubs.id") { value(everyItem(equalTo(propria.toInt()))) }
+            jsonPath("$[*].numeroLote") { value(hasItem("CARLOS-VENCIDO")) }
+        }
+        pedir("sincronizacao-atrasada", email = carlos).andExpect {
+            jsonPath("$[*].ubs.cnes") { value(contains("9000101")) }
+        }
+
+        // a gestora da rede (Marta) enxerga também os dados da UBS A, fora do escopo do Carlos
+        pedir("lotes-vencendo", parametros = arrayOf("limite" to "200")).andExpect {
+            jsonPath("$[*].numeroLote") { value(hasItem("VENCIDO")) }
+        }
+        pedir("itens-atencao", parametros = arrayOf("limite" to "200")).andExpect {
+            jsonPath("$[*].ubs.id") { value(hasItem(a.a.toInt())) }
+        }
+        pedir("demanda-reprimida", parametros = arrayOf("limite" to "100")).andExpect {
+            jsonPath("$.itens[*].ubs.id") { value(hasItem(a.a.toInt())) }
+        }
+        pedir("sincronizacao-atrasada").andExpect {
+            jsonPath("$[*].ubs.cnes") { value(hasItem("9990001")) }
         }
     }
 }

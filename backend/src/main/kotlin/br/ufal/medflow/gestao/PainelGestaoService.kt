@@ -29,7 +29,7 @@ class PainelGestaoService(
         val escopo = escopoService.descrever(usuarioId, ubsIdPedida)
         val ubsId = escopo.ubs?.id
         val itens = repositorio.contarItens(ubsId, estoque.limiteReservado)
-        val remessas = repositorio.contarRemessas(ubsId)
+        val remessas = repositorio.contarRemessas(ubsId, hoje())
         val demanda = repositorio.contarDemanda(ubsId)
         return IndicadoresResponse(
             ubs = escopo.ubs,
@@ -39,12 +39,18 @@ class PainelGestaoService(
             emFaltaComRemessa = itens.emFaltaComRemessa,
             abaixoDoMinimo = itens.abaixoDoMinimo,
             remessasACaminho = remessas.aCaminho,
+            remessasAtrasadas = remessas.atrasadas,
             proximaRemessa = remessas.proxima,
             pacientesAguardando = demanda.pacientes,
             medicamentosAguardados = demanda.medicamentos,
             lotesVencendo = repositorio.contarLotesVencendo(ubsId, hoje().plusDays(DIAS_VENCIMENTO_PADRAO.toLong())),
             ubsComSincronizacaoAtrasada = repositorio.contarSincronizacaoAtrasada(ubsId, limiteDeAtraso(HORAS_ATRASO_PADRAO)),
         )
+    }
+
+    fun itensAtencao(usuarioId: Long, ubsIdPedida: Long?, limite: Int): List<ItemAtencaoResponse> {
+        val ubsId = escopoService.resolver(usuarioId, ubsIdPedida).ubsId
+        return repositorio.itensAtencao(ubsId, estoque.limiteReservado, limite)
     }
 
     fun remanejamento(usuarioId: Long, ubsIdPedida: Long?, limite: Int): List<RemanejamentoResponse> {

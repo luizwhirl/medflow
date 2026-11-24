@@ -20,6 +20,7 @@ data class IndicadoresResponse(
     val emFaltaComRemessa: Int,
     val abaixoDoMinimo: Int,
     val remessasACaminho: Int,
+    val remessasAtrasadas: Int,
     val proximaRemessa: LocalDate?,
     val pacientesAguardando: Int,
     val medicamentosAguardados: Int,
@@ -30,7 +31,7 @@ data class IndicadoresResponse(
 /** Contagens de itens de estoque no escopo. */
 data class ContagemItens(val emFalta: Int, val emFaltaComRemessa: Int, val abaixoDoMinimo: Int)
 
-data class ContagemRemessas(val aCaminho: Int, val proxima: LocalDate?)
+data class ContagemRemessas(val aCaminho: Int, val atrasadas: Int, val proxima: LocalDate?)
 
 data class ContagemDemanda(val pacientes: Int, val medicamentos: Int)
 
@@ -72,6 +73,19 @@ data class LoteVencendoResponse(
     val diasParaVencer: Long,
     val medicamento: MedicamentoResumoResponse,
     val ubs: UbsResumoResponse,
+)
+
+/** Item que pede atenção: sem saldo ou com saldo até o mínimo. `situacao`: EM_FALTA, ABAIXO_MINIMO ou PEDIDO_ENVIADO. */
+data class ItemAtencaoResponse(
+    val ubs: UbsResumoResponse,
+    val medicamento: MedicamentoResumoResponse,
+    val estoque: Int,
+    val minimo: Int,
+    /** Pacientes da lista de desejos que esperam o item nessa UBS. */
+    val aguardandoAviso: Int,
+    val situacao: String,
+    /** Previsão da remessa a caminho, se houver (pode já ter passado: remessa atrasada). */
+    val remessaPrevista: LocalDate?,
 )
 
 data class SincronizacaoAtrasadaResponse(

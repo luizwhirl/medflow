@@ -29,8 +29,8 @@ class PainelGestaoRepository(jdbcTemplate: JdbcTemplate) {
     fun contarItens(ubsId: Long?, limiteGlobal: Int): ContagemItens = jdbc.queryForObject(
         """
         SELECT
-            COUNT(*) FILTER (WHERE i.status = 'EM_FALTA') AS em_falta,
-            COUNT(*) FILTER (WHERE i.status = 'EM_FALTA' AND EXISTS (
+            COUNT(*) FILTER (WHERE i.quantidade <= 0) AS em_falta,
+            COUNT(*) FILTER (WHERE i.quantidade <= 0 AND EXISTS (
                 SELECT 1 FROM remessa r
                 WHERE r.ubs_id = i.ubs_id AND r.medicamento_id = i.medicamento_id AND $REMESSA_EM_ANDAMENTO
             )) AS em_falta_com_remessa,
@@ -42,10 +42,20 @@ class PainelGestaoRepository(jdbcTemplate: JdbcTemplate) {
         params(ubsId).addValue("limiteGlobal", limiteGlobal),
     ) { rs, _ -> ContagemItens(rs.getInt("em_falta"), rs.getInt("em_falta_com_remessa"), rs.getInt("abaixo_do_minimo")) }!!
 
-    fun contarRemessas(ubsId: Long?): ContagemRemessas = jdbc.queryForObject(
-        "SELECT COUNT(*) AS total, MIN(r.previsao_chegada) AS proxima FROM remessa r WHERE $REMESSA_EM_ANDAMENTO AND ${escopo("r.ubs_id", ubsId)}",
-        params(ubsId),
-    ) { rs, _ -> ContagemRemessas(rs.getInt("total"), rs.data("proxima")) }!!
+    /**
+     * "A caminho" é a remessa que ainda não foi recebida (sem as etapas RECEBIDO e DISPONIVEL). A "próxima" é a de
+     * menor previsão que ainda não passou; as que já passaram da previsão contam à parte, como atrasadas.
+     */
+    fun contarRemessas(ubsId: Long?, hoje: LocalDate): ContagemRemessas = jdbc.queryForObject(
+        """
+        SELECT COUNT(*) AS total,
+               COUNT(*) FILTER (WHERE r.previsao_chegada < :hoje) AS atrasadas,
+               MIN(r.previsao_chegada) FILTER (WHERE r.previsao_chegada >= :hoje) AS proxima
+        FROM remessa r
+        WHERE $REMESSA_A_CAMINHO AND ${escopo("r.ubs_id", ubsId)}
+        """,
+        params(ubsId).addValue("hoje", hoje),
+    ) { rs, _ -> ContagemRemessas(rs.getInt("total"), rs.getInt("atrasadas"), rs.data("proxima")) }!!
 
     /** Pacientes (e medicamentos) da lista de desejos cujo item não está disponível na UBS desejada. */
     fun contarDemanda(ubsId: Long?): ContagemDemanda = jdbc.queryForObject(
@@ -53,7 +63,7 @@ class PainelGestaoRepository(jdbcTemplate: JdbcTemplate) {
         SELECT COUNT(DISTINCT w.usuario_id) AS pacientes, COUNT(DISTINCT w.medicamento_id) AS medicamentos
         FROM item_lista_desejo w
         LEFT JOIN item_estoque i ON i.ubs_id = w.ubs_id AND i.medicamento_id = w.medicamento_id
-        WHERE (i.id IS NULL OR i.status <> 'DISPONIVEL') AND ${escopo("w.ubs_id", ubsId)}
+        WHERE $NAO_DISPONIVEL AND ${escopo("w.ubs_id", ubsId)}
         """,
         params(ubsId),
     ) { rs, _ -> ContagemDemanda(rs.getInt("pacientes"), rs.getInt("medicamentos")) }!!
@@ -136,7 +146,7 @@ class PainelGestaoRepository(jdbcTemplate: JdbcTemplate) {
         JOIN ubs u ON u.id = w.ubs_id
         JOIN medicamento m ON m.id = w.medicamento_id
         LEFT JOIN item_estoque i ON i.ubs_id = w.ubs_id AND i.medicamento_id = w.medicamento_id
-        WHERE (i.id IS NULL OR i.status <> 'DISPONIVEL') AND ${escopo("w.ubs_id", ubsId)}
+        WHERE $NAO_DISPONIVEL AND ${escopo("w.ubs_id", ubsId)}
         GROUP BY w.ubs_id, u.nome, w.medicamento_id, m.nome, m.concentracao
         ORDER BY pacientes DESC, m.nome, u.nome
         LIMIT :limite
@@ -210,10 +220,57 @@ class PainelGestaoRepository(jdbcTemplate: JdbcTemplate) {
         )
     }
 
+    /**
+     * Itens com saldo até o mínimo (em falta ou abaixo dele). A situação é PEDIDO_ENVIADO quando há remessa a caminho,
+     * senão EM_FALTA (saldo zero) ou ABAIXO_MINIMO. Em falta primeiro, depois abaixo do mínimo e, por fim, os com
+     * pedido enviado; em cada grupo, os com mais pacientes aguardando.
+     */
+    fun itensAtencao(ubsId: Long?, limiteGlobal: Int, limite: Int): List<ItemAtencaoResponse> = jdbc.query(
+        """
+        SELECT * FROM (
+        SELECT i.ubs_id, u.nome AS ubs_nome, i.medicamento_id, m.nome AS medicamento_nome, m.concentracao,
+               i.quantidade, COALESCE(m.limite_reservado, :limiteGlobal) AS minimo,
+               (SELECT COUNT(DISTINCT w.usuario_id) FROM item_lista_desejo w
+                WHERE w.ubs_id = i.ubs_id AND w.medicamento_id = i.medicamento_id) AS aguardando,
+               (SELECT MIN(r.previsao_chegada) FROM remessa r
+                WHERE r.ubs_id = i.ubs_id AND r.medicamento_id = i.medicamento_id AND $REMESSA_A_CAMINHO) AS remessa_prevista
+        FROM item_estoque i
+        JOIN ubs u ON u.id = i.ubs_id
+        JOIN medicamento m ON m.id = i.medicamento_id
+        WHERE i.quantidade <= COALESCE(m.limite_reservado, :limiteGlobal) AND ${escopo("i.ubs_id", ubsId)}
+        ) atencao
+        ORDER BY CASE WHEN remessa_prevista IS NOT NULL THEN 2 WHEN quantidade <= 0 THEN 0 ELSE 1 END,
+                 aguardando DESC, quantidade, medicamento_nome, ubs_nome
+        LIMIT :limite
+        """,
+        params(ubsId).addValue("limiteGlobal", limiteGlobal).addValue("limite", limite),
+    ) { rs, _ ->
+        val previsao = rs.data("remessa_prevista")
+        val quantidade = rs.getInt("quantidade")
+        ItemAtencaoResponse(
+            ubs = UbsResumoResponse(rs.getLong("ubs_id"), rs.getString("ubs_nome")),
+            medicamento = MedicamentoResumoResponse(rs.getLong("medicamento_id"), nomeComConcentracao(rs)),
+            estoque = quantidade,
+            minimo = rs.getInt("minimo"),
+            aguardandoAviso = rs.getInt("aguardando"),
+            situacao = when {
+                previsao != null -> "PEDIDO_ENVIADO"
+                quantidade <= 0 -> "EM_FALTA"
+                else -> "ABAIXO_MINIMO"
+            },
+            remessaPrevista = previsao,
+        )
+    }
+
     private fun nomeComConcentracao(rs: ResultSet) = "${rs.getString("medicamento_nome")} ${rs.getString("concentracao")}"
 
     private companion object {
         const val REMESSA_EM_ANDAMENTO =
             "NOT EXISTS (SELECT 1 FROM remessa_evento e WHERE e.remessa_id = r.id AND e.etapa = 'DISPONIVEL')"
+        const val REMESSA_A_CAMINHO =
+            "NOT EXISTS (SELECT 1 FROM remessa_evento e WHERE e.remessa_id = r.id AND e.etapa IN ('RECEBIDO', 'DISPONIVEL'))"
+
+        /** Mesma regra da disponibilidade de medicamentos: sem posição, sem status DISPONIVEL ou sem saldo. */
+        const val NAO_DISPONIVEL = "(i.id IS NULL OR i.status <> 'DISPONIVEL' OR i.quantidade <= 0)"
     }
 }
