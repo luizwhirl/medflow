@@ -8,6 +8,7 @@ Base: `http://localhost:8080/api`. A documentação interativa fica em `/swagger
 | GET | `/ubs/{id}` | Detalhe de uma unidade, com o horário de funcionamento |
 | GET | `/ubs/{id}/estoque` | Itens do estoque da UBS, paginados, com filtro opcional por status |
 | GET | `/ubs/{id}/estoque/resumo` | Resumo do estoque da UBS, com contagens por status e filtro opcional |
+| PUT | `/gestao/ubs/{id}/horarios` | Cadastra o horário de funcionamento da UBS (só `GESTOR`; veja abaixo) |
 | GET | `/medicamentos?busca=` | Medicamentos paginados, por nome; `busca` filtra por nome ou categoria |
 | GET | `/medicamentos?categoria=` | Filtra medicamentos por categoria; pode ser combinado com `busca` |
 | GET | `/medicamentos/categorias` | Lista as categorias distintas dos medicamentos cadastrados |
@@ -266,7 +267,7 @@ Regras:
 Limitações conhecidas:
 
 - O cálculo usa o fuso de Maceió (`America/Maceio`) para todas as unidades. Para UBS de estados com outro fuso (Acre, Amazonas, Mato Grosso, entre outros), `abertaAgora` fica deslocado. Quando o app atender outros estados, o fuso deve passar a vir da UF da unidade.
-- Por enquanto só o seed do perfil `dev` preenche `horario_funcionamento`; as unidades sincronizadas da BNAFAR chegam sem turnos e ficam com `abertaAgora: null`.
+- Enquanto o vínculo do gestor com a UBS (PDS-48) não entra, qualquer conta `GESTOR` pode cadastrar o horário de qualquer UBS. Quando ele entrar, este endpoint deve passar a respeitar o escopo do gestor.
 
 ```json
 {
@@ -281,6 +282,29 @@ Limitações conhecidas:
 ```
 
 O campo `horario` (texto livre) continua na resposta como descrição. Os turnos ficam na tabela `horario_funcionamento` (migration `V9`); no perfil `dev`, o seed `V1005` preenche os turnos das unidades de exemplo de acordo com esse texto.
+
+### De onde vêm os horários em produção
+
+A BNAFAR, que cria as unidades na sincronização, não informa horário, e o CNES só traz turnos genéricos ("manhã e tarde", "24 horas"), sem a hora de abrir e de fechar. Por isso, em produção, o horário de cada UBS é cadastrado pela gestão:
+
+`PUT /api/gestao/ubs/{id}/horarios` (exige token com o papel `GESTOR`)
+
+```json
+{
+  "turnos": [
+    { "diaSemana": "SEGUNDA", "abre": "07:00", "fecha": "17:00" },
+    { "diaSemana": "SEXTA", "abre": "19:00", "fecha": "07:00" },
+    { "diaSemana": "DOMINGO", "abre": "00:00", "fecha": "00:00" }
+  ]
+}
+```
+
+- Os turnos enviados **substituem** todos os anteriores da UBS. Lista vazia apaga o horário, e a unidade volta a ter `abertaAgora: null`.
+- Horas em `HH:mm`. `fecha` antes de `abre` vira a noite; `fecha` igual a `abre` é um turno de 24 h. Até 28 turnos (quatro por dia).
+- A resposta traz `ubsId`, `horarios`, `abertaAgora`, `fechaAs` e `fechaEm` já recalculados, nos mesmos formatos de `GET /api/ubs/{id}`.
+- Erros em `application/problem+json`: `401` sem token, `403` para quem não é `GESTOR`, `404` para UBS inexistente e `400` para hora inválida, dia ausente, lista ausente ou dois turnos no mesmo dia começando na mesma hora.
+
+Unidade que a gestão ainda não cadastrou continua com `horarios: []` e `abertaAgora: null`, e fica de fora do filtro `abertas=true`.
 
 ## Resumo do estoque da UBS
 

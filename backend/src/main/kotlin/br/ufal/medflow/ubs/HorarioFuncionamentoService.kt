@@ -26,6 +26,9 @@ data class FuncionamentoUbs(
     val fechaEm: OffsetDateTime? = null,
 )
 
+/** Turno já validado, pronto para gravar. */
+data class Turno(val diaSemana: DiaSemana, val abre: LocalTime, val fecha: LocalTime)
+
 @Service
 @Transactional(readOnly = true)
 class HorarioFuncionamentoService(
@@ -51,5 +54,17 @@ class HorarioFuncionamentoService(
                     fechaEm = situacao.fechaEm?.atZone(FUSO_UBS)?.toOffsetDateTime(),
                 )
             }
+    }
+
+    /**
+     * Troca todos os turnos da UBS pelos informados e devolve o funcionamento já recalculado
+     * (`null` quando a lista vem vazia, ou seja, a UBS fica sem horário cadastrado).
+     */
+    @Transactional
+    fun substituir(ubsId: Long, turnos: List<Turno>): FuncionamentoUbs? {
+        horarioRepository.apagarDaUbs(ubsId)
+        horarioRepository.saveAll(turnos.map { HorarioFuncionamento(ubsId, it.diaSemana, it.abre, it.fecha) })
+        horarioRepository.flush()
+        return buscar(listOf(ubsId))[ubsId]
     }
 }
