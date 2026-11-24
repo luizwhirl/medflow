@@ -11,12 +11,17 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.context.annotation.Import
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.ActiveProfiles
+import org.springframework.test.web.servlet.MockHttpServletRequestDsl
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.ResultActionsDsl
 import org.springframework.test.web.servlet.get
 import org.springframework.transaction.annotation.Transactional
 import org.testcontainers.junit.jupiter.Testcontainers
 
-/** Perfil "dev": usa o seed de movimentações (V1007). */
+/**
+ * Cada teste cria as próprias UBS, medicamentos e movimentações, dentro da sua transação, então nada depende do seed.
+ * UBS U1 e U2 (do mesmo medicamento M1) e M2 só na U1: o filtro por UBS e o por medicamento são exercitados de verdade.
+ */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("dev")
@@ -27,86 +32,142 @@ class MovimentacaoControllerIntegrationTests(
     @Autowired private val mockMvc: MockMvc,
     @Autowired private val jdbc: JdbcTemplate,
 ) {
-    private fun idUbs(cnes: String) = jdbc.queryForObject("SELECT id FROM ubs WHERE cnes = ?", Long::class.java, cnes)!!
+    private class Cenario(val u1: Long, val u2: Long, val m1: Long, val m2: Long, val itemU1M1: Long, val itemU1M2: Long, val itemU2M1: Long)
 
-    private fun idMedicamento(catmat: String) =
-        jdbc.queryForObject("SELECT id FROM medicamento WHERE catmat = ?", Long::class.java, catmat)!!
+    private fun id(sql: String, vararg args: Any?) = jdbc.queryForObject(sql, Long::class.java, *args)!!
 
-    private fun movimentacoes(cnes: String, configurar: org.springframework.test.web.servlet.MockHttpServletRequestDsl.() -> Unit = {}) =
-        mockMvc.get("/api/ubs/{id}/movimentacoes", idUbs(cnes)) { configurar() }
+    private fun ubs(cnes: String, nome: String) = id(
+        "INSERT INTO ubs (cnes, nome, tipo, bairro, endereco, codigo_ibge_municipio, latitude, longitude) " +
+            "VALUES (?, ?, 'UBS', 'Centro', 'Rua A, 1', '9999999', -9.6, -35.7) RETURNING id",
+        cnes, nome,
+    )
+
+    private fun medicamento(catmat: String, nome: String) = id(
+        "INSERT INTO medicamento (catmat, nome, concentracao, forma_farmaceutica, categoria) VALUES (?, ?, '10 mg', 'comprimido', 'Teste') RETURNING id",
+        catmat, nome,
+    )
+
+    private fun item(ubs: Long, medicamento: Long) = id(
+        "INSERT INTO item_estoque (ubs_id, medicamento_id, status, quantidade) VALUES (?, ?, 'DISPONIVEL', 100) RETURNING id", ubs, medicamento,
+    )
+
+    /** Movimentação de [horasAtras] horas atrás; o tipo sai do sinal da quantidade. */
+    private fun movimentacao(item: Long, quantidade: Int, horasAtras: Int, tipo: String = if (quantidade > 0) "ENTRADA" else "DISPENSACAO") =
+        jdbc.update(
+            "INSERT INTO movimentacao_estoque (item_estoque_id, tipo, quantidade, ocorrido_em) VALUES (?, ?, ?, NOW() - ? * INTERVAL '1 hour')",
+            item, tipo, quantidade, horasAtras,
+        )
+
+    private fun cenario(): Cenario {
+        val u1 = ubs("9970011", "UBS Um")
+        val u2 = ubs("9970012", "UBS Dois")
+        val m1 = medicamento("MOV-1", "Primeiro")
+        val m2 = medicamento("MOV-2", "Segundo")
+        return Cenario(u1, u2, m1, m2, item(u1, m1), item(u1, m2), item(u2, m1))
+    }
+
+    private fun movimentacoes(ubs: Long, configurar: MockHttpServletRequestDsl.() -> Unit = {}): ResultActionsDsl =
+        mockMvc.get("/api/ubs/{id}/movimentacoes", ubs) { configurar() }
 
     @Test
     fun `lista as mais recentes primeiro com medicamento, tipo e quantidade com sinal`() {
-        // seed, UBS 9000101, do mais recente: Losartana -20 (1 dia), Losartana +10 ajuste (5), Dipirona -200 (6)
-        movimentacoes("9000101") { param("limite", "3") }.andExpect {
+        val c = cenario()
+        movimentacao(c.itemU1M1, quantidade = 200, horasAtras = 30)
+        movimentacao(c.itemU1M2, quantidade = -20, horasAtras = 1)
+        movimentacao(c.itemU1M1, quantidade = 10, horasAtras = 5, tipo = "AJUSTE")
+        movimentacao(c.itemU1M1, quantidade = -45, horasAtras = 10)
+
+        movimentacoes(c.u1).andExpect {
             status { isOk() }
-            jsonPath("$.length()") { value(3) }
-            jsonPath("$[0].medicamentoNome") { value("Losartana potássica") }
-            jsonPath("$[0].tipo") { value("DISPENSACAO") }
-            jsonPath("$[0].quantidade") { value(-20) }
-            jsonPath("$[1].tipo") { value("AJUSTE") }
-            jsonPath("$[1].quantidade") { value(10) }
-            jsonPath("$[2].medicamentoNome") { value("Dipirona") }
-            jsonPath("$[2].quantidade") { value(-200) }
+            jsonPath("$[*].quantidade") { value(contains(-20, 10, -45, 200)) }
+            jsonPath("$[*].tipo") { value(contains("DISPENSACAO", "AJUSTE", "DISPENSACAO", "ENTRADA")) }
+            jsonPath("$[0].medicamentoId") { value(c.m2) }
+            jsonPath("$[0].medicamentoNome") { value("Segundo") }
+            jsonPath("$[1].medicamentoNome") { value("Primeiro") }
             jsonPath("$[0].ocorridoEm") { isNotEmpty() }
         }
     }
 
     @Test
-    fun `sem limite traz ate 20 movimentacoes`() {
-        movimentacoes("9000101").andExpect {
+    fun `sem limite traz exatamente as 20 mais recentes`() {
+        val c = cenario()
+        // 25 movimentações: a de i horas atrás tem quantidade i, então a mais recente (1) vem primeiro
+        (1..25).forEach { movimentacao(c.itemU1M1, quantidade = it, horasAtras = it) }
+
+        movimentacoes(c.u1).andExpect {
             status { isOk() }
-            jsonPath("$.length()") { value(org.hamcrest.Matchers.allOf(org.hamcrest.Matchers.greaterThanOrEqualTo(8), org.hamcrest.Matchers.lessThanOrEqualTo(20))) }
+            jsonPath("$.length()") { value(20) }
+            jsonPath("$[0].quantidade") { value(1) }
+            jsonPath("$[19].quantidade") { value(20) }
         }
     }
 
     @Test
-    fun `filtra pelo medicamento`() {
-        // Losartana na UBS 9000101: -20 (1 dia), +10 ajuste (5), -30 (9), +300 entrada (18)
-        movimentacoes("9000101") { param("medicamentoId", idMedicamento("BR0268856").toString()) }.andExpect {
+    fun `limite escolhe quantas trazer, de 1 a 100`() {
+        val c = cenario()
+        (1..25).forEach { movimentacao(c.itemU1M1, quantidade = it, horasAtras = it) }
+
+        movimentacoes(c.u1) { param("limite", "1") }.andExpect {
+            jsonPath("$.length()") { value(1) }
+            jsonPath("$[0].quantidade") { value(1) }
+        }
+        movimentacoes(c.u1) { param("limite", "100") }.andExpect { jsonPath("$.length()") { value(25) } }
+    }
+
+    @Test
+    fun `filtra pelo medicamento e so da UBS pedida`() {
+        val c = cenario()
+        movimentacao(c.itemU1M1, quantidade = 11, horasAtras = 3)
+        movimentacao(c.itemU1M1, quantidade = -5, horasAtras = 8)
+        movimentacao(c.itemU1M2, quantidade = 99, horasAtras = 4) // outro medicamento, mesma UBS
+        movimentacao(c.itemU2M1, quantidade = 77, horasAtras = 2) // mesmo medicamento, outra UBS
+
+        movimentacoes(c.u1) { param("medicamentoId", c.m1.toString()) }.andExpect {
             status { isOk() }
-            jsonPath("$[*].quantidade") { value(contains(-20, 10, -30, 300)) }
-            jsonPath("$[*].medicamentoNome") { value(everyItem(equalTo("Losartana potássica"))) }
+            jsonPath("$[*].quantidade") { value(contains(11, -5)) }
+            jsonPath("$[*].medicamentoNome") { value(everyItem(equalTo("Primeiro"))) }
+        }
+        movimentacoes(c.u2) { param("medicamentoId", c.m1.toString()) }.andExpect {
+            jsonPath("$[*].quantidade") { value(contains(77)) }
         }
     }
 
     @Test
-    fun `movimentacoes de outra UBS nao aparecem`() {
-        // 9000104 só tem movimentações de Metformina
-        movimentacoes("9000104") { param("limite", "100") }.andExpect {
-            status { isOk() }
-            jsonPath("$[*].medicamentoNome") { value(everyItem(equalTo("Metformina"))) }
-            jsonPath("$.length()") { value(3) }
-        }
-    }
+    fun `medicamento que existe mas nao tem movimentacao na UBS responde 200 com lista vazia`() {
+        val c = cenario()
+        movimentacao(c.itemU1M1, quantidade = 10, horasAtras = 1)
 
-    @Test
-    fun `UBS sem movimentacoes devolve lista vazia`() {
-        movimentacoes("9000107").andExpect {
+        movimentacoes(c.u1) { param("medicamentoId", c.m2.toString()) }.andExpect {
             status { isOk() }
             jsonPath("$.length()") { value(0) }
         }
+        movimentacoes(c.u2).andExpect { jsonPath("$.length()") { value(0) } } // UBS sem nenhuma movimentação
     }
 
     @Test
-    fun `UBS ou medicamento inexistente retorna 404`() {
-        mockMvc.get("/api/ubs/999999/movimentacoes").andExpect { status { isNotFound() } }
-        movimentacoes("9000101") { param("medicamentoId", "999999") }.andExpect { status { isNotFound() } }
-    }
+    fun `UBS ou medicamento inexistente retorna 404 no formato problem json`() {
+        val c = cenario()
 
-    @Test
-    fun `limite fora de 1 a 100 retorna 400`() {
-        listOf("0", "-1", "101", "abc").forEach { limite ->
-            movimentacoes("9000101") { param("limite", limite) }.andExpect { status { isBadRequest() } }
+        mockMvc.get("/api/ubs/999999/movimentacoes").andExpect {
+            status { isNotFound() }
+            content { contentTypeCompatibleWith("application/problem+json") }
+            jsonPath("$.title") { value("Recurso não encontrado") }
+        }
+        movimentacoes(c.u1) { param("medicamentoId", "999999") }.andExpect {
+            status { isNotFound() }
+            content { contentTypeCompatibleWith("application/problem+json") }
         }
     }
 
     @Test
-    fun `limite no maximo e aceito`() {
-        movimentacoes("9000101") { param("limite", "100") }.andExpect { status { isOk() } }
-        movimentacoes("9000101") { param("limite", "1") }.andExpect {
-            status { isOk() }
-            jsonPath("$.length()") { value(1) }
+    fun `limite fora de 1 a 100 retorna 400 no formato problem json`() {
+        val c = cenario()
+
+        listOf("0", "-1", "101", "abc").forEach { limite ->
+            movimentacoes(c.u1) { param("limite", limite) }.andExpect {
+                status { isBadRequest() }
+                content { contentTypeCompatibleWith("application/problem+json") }
+            }
         }
     }
 }

@@ -11,12 +11,16 @@ import org.springframework.context.annotation.Import
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.ResultActionsDsl
 import org.springframework.test.web.servlet.get
 import org.springframework.transaction.annotation.Transactional
 import org.testcontainers.junit.jupiter.Testcontainers
 import java.time.LocalDate
 
-/** Perfil "dev": usa o seed de remessas (V1006) e cria remessas extras só dentro de cada teste. */
+/**
+ * Cada teste cria a própria UBS, o próprio medicamento e as próprias remessas, dentro da sua transação,
+ * então nada depende do que o seed tem.
+ */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("dev")
@@ -27,58 +31,54 @@ class RastreamentoIntegrationTests(
     @Autowired private val mockMvc: MockMvc,
     @Autowired private val jdbc: JdbcTemplate,
 ) {
-    private val metformina = "BR0267690"
-    private val losartana = "BR0268856"
-    private val dipirona = "BR0267543"
+    private val hoje: LocalDate = LocalDate.now()
 
-    private fun idUbs(cnes: String) = jdbc.queryForObject("SELECT id FROM ubs WHERE cnes = ?", Long::class.java, cnes)!!
+    private fun id(sql: String, vararg args: Any?) = jdbc.queryForObject(sql, Long::class.java, *args)!!
 
-    private fun idMedicamento(catmat: String) =
-        jdbc.queryForObject("SELECT id FROM medicamento WHERE catmat = ?", Long::class.java, catmat)!!
+    private fun ubs(cnes: String = "9970001") = id(
+        "INSERT INTO ubs (cnes, nome, tipo, bairro, endereco, codigo_ibge_municipio, latitude, longitude) " +
+            "VALUES (?, 'UBS Rastreio', 'UBS', 'Centro', 'Rua A, 1', '9999999', -9.6, -35.7) RETURNING id",
+        cnes,
+    )
 
-    /** Cria uma remessa com os eventos das primeiras [etapas] etapas e devolve o id. */
-    private fun criarRemessa(cnes: String, catmat: String, quantidade: Int, previsaoEmDias: Int, diasAtras: Int, etapas: Int): Long {
-        val id = jdbc.queryForObject(
+    private fun medicamento(catmat: String = "RASTREIO-1") = id(
+        "INSERT INTO medicamento (catmat, nome, concentracao, forma_farmaceutica, categoria) " +
+            "VALUES (?, 'Rastreável', '10 mg', 'comprimido', 'Teste') RETURNING id",
+        catmat,
+    )
+
+    /** Cria a remessa com os eventos das primeiras [etapas] etapas, uma hora depois da outra, a partir de [criadaHaDias]. */
+    private fun remessa(ubs: Long, medicamento: Long, quantidade: Int, previsaoEmDias: Long, criadaHaDias: Int, etapas: Int): Long {
+        val remessa = id(
             "INSERT INTO remessa (ubs_id, medicamento_id, quantidade, previsao_chegada, criado_em) " +
-                "VALUES (?, ?, ?, CURRENT_DATE + ?, NOW() - ? * INTERVAL '1 day') RETURNING id",
-            Long::class.java,
-            idUbs(cnes),
-            idMedicamento(catmat),
-            quantidade,
-            previsaoEmDias,
-            diasAtras,
-        )!!
+                "VALUES (?, ?, ?, ?, NOW() - ? * INTERVAL '1 day') RETURNING id",
+            ubs, medicamento, quantidade, hoje.plusDays(previsaoEmDias), criadaHaDias,
+        )
         EtapaRemessa.entries.take(etapas).forEachIndexed { i, etapa ->
             jdbc.update(
                 "INSERT INTO remessa_evento (remessa_id, etapa, ocorrido_em) VALUES (?, ?, NOW() - ? * INTERVAL '1 day' + ? * INTERVAL '1 hour')",
-                id,
-                etapa.name,
-                diasAtras,
-                i,
+                remessa, etapa.name, criadaHaDias, i,
             )
         }
-        return id
+        return remessa
     }
 
-    private fun rastrear(catmat: String, cnes: String) =
-        mockMvc.get("/api/medicamentos/{id}/rastreamento", idMedicamento(catmat)) { param("ubsId", idUbs(cnes).toString()) }
+    private fun rastrear(medicamento: Long, ubs: Long): ResultActionsDsl =
+        mockMvc.get("/api/medicamentos/{id}/rastreamento", medicamento) { param("ubsId", ubs.toString()) }
 
     @Test
     fun `remessa em transporte traz etapa atual, previsao e as cinco etapas com data so ate a atual`() {
-        val previsao = jdbc.queryForObject(
-            "SELECT previsao_chegada FROM remessa WHERE ubs_id = ? AND medicamento_id = ?",
-            LocalDate::class.java,
-            idUbs("9000101"),
-            idMedicamento(metformina),
-        )
+        val (u, m) = ubs() to medicamento()
+        remessa(u, m, quantidade = 300, previsaoEmDias = 2, criadaHaDias = 3, etapas = 3)
 
-        rastrear(metformina, "9000101").andExpect {
+        rastrear(m, u).andExpect {
             status { isOk() }
+            jsonPath("$.medicamentoId") { value(m) }
+            jsonPath("$.ubsId") { value(u) }
             jsonPath("$.remessa.etapaAtual") { value("EM_TRANSPORTE") }
             jsonPath("$.remessa.concluida") { value(false) }
             jsonPath("$.remessa.quantidade") { value(300) }
-            jsonPath("$.remessa.previsaoChegada") { value(previsao.toString()) }
-            jsonPath("$.remessa.linhaDoTempo.length()") { value(5) }
+            jsonPath("$.remessa.previsaoChegada") { value(hoje.plusDays(2).toString()) }
             jsonPath("$.remessa.linhaDoTempo[*].etapa") {
                 value(contains("PEDIDO", "SEPARADO_CAF", "EM_TRANSPORTE", "RECEBIDO", "DISPONIVEL"))
             }
@@ -91,7 +91,10 @@ class RastreamentoIntegrationTests(
 
     @Test
     fun `remessa que ja esta disponivel vem concluida com todas as etapas datadas`() {
-        rastrear(losartana, "9000104").andExpect {
+        val (u, m) = ubs() to medicamento()
+        remessa(u, m, quantidade = 120, previsaoEmDias = -1, criadaHaDias = 6, etapas = 5)
+
+        rastrear(m, u).andExpect {
             status { isOk() }
             jsonPath("$.remessa.etapaAtual") { value("DISPONIVEL") }
             jsonPath("$.remessa.concluida") { value(true) }
@@ -101,30 +104,45 @@ class RastreamentoIntegrationTests(
 
     @Test
     fun `sem remessa para a UBS a resposta e 200 com remessa nula`() {
-        rastrear(dipirona, "9000102").andExpect {
+        val (u, m) = ubs() to medicamento()
+        val outraUbs = ubs("9970002")
+        remessa(outraUbs, m, quantidade = 10, previsaoEmDias = 1, criadaHaDias = 1, etapas = 1) // de outra UBS: não conta
+
+        rastrear(m, u).andExpect {
             status { isOk() }
             jsonPath("$.remessa") { value(nullValue()) }
-            jsonPath("$.ubsId") { value(idUbs("9000102")) }
+            jsonPath("$.ubsId") { value(u) }
         }
     }
 
     @Test
-    fun `entre as em andamento vale a que chega primeiro`() {
-        criarRemessa("9000102", dipirona, quantidade = 10, previsaoEmDias = 10, diasAtras = 1, etapas = 1)
-        val maisCedo = criarRemessa("9000102", dipirona, quantidade = 20, previsaoEmDias = 3, diasAtras = 2, etapas = 2)
+    fun `entre as em andamento vale a que chega primeiro, mesmo sendo a mais antiga`() {
+        val (u, m) = ubs() to medicamento()
+        remessa(u, m, quantidade = 10, previsaoEmDias = 10, criadaHaDias = 1, etapas = 1)
+        val maisCedo = remessa(u, m, quantidade = 20, previsaoEmDias = 3, criadaHaDias = 2, etapas = 2)
 
-        rastrear(dipirona, "9000102").andExpect {
+        rastrear(m, u).andExpect {
             jsonPath("$.remessa.id") { value(maisCedo) }
             jsonPath("$.remessa.etapaAtual") { value("SEPARADO_CAF") }
         }
     }
 
     @Test
-    fun `remessa em andamento vale mais que uma concluida mais recente`() {
-        // seed: a de Losartana na UBS 9000104 já chegou. Esta, mais antiga, ainda está em andamento.
-        val andamento = criarRemessa("9000104", losartana, quantidade = 50, previsaoEmDias = 1, diasAtras = 30, etapas = 3)
+    fun `entre as em andamento vale a que chega primeiro, mesmo sendo a mais recente`() {
+        val (u, m) = ubs() to medicamento()
+        remessa(u, m, quantidade = 10, previsaoEmDias = 10, criadaHaDias = 5, etapas = 1)
+        val maisCedo = remessa(u, m, quantidade = 20, previsaoEmDias = 3, criadaHaDias = 1, etapas = 1)
 
-        rastrear(losartana, "9000104").andExpect {
+        rastrear(m, u).andExpect { jsonPath("$.remessa.id") { value(maisCedo) } }
+    }
+
+    @Test
+    fun `remessa em andamento vale mais que uma concluida mais recente`() {
+        val (u, m) = ubs() to medicamento()
+        remessa(u, m, quantidade = 50, previsaoEmDias = -3, criadaHaDias = 2, etapas = 5) // concluída e mais recente
+        val andamento = remessa(u, m, quantidade = 60, previsaoEmDias = 1, criadaHaDias = 30, etapas = 3)
+
+        rastrear(m, u).andExpect {
             jsonPath("$.remessa.id") { value(andamento) }
             jsonPath("$.remessa.concluida") { value(false) }
         }
@@ -132,35 +150,59 @@ class RastreamentoIntegrationTests(
 
     @Test
     fun `sem nenhuma em andamento vale a concluida mais recente`() {
-        criarRemessa("9000102", dipirona, quantidade = 5, previsaoEmDias = -20, diasAtras = 25, etapas = 5)
-        val recente = criarRemessa("9000102", dipirona, quantidade = 8, previsaoEmDias = -2, diasAtras = 5, etapas = 5)
+        val (u, m) = ubs() to medicamento()
+        remessa(u, m, quantidade = 5, previsaoEmDias = -20, criadaHaDias = 5, etapas = 5) // mais recente, previsão mais antiga
+        remessa(u, m, quantidade = 8, previsaoEmDias = -2, criadaHaDias = 25, etapas = 5)
 
-        rastrear(dipirona, "9000102").andExpect {
-            jsonPath("$.remessa.id") { value(recente) }
-            jsonPath("$.remessa.quantidade") { value(8) }
+        rastrear(m, u).andExpect { jsonPath("$.remessa.quantidade") { value(5) } }
+    }
+
+    @Test
+    fun `remessa sem nenhum evento sai com a etapa PEDIDO e a linha do tempo sem datas`() {
+        val (u, m) = ubs() to medicamento()
+        remessa(u, m, quantidade = 7, previsaoEmDias = 4, criadaHaDias = 1, etapas = 0)
+
+        rastrear(m, u).andExpect {
+            jsonPath("$.remessa.etapaAtual") { value("PEDIDO") }
+            jsonPath("$.remessa.concluida") { value(false) }
+            jsonPath("$.remessa.linhaDoTempo[0].ocorridoEm") { value(nullValue()) }
         }
     }
 
     @Test
-    fun `medicamento ou UBS inexistente retorna 404`() {
-        mockMvc.get("/api/medicamentos/999999/rastreamento") { param("ubsId", idUbs("9000101").toString()) }
-            .andExpect { status { isNotFound() } }
-        mockMvc.get("/api/medicamentos/{id}/rastreamento", idMedicamento(metformina)) { param("ubsId", "999999") }
-            .andExpect { status { isNotFound() } }
+    fun `medicamento ou UBS inexistente retorna 404 no formato problem json`() {
+        val (u, m) = ubs() to medicamento()
+
+        mockMvc.get("/api/medicamentos/999999/rastreamento") { param("ubsId", u.toString()) }.andExpect {
+            status { isNotFound() }
+            content { contentTypeCompatibleWith("application/problem+json") }
+            jsonPath("$.title") { value("Recurso não encontrado") }
+        }
+        rastrear(m, 999999).andExpect {
+            status { isNotFound() }
+            content { contentTypeCompatibleWith("application/problem+json") }
+        }
     }
 
     @Test
-    fun `ubsId ausente ou invalido retorna 400`() {
-        val id = idMedicamento(metformina)
+    fun `ubsId ausente ou invalido retorna 400 no formato problem json`() {
+        val m = medicamento()
 
-        mockMvc.get("/api/medicamentos/{id}/rastreamento", id).andExpect { status { isBadRequest() } }
-        mockMvc.get("/api/medicamentos/{id}/rastreamento", id) { param("ubsId", "0") }.andExpect { status { isBadRequest() } }
-        mockMvc.get("/api/medicamentos/{id}/rastreamento", id) { param("ubsId", "abc") }.andExpect { status { isBadRequest() } }
+        mockMvc.get("/api/medicamentos/{id}/rastreamento", m).andExpect {
+            status { isBadRequest() }
+            content { contentTypeCompatibleWith("application/problem+json") }
+        }
+        for (valor in listOf("0", "abc")) {
+            mockMvc.get("/api/medicamentos/{id}/rastreamento", m) { param("ubsId", valor) }.andExpect {
+                status { isBadRequest() }
+                content { contentTypeCompatibleWith("application/problem+json") }
+            }
+        }
     }
 
     @Test
     fun `endpoint e publico`() {
-        // sem token: leitura de medicamentos é pública
-        rastrear(metformina, "9000101").andExpect { status { isOk() } }
+        val (u, m) = ubs() to medicamento()
+        rastrear(m, u).andExpect { status { isOk() } } // sem token
     }
 }

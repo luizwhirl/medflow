@@ -355,7 +355,7 @@ A normalização valida o formato do código IBGE, mas não verifica a existênc
 }
 ```
 
-- A `linhaDoTempo` sempre traz as cinco etapas na ordem; `ocorridoEm` é `null` nas que ainda não aconteceram. A `etapaAtual` é a mais avançada com data.
+- A `linhaDoTempo` sempre traz as cinco etapas na ordem; `ocorridoEm` é `null` nas que ainda não aconteceram. A `etapaAtual` é a mais avançada com data. Uma remessa sem nenhum evento (não deveria existir) sai com `etapaAtual: "PEDIDO"` e a linha do tempo toda sem datas.
 - Com mais de uma remessa do mesmo medicamento na UBS, vale a que ainda está em andamento e chega primeiro. Sem nenhuma em andamento, vale a mais recente.
 - Sem remessa, a resposta é `200` com `"remessa": null`.
 - `404` se o medicamento ou a UBS não existir; `400` se `ubsId` faltar ou não for um número positivo.
@@ -383,7 +383,10 @@ A normalização valida o formato do código IBGE, mas não verifica a existênc
 ]
 ```
 
-A `quantidade` tem sinal: `ENTRADA` é positiva, `DISPENSACAO` é negativa e `AJUSTE` pode ser as duas. `404` se a UBS não existir.
+A `quantidade` tem sinal: `ENTRADA` é positiva, `DISPENSACAO` é negativa e `AJUSTE` pode ser as duas.
+
+- `404` se a UBS ou o `medicamentoId` informado não existir. Um medicamento que existe mas não tem movimentação na UBS responde `200` com `[]`.
+- É uma lista simples com as últimas `limite` movimentações, e não uma página como as listagens de estoque e medicamentos (`pagina` e `tamanho`): a tela só mostra as mais recentes. Se virar histórico completo, passa a usar `PaginaResponse`.
 
 ## Exemplos
 

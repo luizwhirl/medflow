@@ -3,6 +3,7 @@ package br.ufal.medflow.remessa
 import br.ufal.medflow.common.RecursoNaoEncontradoException
 import br.ufal.medflow.medicamento.MedicamentoRepository
 import br.ufal.medflow.ubs.UbsRepository
+import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -23,15 +24,14 @@ class RastreamentoService(
         if (!medicamentoRepository.existsById(medicamentoId)) throw RecursoNaoEncontradoException("Medicamento", medicamentoId)
         if (!ubsRepository.existsById(ubsId)) throw RecursoNaoEncontradoException("UBS", ubsId)
 
-        val remessas = remessaRepository.findDaUbsEMedicamento(ubsId, medicamentoId)
-        if (remessas.isEmpty()) return RastreamentoResponse(medicamentoId, ubsId, remessa = null)
+        // a escolha é feita no banco (uma remessa só) e só os eventos dela são lidos
+        val primeira = PageRequest.of(0, 1)
+        val escolhida = remessaRepository.findEmAndamentoDoMedicamento(ubsId, medicamentoId, primeira).firstOrNull()
+            ?: remessaRepository.findMaisRecenteDoMedicamento(ubsId, medicamentoId, primeira).firstOrNull()
+            ?: return RastreamentoResponse(medicamentoId, ubsId, remessa = null)
 
-        val eventosPorRemessa = eventoRepository.findDasRemessas(remessas.map { requireNotNull(it.id) })
-            .groupBy { requireNotNull(it.remessa.id) }
-        val emAndamento = remessas.filter { r -> eventosPorRemessa[r.id].orEmpty().none { it.etapa == EtapaRemessa.DISPONIVEL } }
-        val escolhida = emAndamento.minWithOrNull(compareBy({ it.previsaoChegada }, { it.id })) ?: remessas.first()
-
-        return RastreamentoResponse(medicamentoId, ubsId, escolhida.paraResposta(eventosPorRemessa[escolhida.id].orEmpty()))
+        val eventos = eventoRepository.findDasRemessas(listOf(requireNotNull(escolhida.id)))
+        return RastreamentoResponse(medicamentoId, ubsId, escolhida.paraResposta(eventos))
     }
 
     private fun Remessa.paraResposta(eventos: List<RemessaEvento>): RemessaRastreamentoResponse {
