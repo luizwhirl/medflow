@@ -4,6 +4,7 @@ import { TestBed, fakeAsync, flushMicrotasks, tick } from '@angular/core/testing
 import { provideRouter } from '@angular/router';
 
 import { Medicamento } from '../../core/models/medicamento.model';
+import { EtapaRemessa, RemessaRastreamento } from '../../core/models/rastreamento.model';
 import { Ubs, UbsProxima } from '../../core/models/ubs.model';
 import { Timeline } from '../../shared/components/timeline';
 import { MedicamentoSearchPage } from './medicamento-search.page';
@@ -33,6 +34,32 @@ const metformina: Medicamento = {
  */
 const ubs = (id: number, nome: string, km: number) =>
   ({ id, nome, bairro: 'Centro', latitude: 0, longitude: 0, distanciaKm: km }) as Ubs & UbsProxima;
+
+const ETAPAS: EtapaRemessa[] = [
+  'PEDIDO',
+  'SEPARADO_CAF',
+  'EM_TRANSPORTE',
+  'RECEBIDO',
+  'DISPONIVEL',
+];
+
+/** Remessa da API com as datas informadas; previsão qui, 26/11. */
+function remessa(datas: Partial<Record<EtapaRemessa, string>>): RemessaRastreamento {
+  return {
+    id: 4,
+    quantidade: 300,
+    previsaoChegada: '2026-11-26',
+    etapaAtual: ETAPAS.filter((e) => datas[e]).at(-1) ?? 'PEDIDO',
+    concluida: !!datas.DISPONIVEL,
+    linhaDoTempo: ETAPAS.map((etapa) => ({ etapa, ocorridoEm: datas[etapa] ?? null })),
+  };
+}
+
+const EM_TRANSITO = {
+  PEDIDO: '2026-11-17T12:00:00Z',
+  SEPARADO_CAF: '2026-11-17T20:00:00Z',
+  EM_TRANSPORTE: '2026-11-18T13:00:00Z',
+};
 
 describe('Timeline', () => {
   it('marca como concluídas as etapas até a atual e destaca a seguinte', () => {
@@ -162,6 +189,107 @@ describe('MedicamentoSearchPage', () => {
     http.verify();
   }));
 
+  /** Abre o detalhe do medicamento 1, responde a disponibilidade e a remessa e devolve a página. */
+  function abrirDetalhe(
+    disponibilidade: unknown[],
+    resposta: RemessaRastreamento | null,
+    { comReferencia = true } = {},
+  ): HTMLElement {
+    if (!comReferencia) {
+      localStorage.setItem(
+        'medflow.preferencias',
+        JSON.stringify({ ubsReferenciaId: null, remediosContinuos: [], buscasRecentes: [] }),
+      );
+    }
+    const fixture = TestBed.createComponent(MedicamentoSearchPage);
+    fixture.componentRef.setInput('id', '1');
+    fixture.detectChanges();
+    flushMicrotasks();
+    fixture.detectChanges();
+    http.expectOne('/api/medicamentos/categorias').flush([]);
+    http.expectOne('/api/medicamentos/1').flush(metformina);
+    http.expectOne('/api/medicamentos/1/disponibilidade').flush(disponibilidade);
+    if (comReferencia) {
+      http
+        .expectOne('/api/medicamentos/1/rastreamento?ubsId=1')
+        .flush({ medicamentoId: 1, ubsId: 1, remessa: resposta });
+    }
+    http.expectOne('/api/ubs?lat=0&lng=0&raioKm=5').flush([]);
+    http.expectOne('/api/ubs?lat=0&lng=0&medicamentoId=1').flush([]);
+    tick(250);
+    http.expectOne('/api/medicamentos').flush(pagina([]));
+    fixture.detectChanges();
+    http.verify();
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  function passos(el: HTMLElement) {
+    return Array.from(el.querySelectorAll('app-timeline li')).map((li) => ({
+      concluido: li.textContent!.includes('(concluída)'),
+      texto: li.textContent!.replace(/\s+/g, ' ').trim(),
+    }));
+  }
+
+  it('mostra as etapas e datas da remessa a caminho e a previsão no alerta de falta', fakeAsync(() => {
+    const el = abrirDetalhe(
+      [
+        {
+          ubs: ubs(1, 'UBS Benedito Bentes I', 0.26),
+          status: 'EM_FALTA',
+          quantidade: 0,
+          atualizadoEm: '',
+        },
+      ],
+      remessa(EM_TRANSITO),
+    );
+
+    const p = passos(el);
+    expect(p.map((x) => x.concluido)).toEqual([true, true, true, false]);
+    expect(p[0].texto).toContain('ter, 17/11');
+    expect(p[2].texto).toContain('qua, 18/11');
+    expect(p[3].texto).toContain('Previsão: qui, 26/11');
+    const alerta = el.querySelector('[role="status"]')!.textContent!.replace(/\s+/g, ' ');
+    expect(alerta).toContain('Próxima remessa chega qui, 26/11.');
+  }));
+
+  it('remessa entregue conclui todas as etapas e não aparece no alerta', fakeAsync(() => {
+    const el = abrirDetalhe(
+      [
+        {
+          ubs: ubs(1, 'UBS Benedito Bentes I', 0.26),
+          status: 'EM_FALTA',
+          quantidade: 0,
+          atualizadoEm: '',
+        },
+      ],
+      remessa({
+        ...EM_TRANSITO,
+        RECEBIDO: '2026-11-19T15:00:00Z',
+        DISPONIVEL: '2026-11-19T18:00:00Z',
+      }),
+    );
+
+    expect(passos(el).every((x) => x.concluido)).toBeTrue();
+    expect(el.querySelector('[role="status"]')!.textContent).not.toContain('Próxima remessa');
+  }));
+
+  it('sem remessa para a UBS, nenhuma etapa concluída e aviso de que não há remessa', fakeAsync(() => {
+    const el = abrirDetalhe([], null);
+
+    expect(passos(el).some((x) => x.concluido)).toBeFalse();
+    expect(el.querySelector('[aria-labelledby="titulo-remessa"]')!.textContent).toContain(
+      'Nenhuma remessa deste remédio para a sua UBS.',
+    );
+  }));
+
+  it('sem UBS de referência, não consulta a remessa e pede para escolher uma', fakeAsync(() => {
+    const el = abrirDetalhe([], null, { comReferencia: false });
+
+    const card = el.querySelector('[aria-labelledby="titulo-remessa"]')!;
+    expect(card.textContent).toContain('Escolha sua UBS');
+    expect(card.querySelector('a[href="/mapa"]')).not.toBeNull();
+  }));
+
   it('no detalhe, avisa a falta na UBS de referência e aponta onde tem', fakeAsync(() => {
     const fixture = TestBed.createComponent(MedicamentoSearchPage);
     fixture.componentRef.setInput('id', '1');
@@ -185,6 +313,9 @@ describe('MedicamentoSearchPage', () => {
       },
     ]);
     http
+      .expectOne('/api/medicamentos/1/rastreamento?ubsId=1')
+      .flush({ medicamentoId: 1, ubsId: 1, remessa: null });
+    http
       .expectOne('/api/ubs?lat=0&lng=0&raioKm=5')
       .flush([ubs(1, 'UBS Benedito Bentes I', 0.26), ubs(3, 'UBS Clima Bom', 2.4)]);
     http
@@ -202,37 +333,6 @@ describe('MedicamentoSearchPage', () => {
     expect(onde.indexOf('UBS Clima Bom')).toBeLessThan(onde.indexOf('UBS Benedito Bentes I'));
     expect(onde).toContain('~120 un.');
     expect(el.querySelectorAll('app-timeline li').length).toBe(4);
-    http.verify();
-  }));
-
-  it('não conclui a remessa quando o estoque está só em outra UBS', fakeAsync(() => {
-    const fixture = TestBed.createComponent(MedicamentoSearchPage);
-    fixture.componentRef.setInput('id', '1');
-    fixture.detectChanges();
-    flushMicrotasks();
-    fixture.detectChanges();
-    http.expectOne('/api/medicamentos/categorias').flush([]);
-    http.expectOne('/api/medicamentos/1').flush(metformina);
-    http.expectOne('/api/medicamentos/1/disponibilidade').flush([
-      {
-        ubs: ubs(3, 'UBS Clima Bom', 2.4),
-        status: 'DISPONIVEL',
-        quantidade: 120,
-        atualizadoEm: '',
-      },
-    ]);
-    http
-      .expectOne('/api/ubs?lat=0&lng=0&raioKm=5')
-      .flush([ubs(1, 'UBS Benedito Bentes I', 0.26), ubs(3, 'UBS Clima Bom', 2.4)]);
-    http
-      .expectOne('/api/ubs?lat=0&lng=0&medicamentoId=1')
-      .flush([ubs(1, 'UBS Benedito Bentes I', 0.26), ubs(3, 'UBS Clima Bom', 2.4)]);
-    tick(250);
-    http.expectOne('/api/medicamentos').flush(pagina([]));
-    fixture.detectChanges();
-
-    const etapas = (fixture.nativeElement as HTMLElement).querySelectorAll('app-timeline li');
-    expect(Array.from(etapas).some((li) => li.textContent!.includes('(concluída)'))).toBeFalse();
     http.verify();
   }));
 });
