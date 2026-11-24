@@ -2,6 +2,7 @@ import { NgTemplateOutlet } from '@angular/common';
 import { Component } from '@angular/core';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 
+import { BannerOffline } from '../shared/components/banner-offline';
 import { ICONE_MARCA, NAV_ITEMS } from './nav-items';
 
 /**
@@ -12,7 +13,7 @@ import { ICONE_MARCA, NAV_ITEMS } from './nav-items';
  */
 @Component({
   selector: 'app-shell',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, NgTemplateOutlet],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, NgTemplateOutlet, BannerOffline],
   template: `
     <ng-template #icone let-d>
       <svg
@@ -95,6 +96,8 @@ import { ICONE_MARCA, NAV_ITEMS } from './nav-items';
           </span>
           <span class="text-lg font-bold tracking-tight">UBS Conecta</span>
         </header>
+
+        <app-banner-offline />
 
         <main
           class="mx-auto w-full max-w-[100rem] flex-1 p-4 pb-24 sm:p-8 sm:pb-8 xl:px-14 xl:py-8"

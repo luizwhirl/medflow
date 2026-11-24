@@ -1,6 +1,7 @@
 import { Component } from '@angular/core';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 
+import { BannerOffline } from '../shared/components/banner-offline';
 import { IconeSvg } from '../shared/components/icone-svg';
 import { GESTAO_NAV_ITEMS, ICONE_MARCA_GESTAO } from './gestao-nav-items';
 
@@ -12,7 +13,7 @@ import { GESTAO_NAV_ITEMS, ICONE_MARCA_GESTAO } from './gestao-nav-items';
  */
 @Component({
   selector: 'app-gestao-shell',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, IconeSvg],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, IconeSvg, BannerOffline],
   template: `
     <div class="flex min-h-dvh flex-col bg-canvas sm:flex-row">
       <aside
@@ -67,11 +68,14 @@ import { GESTAO_NAV_ITEMS, ICONE_MARCA_GESTAO } from './gestao-nav-items';
         </div>
       </aside>
 
-      <main
-        class="mx-auto w-full min-w-0 max-w-[100rem] flex-1 px-4 pb-12 pt-6 sm:px-8 sm:pt-8 xl:px-10"
-      >
-        <router-outlet />
-      </main>
+      <div class="flex min-w-0 flex-1 flex-col">
+        <app-banner-offline />
+        <main
+          class="mx-auto w-full min-w-0 max-w-[100rem] flex-1 px-4 pb-12 pt-6 sm:px-8 sm:pt-8 xl:px-10"
+        >
+          <router-outlet />
+        </main>
+      </div>
     </div>
   `,
 })
