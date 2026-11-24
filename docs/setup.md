@@ -75,9 +75,9 @@ Sobe o banco, a API e a web (Nginx) **com os dados de exemplo**, porque a API ro
 
 - Web: http://localhost:4200 (o Nginx encaminha `/api` para a API)
 - API: http://localhost:8080 · Swagger: http://localhost:8080/swagger-ui.html (o Swagger só existe no perfil `dev`)
+- Contas de exemplo: veja [api.md](api.md#autenticação)
 
 Os endereços usam as portas padrão; se você mudou `API_PORT` ou `WEB_PORT`, troque-as. As portas (inclusive a do banco) só aceitam conexões do seu próprio computador, porque no perfil `dev` a API tem segredo JWT público e uma conta de gestor de exemplo.
-- Contas de exemplo: veja [api.md](api.md#autenticação)
 
 O primeiro build leva alguns minutos (baixa as dependências do Gradle e do npm). Para parar: `docker compose --profile full down`; para zerar o banco, acrescente `-v`.
 
