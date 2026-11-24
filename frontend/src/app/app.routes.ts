@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 
+import { exigirBoasVindas } from './core/guards/boas-vindas.guard';
 import { Shell } from './layout/shell';
 
 const emBreve = () => import('./features/em-breve/em-breve.page').then((m) => m.EmBrevePage);
@@ -37,8 +38,16 @@ export const routes: Routes = [
     ],
   },
   {
+    // Primeira visita do cidadão: tela cheia, sem o menu.
+    path: 'boas-vindas',
+    title: 'Boas-vindas · UBS Conecta',
+    loadComponent: () =>
+      import('./features/boas-vindas/boas-vindas.page').then((m) => m.BoasVindasPage),
+  },
+  {
     path: '',
     component: Shell,
+    canActivate: [exigirBoasVindas],
     children: [
       {
         path: '',
@@ -72,8 +81,7 @@ export const routes: Routes = [
       {
         path: 'avisos',
         title: 'Avisos · UBS Conecta',
-        data: { titulo: 'Avisos' },
-        loadComponent: () => import('./features/em-breve/em-breve.page').then((m) => m.EmBrevePage),
+        loadComponent: () => import('./features/avisos/avisos.page').then((m) => m.AvisosPage),
       },
       {
         path: 'perfil',
