@@ -349,6 +349,112 @@ Para o gestor sem vínculo e sem `ubsId`, a resposta é `{ "ubs": null, "restrit
 
 Atenção: hoje **gestor sem vínculo vê a rede toda**. Esquecer de preencher o vínculo no cadastro dá acesso total; esse comportamento foi escolhido para o MVP e está para confirmação do produto. Se mudar, a visão da rede passa a ser explícita (coluna ou papel próprio) e o gestor sem vínculo e sem essa permissão recebe `403`.
 
+## Painel da gestão
+
+Rotas do painel, só para o papel `GESTOR`, todas com `GET` e `?ubsId=` opcional. Elas seguem o [escopo do gestor](#escopo-do-gestor): com vínculo, só a UBS dele; sem vínculo, a rede toda ou a UBS pedida.
+
+| Rota | O que mostra |
+| --- | --- |
+| `/api/gestao/indicadores` | KPIs do painel |
+| `/api/gestao/itens-atencao` | Itens sem saldo ou até o mínimo, com pacientes aguardando e a remessa prevista (a tabela principal do painel) |
+| `/api/gestao/remanejamento` | Sugestões de remanejamento entre UBS da mesma cidade |
+| `/api/gestao/demanda-reprimida` | Pacientes da lista de desejos esperando um item sem estoque, e os medicamentos mais desejados |
+| `/api/gestao/lotes-vencendo` | Lotes com saldo que vencem até `dias` dias (padrão 60), inclusive os já vencidos |
+| `/api/gestao/sincronizacao-atrasada` | UBS que nunca sincronizaram ou sincronizaram há mais de `horas` horas (padrão 24) |
+
+Parâmetros de tamanho: `limite` (remanejamento e demanda, 1 a 100, padrão 20; lotes e itens de atenção, 1 a 200, padrão 50), `dias` (1 a 365) e `horas` (1 a 720). Fora disso, `400`.
+
+### Indicadores
+
+```json
+{
+  "ubs": { "id": 1, "nome": "UBS Benedito Bentes I", "cnes": "9000101" },
+  "restrito": true,
+  "ultimaSincronizacao": "2026-11-23T14:00:00Z",
+  "itensEmFalta": 3,
+  "emFaltaComRemessa": 2,
+  "abaixoDoMinimo": 4,
+  "remessasACaminho": 2,
+  "remessasAtrasadas": 1,
+  "proximaRemessa": "2026-11-25",
+  "pacientesAguardando": 12,
+  "medicamentosAguardados": 5,
+  "lotesVencendo": 2,
+  "ubsComSincronizacaoAtrasada": 0
+}
+```
+
+- **Mínimo** de um medicamento: o `limite_reservado` dele ou, sem ele, `app.estoque.limite-reservado`. **Em falta** é sempre saldo zero (`quantidade = 0`), em `itensEmFalta`, em `emFaltaComRemessa` e nos itens de atenção; o `status` gravado não entra na conta. `abaixoDoMinimo` conta itens com saldo maior que zero e até o mínimo.
+- **Remessa a caminho** é a que ainda não foi recebida (sem as etapas `RECEBIDO` e `DISPONIVEL`). `remessasACaminho` conta essas; `remessasAtrasadas` conta as a caminho cuja previsão já passou; `proximaRemessa` é a menor previsão que ainda não passou (as atrasadas não entram).
+- `emFaltaComRemessa`: itens em falta com remessa **em andamento** (sem `DISPONIVEL`) para a mesma UBS. Uma remessa só recebida ainda conta aqui, porque o item segue sem estar disponível na prateleira; uma remessa já disponível não conta.
+- `pacientesAguardando` e `medicamentosAguardados`: contas e medicamentos distintos da lista de desejos em que o item **não está disponível** na UBS desejada, isto é, sem posição, com status diferente de `DISPONIVEL` ou sem saldo (mesma regra da disponibilidade de medicamentos). A contagem é por conta de usuário (`usuario_id`); se a lista de desejos passar a ser por dispositivo, estas consultas precisam acompanhar.
+- `ultimaSincronizacao`: a da UBS do escopo; na rede, a mais recente.
+- Sem fonte de dados, ficam de fora: `prazoReposicaoDias` e a contagem de buscas (`buscas`) que o front de demonstração usa. Em "mais procurados" entra o número de pacientes da lista de desejos.
+
+### Itens de atenção
+
+A tabela principal do painel: itens com saldo até o mínimo, isto é, em falta ou abaixo dele.
+
+```json
+[
+  {
+    "ubs": { "id": 1, "nome": "UBS Benedito Bentes I" },
+    "medicamento": { "id": 1, "nome": "Metformina 850 mg" },
+    "estoque": 0,
+    "minimo": 50,
+    "aguardandoAviso": 3,
+    "situacao": "EM_FALTA",
+    "remessaPrevista": null
+  }
+]
+```
+
+- `situacao`: `PEDIDO_ENVIADO` quando há remessa a caminho (e `remessaPrevista` traz a previsão, que pode já ter passado); senão `EM_FALTA` (saldo zero) ou `ABAIXO_MINIMO`. Uma remessa já recebida não conta como pedido enviado.
+- Ordem: em falta primeiro, depois abaixo do mínimo e, por fim, os com pedido enviado; dentro de cada grupo, os com mais pacientes aguardando (`aguardandoAviso`).
+- É o `itensAtencao` do contrato do front, com `ubs` por item (na rede, vários itens de UBS diferentes) e `situacao` como texto.
+
+### Remanejamento
+
+Quem tem saldo até o mínimo (e abaixo do dobro dele) recebe de quem tem **mais que o dobro** do mínimo, na mesma cidade, pela UBS de origem mais próxima. A quantidade sugerida é a menor entre o que falta para chegar ao dobro do mínimo e a sobra da origem. Em falta primeiro; depois, as maiores quantidades.
+
+Atenção: cada destino é avaliado sozinho, então a mesma UBS de origem pode aparecer para vários destinos, cada vez com a sobra inteira. **As sugestões não se somam**: quem for remanejar precisa conferir o saldo da origem a cada pedido. A origem pode ser de outra UBS da cidade mesmo para o gestor com vínculo: ele vê a quantidade em estoque dos vizinhos, de propósito, para saber de onde pedir.
+
+```json
+[
+  {
+    "medicamento": { "id": 1, "nome": "Metformina 850 mg" },
+    "destino": { "id": 1, "nome": "UBS Benedito Bentes I" },
+    "quantidadeDestino": 0,
+    "minimo": 50,
+    "origem": { "id": 3, "nome": "UBS Clima Bom" },
+    "quantidadeOrigem": 220,
+    "distanciaKm": 2.4,
+    "quantidadeSugerida": 100
+  }
+]
+```
+
+### Demanda reprimida
+
+```json
+{
+  "itens": [
+    { "ubs": { "id": 1, "nome": "UBS Benedito Bentes I" }, "medicamento": { "id": 1, "nome": "Metformina 850 mg" },
+      "pacientesAguardando": 2, "status": "EM_FALTA", "quantidade": 0 }
+  ],
+  "maisProcurados": [
+    { "medicamento": { "id": 1, "nome": "Metformina 850 mg" }, "pacientes": 2 }
+  ]
+}
+```
+
+`status` e `quantidade` são `null` quando a UBS ainda não tem posição do medicamento. `maisProcurados` conta a lista de desejos em qualquer situação do estoque.
+
+### Lotes vencendo e sincronização atrasada
+
+Cada lote traz `numeroLote`, `validade`, `quantidade`, `diasParaVencer` (negativo se já venceu), o medicamento e a UBS. O "hoje" é o de Maceió. Cada UBS atrasada traz `ultimaSincronizacao` (`null` se nunca sincronizou, e essas vêm primeiro) e `atrasoHoras`.
+
+
 ## Rastreamento da remessa
 
 `GET /api/medicamentos/{id}/rastreamento?ubsId=` (público). Mostra a remessa do medicamento a caminho da UBS.
