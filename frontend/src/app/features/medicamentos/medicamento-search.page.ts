@@ -199,8 +199,9 @@ export class MedicamentoSearchPage {
       distinctUntilChanged((a, b) => a.termo === b.termo && a.categoria === b.categoria),
       switchMap(({ termo, categoria }) =>
         this.medicamentoService.buscar(termo, categoria).pipe(
-          catchError(() => of<Medicamento[]>([])),
-          switchMap((meds) =>
+          map((pagina) => ({ meds: pagina.itens, total: pagina.totalItens })),
+          catchError(() => of({ meds: [] as Medicamento[], total: 0 })),
+          switchMap(({ meds, total }) =>
             meds.length === 0
               ? of({ itens: [], total: 0 })
               : forkJoin(
@@ -210,7 +211,7 @@ export class MedicamentoSearchPage {
                       map((disponibilidade) => ({ medicamento, disponibilidade })),
                     ),
                   ),
-                ).pipe(map((itens) => ({ itens, total: meds.length }))),
+                ).pipe(map((itens) => ({ itens, total }))),
           ),
         ),
       ),

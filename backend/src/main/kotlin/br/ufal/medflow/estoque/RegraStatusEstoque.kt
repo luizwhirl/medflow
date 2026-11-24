@@ -24,11 +24,15 @@ class RegraStatusEstoque(private val props: EstoqueProperties) {
     /**
      * [demanda] é a quantidade de pessoas aguardando o item (lista de desejos), se conhecida.
      * O empate (quantidade == demanda) também é RESERVADO: não sobra nada para quem não está na lista.
+     * [limiteDoMedicamento] vale no lugar do limite global quando o medicamento tem um específico.
      */
-    fun calcular(quantidade: Int, demanda: Int? = null): StatusEstoque = when {
-        quantidade <= 0 -> StatusEstoque.EM_FALTA
-        quantidade <= props.limiteReservado -> StatusEstoque.RESERVADO
-        demanda != null && quantidade <= demanda -> StatusEstoque.RESERVADO
-        else -> StatusEstoque.DISPONIVEL
+    fun calcular(quantidade: Int, demanda: Int? = null, limiteDoMedicamento: Int? = null): StatusEstoque {
+        val limite = limiteDoMedicamento ?: props.limiteReservado
+        return when {
+            quantidade <= 0 -> StatusEstoque.EM_FALTA
+            quantidade <= limite -> StatusEstoque.RESERVADO
+            demanda != null && quantidade <= demanda -> StatusEstoque.RESERVADO
+            else -> StatusEstoque.DISPONIVEL
+        }
     }
 }

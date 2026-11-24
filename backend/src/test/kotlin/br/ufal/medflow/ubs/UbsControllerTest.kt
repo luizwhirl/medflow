@@ -1,6 +1,8 @@
 package br.ufal.medflow.ubs
 
 import br.ufal.medflow.auth.SecurityConfig
+import br.ufal.medflow.common.PaginaResponse
+import br.ufal.medflow.common.Paginacao
 import br.ufal.medflow.common.RecursoNaoEncontradoException
 import br.ufal.medflow.estoque.ResumoEstoqueUbsResponse
 import br.ufal.medflow.estoque.StatusEstoque
@@ -15,12 +17,18 @@ import org.springframework.context.annotation.Import
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
+import java.time.LocalTime
 import java.util.Optional
 
 /** Testes da API de UBS, sem banco de dados. */
 @WebMvcTest(UbsController::class)
 @Import(SecurityConfig::class) // a segurança real: leitura pública, como em produção
 class UbsControllerTest(@Autowired private val mockMvc: MockMvc) {
+
+    private companion object {
+        /** Página padrão do estoque: a primeira, 20 itens, em ordem de nome do medicamento. */
+        val ESTOQUE_PADRAO = Paginacao.de(0, Paginacao.TAMANHO_PADRAO, "medicamento.nome")
+    }
 
     @MockitoBean
     private lateinit var ubsRepository: UbsRepository
@@ -31,8 +39,17 @@ class UbsControllerTest(@Autowired private val mockMvc: MockMvc) {
     @MockitoBean
     private lateinit var ubsProximidadeService: UbsProximidadeService
 
-    private fun ubsProxima(distanciaKm: Double? = null) = UbsProximaResponse(
-        id = 1, cnes = "9000101", nome = "UBS Teste", tipo = TipoUnidade.UBS, bairro = "Centro", endereco = "Rua A, 1",
+    @MockitoBean
+    private lateinit var horarioFuncionamentoService: HorarioFuncionamentoService
+
+    private fun funcionamento(aberta: Boolean) = FuncionamentoUbs(
+        horarios = listOf(HorarioResponse(DiaSemana.SEGUNDA, LocalTime.of(7, 0), LocalTime.of(17, 0))),
+        abertaAgora = aberta,
+        fechaAs = if (aberta) LocalTime.of(17, 0) else null,
+    )
+
+    private fun ubsProxima(distanciaKm: Double? = null, id: Long = 1) = UbsProximaResponse(
+        id = id, cnes = "9000101", nome = "UBS Teste", tipo = TipoUnidade.UBS, bairro = "Centro", endereco = "Rua A, 1",
         telefone = null, horario = null, latitude = -9.5, longitude = -35.7, ultimaSincronizacao = null,
         distanciaKm = distanciaKm,
     )
@@ -189,6 +206,56 @@ class UbsControllerTest(@Autowired private val mockMvc: MockMvc) {
     }
 
     @Test
+    fun `cada UBS traz os horarios e abertas=true deixa so as abertas`() {
+        given(ubsProximidadeService.buscar(-9.5, -35.7, null, null))
+            .willReturn(listOf(ubsProxima(1.0, id = 1), ubsProxima(2.0, id = 2), ubsProxima(3.0, id = 3)))
+        given(horarioFuncionamentoService.buscar(listOf(1L, 2L, 3L)))
+            .willReturn(mapOf(1L to funcionamento(aberta = true), 2L to funcionamento(aberta = false)))
+
+        mockMvc.get("/api/ubs") {
+            param("lat", "-9.5")
+            param("lng", "-35.7")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.length()") { value(3) }
+            jsonPath("$[0].abertaAgora") { value(true) }
+            jsonPath("$[0].fechaAs") { value("17:00") }
+            jsonPath("$[0].horarios[0].diaSemana") { value("SEGUNDA") }
+            jsonPath("$[0].horarios[0].abre") { value("07:00") }
+            jsonPath("$[0].horarios[0].fecha") { value("17:00") }
+            jsonPath("$[1].abertaAgora") { value(false) }
+            jsonPath("$[2].horarios.length()") { value(0) }
+        }
+
+        mockMvc.get("/api/ubs") {
+            param("lat", "-9.5")
+            param("lng", "-35.7")
+            param("abertas", "true")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.length()") { value(1) }
+            jsonPath("$[0].id") { value(1) }
+        }
+    }
+
+    @Test
+    fun `detalhe da UBS traz o funcionamento`() {
+        val ubs = Ubs(
+            cnes = "9000101", nome = "UBS Teste", tipo = TipoUnidade.UBS, bairro = "Centro", endereco = "Rua A, 1",
+            codigoIbgeMunicipio = "2704302", latitude = -9.5, longitude = -35.7, id = 1L,
+        )
+        given(ubsRepository.findById(1L)).willReturn(Optional.of(ubs))
+        given(horarioFuncionamentoService.buscar(listOf(1L))).willReturn(mapOf(1L to funcionamento(aberta = true)))
+
+        mockMvc.get("/api/ubs/1").andExpect {
+            status { isOk() }
+            jsonPath("$.abertaAgora") { value(true) }
+            jsonPath("$.fechaAs") { value("17:00") }
+            jsonPath("$.horarios.length()") { value(1) }
+        }
+    }
+
+    @Test
     fun `busca UBS inexistente retorna 404`() {
         given(ubsRepository.findById(999L)).willReturn(Optional.empty())
 
@@ -203,34 +270,36 @@ class UbsControllerTest(@Autowired private val mockMvc: MockMvc) {
     }
 
     @Test
-    fun `estoque mantem retorno em lista`() {
-        given(ubsEstoqueService.listarItens(1L, null))
-            .willReturn(emptyList())
+    fun `estoque retorna o formato paginado`() {
+        given(ubsEstoqueService.listarItens(1L, null, ESTOQUE_PADRAO))
+            .willReturn(PaginaResponse(emptyList(), 0, 20, 0, 0))
 
         mockMvc.get("/api/ubs/1/estoque").andExpect {
             status { isOk() }
-            jsonPath("$") { isArray() }
-            jsonPath("$.length()") { value(0) }
+            jsonPath("$.itens") { isArray() }
+            jsonPath("$.itens.length()") { value(0) }
+            jsonPath("$.totalItens") { value(0) }
         }
 
-        verify(ubsEstoqueService).listarItens(1L, null)
+        verify(ubsEstoqueService).listarItens(1L, null, ESTOQUE_PADRAO)
     }
 
     @Test
     fun `estoque aceita filtro por status`() {
-        given(ubsEstoqueService.listarItens(1L, StatusEstoque.DISPONIVEL))
-            .willReturn(emptyList())
+        given(ubsEstoqueService.listarItens(1L, StatusEstoque.DISPONIVEL, ESTOQUE_PADRAO))
+            .willReturn(PaginaResponse(emptyList(), 0, 20, 0, 0))
 
         mockMvc.get("/api/ubs/1/estoque") {
             param("status", "DISPONIVEL")
         }.andExpect {
             status { isOk() }
-            jsonPath("$") { isArray() }
+            jsonPath("$.itens") { isArray() }
         }
 
         verify(ubsEstoqueService).listarItens(
             1L,
             StatusEstoque.DISPONIVEL,
+            ESTOQUE_PADRAO,
         )
     }
 
@@ -286,7 +355,7 @@ class UbsControllerTest(@Autowired private val mockMvc: MockMvc) {
 
     @Test
     fun `estoque de UBS inexistente retorna 404`() {
-        given(ubsEstoqueService.listarItens(999L, null))
+        given(ubsEstoqueService.listarItens(999L, null, ESTOQUE_PADRAO))
             .willThrow(RecursoNaoEncontradoException("UBS", 999L))
 
         mockMvc.get("/api/ubs/999/estoque").andExpect {

@@ -2,6 +2,7 @@ package br.ufal.medflow.common
 
 import br.ufal.medflow.auth.CredenciaisInvalidasException
 import br.ufal.medflow.auth.EmailJaCadastradoException
+import br.ufal.medflow.gestao.AcessoNegadoGestaoException
 import br.ufal.medflow.listadesejo.ItemListaDesejoDuplicadoException
 import org.springframework.http.HttpStatus
 import org.springframework.http.ProblemDetail
@@ -28,6 +29,12 @@ class ApiExceptionHandler {
     fun credenciaisInvalidas(ex: CredenciaisInvalidasException): ProblemDetail =
         ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, ex.message ?: "Credenciais inválidas").apply {
             title = "Credenciais inválidas"
+        }
+
+    @ExceptionHandler(AcessoNegadoGestaoException::class)
+    fun acessoNegadoGestao(ex: AcessoNegadoGestaoException): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, ex.message ?: "Acesso negado").apply {
+            title = "Acesso negado"
         }
 
     @ExceptionHandler(EmailJaCadastradoException::class)

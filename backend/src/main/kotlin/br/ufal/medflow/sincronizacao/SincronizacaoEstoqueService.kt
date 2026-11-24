@@ -195,12 +195,13 @@ class SincronizacaoEstoqueService(
 
         for ((chave, lista) in porItem) {
             val quantidade = lista.sumOf { it.posicao.quantidadeInteira().toLong() }.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-            val status = regraStatus.calcular(quantidade)
+            val medicamento = medicamentoPorCatmat.porChave.getValue(chave.second)
+            val status = regraStatus.calcular(quantidade, limiteDoMedicamento = medicamento.limiteReservado)
             val atualizadoEm = lista.maxOf { it.posicao.dataPosicao }.comoInstante()
 
             val existente = existentes[chave]
             if (existente == null) {
-                novos += ItemEstoque(ubsPorCnes.porChave.getValue(chave.first), medicamentoPorCatmat.porChave.getValue(chave.second), status, quantidade, atualizadoEm)
+                novos += ItemEstoque(ubsPorCnes.porChave.getValue(chave.first), medicamento, status, quantidade, atualizadoEm)
             } else {
                 if (existente.quantidade != quantidade || existente.status != status || existente.atualizadoEm != atualizadoEm) {
                     existente.quantidade = quantidade
