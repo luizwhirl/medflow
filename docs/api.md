@@ -7,6 +7,7 @@ Base: `http://localhost:8080/api`. A documentação interativa fica em `/swagger
 | GET | `/ubs` | Lista as unidades por nome. Com `lat` e `lng`, da mais próxima para a mais distante; com `abertas=true`, só as abertas agora (veja abaixo) |
 | GET | `/ubs/{id}` | Detalhe de uma unidade, com o horário de funcionamento |
 | GET | `/ubs/{id}/estoque` | Itens do estoque da UBS, paginados, com filtro opcional por status |
+| GET | `/ubs/{id}/movimentacoes` | Últimas movimentações de estoque da UBS, com filtro opcional por medicamento |
 | GET | `/ubs/{id}/estoque/resumo` | Resumo do estoque da UBS, com contagens por status e filtro opcional |
 | PUT | `/gestao/ubs/{id}/horarios` | Cadastra o horário de funcionamento da UBS (só `GESTOR`; veja abaixo) |
 | GET | `/medicamentos?busca=` | Medicamentos paginados, por nome; `busca` filtra por nome ou categoria |
@@ -14,6 +15,7 @@ Base: `http://localhost:8080/api`. A documentação interativa fica em `/swagger
 | GET | `/medicamentos/categorias` | Lista as categorias distintas dos medicamentos cadastrados |
 | GET | `/medicamentos/{id}` | Detalhe de um medicamento |
 | GET | `/medicamentos/{id}/disponibilidade` | Unidades com o medicamento (disponíveis primeiro) |
+| GET | `/medicamentos/{id}/rastreamento?ubsId=` | Remessa do medicamento para a UBS: etapa atual, previsão de chegada e linha do tempo |
 | GET | `/medicamentos/{id}/disponibilidade/resumo` | Total de unidades e unidades com estoque disponível, com filtro opcional por município |
 | GET | `/lista-desejos` | Lista os medicamentos desejados pelo cidadão autenticado |
 | POST | `/lista-desejos` | Adiciona um medicamento à lista de desejos |
@@ -52,7 +54,7 @@ Todos os erros seguem o padrão `application/problem+json`. O CORS libera o cabe
 
 Com o suporte nativo a RFC 9457 habilitado, erros gerados automaticamente pelo Spring MVC podem apresentar o campo `title` em inglês, como `"Bad Request"` (400), `"Method Not Allowed"` (405) e `"Unsupported Media Type"` (415). Já os erros tratados pelos handlers de domínio utilizam títulos em português, como `"Parâmetro inválido"` e `"Recurso não encontrado"`. Para identificar erros programaticamente, utilize o código HTTP (`status`), em vez de depender do texto de `title`.
 
-No perfil `dev` existem duas contas de exemplo, com a senha `medflow-dev-123`: `rita@medflow.local` (cidadã) e `carlos@medflow.local` (gestor). Elas nunca são criadas em produção.
+No perfil `dev` existem três contas de exemplo, com a senha `medflow-dev-123`: `rita@medflow.local` (cidadã), `carlos@medflow.local` (gestor da UBS Benedito Bentes I) e `marta@medflow.local` (gestora sem vínculo, vê a rede toda). Elas nunca são criadas em produção.
 
 ## Lista de desejos
 
@@ -395,6 +397,83 @@ Se o medicamento informado não existir, a API retorna `404` no padrão `applica
 Se o parâmetro `ibge` tiver formato inválido (não numérico ou diferente de 6 ou 7 dígitos), a API retorna `400` no padrão `application/problem+json`, com o título `Parâmetro inválido`.
 
 A normalização valida o formato do código IBGE, mas não verifica a existência do município. Portanto, um código com formato válido que não corresponda a nenhuma UBS cadastrada pode resultar em contagens zeradas.
+
+## Escopo do gestor
+
+Um gestor pode ter vínculo com uma UBS (`usuario.ubs_gestao_id`). Por enquanto o vínculo só é definido direto no banco (não há endpoint nem tela para isso). **Regra:** todo endpoint de `/api/gestao` deve resolver o escopo chamando o `EscopoGestaoService`; o código não impõe isso sozinho, então cada rota nova precisa fazer a chamada (e ter teste).
+
+| Gestor | O que vê | Pedir `ubsId` |
+| --- | --- | --- |
+| Com vínculo | Só a UBS vinculada | A própria UBS é aceita; outra UBS responde `403` |
+| Sem vínculo | A rede toda | Filtra pela UBS informada (`404` se não existir) |
+
+`GET /api/gestao/escopo` (só `GESTOR`, `?ubsId=` opcional) mostra o escopo atual:
+
+```json
+{ "ubs": { "id": 1, "nome": "UBS Benedito Bentes I", "cnes": "9000101" }, "restrito": true }
+```
+
+Para o gestor sem vínculo e sem `ubsId`, a resposta é `{ "ubs": null, "restrito": false }`. Conta apagada, ou que deixou de ser gestora, deixa de valer mesmo com o token antigo (`401`), em vez de ver a rede.
+
+Atenção: hoje **gestor sem vínculo vê a rede toda**. Esquecer de preencher o vínculo no cadastro dá acesso total; esse comportamento foi escolhido para o MVP e está para confirmação do produto. Se mudar, a visão da rede passa a ser explícita (coluna ou papel próprio) e o gestor sem vínculo e sem essa permissão recebe `403`.
+
+## Rastreamento da remessa
+
+`GET /api/medicamentos/{id}/rastreamento?ubsId=` (público). Mostra a remessa do medicamento a caminho da UBS.
+
+```json
+{
+  "medicamentoId": 1,
+  "ubsId": 1,
+  "remessa": {
+    "id": 4,
+    "quantidade": 300,
+    "previsaoChegada": "2026-11-22",
+    "etapaAtual": "EM_TRANSPORTE",
+    "concluida": false,
+    "linhaDoTempo": [
+      { "etapa": "PEDIDO", "ocorridoEm": "2026-11-17T12:00:00Z" },
+      { "etapa": "SEPARADO_CAF", "ocorridoEm": "2026-11-17T20:00:00Z" },
+      { "etapa": "EM_TRANSPORTE", "ocorridoEm": "2026-11-18T04:00:00Z" },
+      { "etapa": "RECEBIDO", "ocorridoEm": null },
+      { "etapa": "DISPONIVEL", "ocorridoEm": null }
+    ]
+  }
+}
+```
+
+- A `linhaDoTempo` sempre traz as cinco etapas na ordem; `ocorridoEm` é `null` nas que ainda não aconteceram. A `etapaAtual` é a mais avançada com data. Uma remessa sem nenhum evento (não deveria existir) sai com `etapaAtual: "PEDIDO"` e a linha do tempo toda sem datas.
+- Com mais de uma remessa do mesmo medicamento na UBS, vale a que ainda está em andamento e chega primeiro. Sem nenhuma em andamento, vale a mais recente.
+- Sem remessa, a resposta é `200` com `"remessa": null`.
+- `404` se o medicamento ou a UBS não existir; `400` se `ubsId` faltar ou não for um número positivo.
+- A BNAFAR pública não informa remessas em trânsito: os dados vêm de cadastro, e no perfil `dev`, do seed.
+
+## Movimentações de estoque
+
+`GET /api/ubs/{id}/movimentacoes` (público), da mais recente para a mais antiga.
+
+| Parâmetro | Regra |
+| --- | --- |
+| `medicamentoId` | Opcional. Mostra só as movimentações desse medicamento (`404` se não existir) |
+| `limite` | Opcional, de 1 a 100 (padrão 20). Fora disso, `400` |
+
+```json
+[
+  {
+    "id": 17,
+    "medicamentoId": 4,
+    "medicamentoNome": "Losartana potássica",
+    "tipo": "DISPENSACAO",
+    "quantidade": -20,
+    "ocorridoEm": "2026-11-19T15:00:00Z"
+  }
+]
+```
+
+A `quantidade` tem sinal: `ENTRADA` é positiva, `DISPENSACAO` é negativa e `AJUSTE` pode ser as duas.
+
+- `404` se a UBS ou o `medicamentoId` informado não existir. Um medicamento que existe mas não tem movimentação na UBS responde `200` com `[]`.
+- É uma lista simples com as últimas `limite` movimentações, e não uma página como as listagens de estoque e medicamentos (`pagina` e `tamanho`): a tela só mostra as mais recentes. Se virar histórico completo, passa a usar `PaginaResponse`.
 
 ## Exemplos
 
