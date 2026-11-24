@@ -1,5 +1,18 @@
 import { Component, computed, input } from '@angular/core';
 
+import {
+  minutosDesde,
+  NivelSincronizacao,
+  nivelSincronizacao,
+  tempoDesde,
+} from '../../core/sincronizacao';
+
+const TOM: Record<NivelSincronizacao, { text: string; dot: string }> = {
+  'em-dia': { text: 'text-content-muted', dot: 'bg-status-disponivel' },
+  atrasada: { text: 'text-content-muted', dot: 'bg-status-reservado' },
+  critica: { text: 'text-status-falta font-semibold', dot: 'bg-status-falta' },
+};
+
 /** Mostra há quanto tempo a unidade sincronizou (transparência sobre a atualização dos dados). */
 @Component({
   selector: 'app-sync-indicator',
@@ -13,25 +26,12 @@ import { Component, computed, input } from '@angular/core';
 export class SyncIndicator {
   readonly em = input<string | null>(null);
 
-  private readonly minutos = computed(() => {
-    const em = this.em();
-    return em ? Math.max(0, (Date.now() - new Date(em).getTime()) / 60_000) : null;
-  });
+  private readonly minutos = computed(() => minutosDesde(this.em()));
 
   protected readonly texto = computed(() => {
     const min = this.minutos();
-    if (min === null) return 'Nunca sincronizado';
-    if (min < 60) return `Sincronizado há ${Math.round(min)} min`;
-    if (min < 1440) return `Sincronizado há ${Math.round(min / 60)} h`;
-    return `Sincronizado há ${Math.round(min / 1440)} dias`;
+    return min === null ? 'Nunca sincronizado' : `Sincronizado ${tempoDesde(min)}`;
   });
 
-  protected readonly tone = computed(() => {
-    const min = this.minutos();
-    if (min !== null && min <= 60)
-      return { text: 'text-content-muted', dot: 'bg-status-disponivel' };
-    if (min !== null && min <= 1440)
-      return { text: 'text-content-muted', dot: 'bg-status-reservado' };
-    return { text: 'text-status-falta font-semibold', dot: 'bg-status-falta' };
-  });
+  protected readonly tone = computed(() => TOM[nivelSincronizacao(this.minutos())]);
 }
