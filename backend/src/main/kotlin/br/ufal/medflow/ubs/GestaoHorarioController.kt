@@ -1,12 +1,15 @@
 package br.ufal.medflow.ubs
 
+import br.ufal.medflow.auth.CredenciaisInvalidasException
 import br.ufal.medflow.common.ParametroInvalidoException
-import br.ufal.medflow.common.RecursoNaoEncontradoException
+import br.ufal.medflow.gestao.EscopoGestaoService
 import com.fasterxml.jackson.annotation.JsonFormat
 import io.swagger.v3.oas.annotations.Operation
 import jakarta.validation.Valid
 import jakarta.validation.constraints.NotNull
 import jakarta.validation.constraints.Size
+import org.springframework.security.core.annotation.AuthenticationPrincipal
+import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
@@ -43,12 +46,13 @@ const val MAX_TURNOS = 28
 /**
  * Cadastro do horário de funcionamento pela gestão. É assim que as UBS reais ganham horário em produção:
  * a BNAFAR não informa horário, e o CNES só traz turnos genéricos ("manhã e tarde"), sem a hora de fechar.
- * Fica sob `/api/gestao`, então exige o papel GESTOR (`SecurityConfig`).
+ * Fica sob `/api/gestao`, então exige o papel GESTOR (`SecurityConfig`), e segue o escopo do gestor
+ * (`EscopoGestaoService`): com vínculo, ele só cadastra o horário da própria UBS.
  */
 @RestController
 @RequestMapping("/api/gestao/ubs")
 class GestaoHorarioController(
-    private val ubsRepository: UbsRepository,
+    private val escopoGestaoService: EscopoGestaoService,
     private val horarioFuncionamentoService: HorarioFuncionamentoService,
 ) {
 
@@ -58,10 +62,13 @@ class GestaoHorarioController(
     )
     @PutMapping("/{id}/horarios")
     fun atualizarHorarios(
+        @AuthenticationPrincipal jwt: Jwt,
         @PathVariable id: Long,
         @Valid @RequestBody pedido: AtualizarHorariosRequest,
     ): HorariosUbsResponse {
-        if (!ubsRepository.existsById(id)) throw RecursoNaoEncontradoException("UBS", id)
+        // Escopo do gestor: com vínculo, só a própria UBS (outra responde 403, sem revelar se existe);
+        // sem vínculo, qualquer UBS que exista (inexistente responde 404)
+        escopoGestaoService.resolver(jwt.subject?.toLongOrNull() ?: throw CredenciaisInvalidasException(), id)
 
         // o @NotNull já barrou os nulos com 400; aqui só se converte para tipos não nulos
         val turnos = requireNotNull(pedido.turnos).map { Turno(it.diaSemana!!, it.abre!!, it.fecha!!) }

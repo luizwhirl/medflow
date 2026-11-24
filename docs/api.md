@@ -269,7 +269,6 @@ Regras:
 Limitações conhecidas:
 
 - O cálculo usa o fuso de Maceió (`America/Maceio`) para todas as unidades. Para UBS de estados com outro fuso (Acre, Amazonas, Mato Grosso, entre outros), `abertaAgora` fica deslocado. Quando o app atender outros estados, o fuso deve passar a vir da UF da unidade.
-- Enquanto o vínculo do gestor com a UBS (PDS-48) não entra, qualquer conta `GESTOR` pode cadastrar o horário de qualquer UBS. Quando ele entrar, este endpoint deve passar a respeitar o escopo do gestor.
 
 ```json
 {
@@ -304,7 +303,8 @@ A BNAFAR, que cria as unidades na sincronização, não informa horário, e o CN
 - Os turnos enviados **substituem** todos os anteriores da UBS. Lista vazia apaga o horário, e a unidade volta a ter `abertaAgora: null`.
 - Horas em `HH:mm`. `fecha` antes de `abre` vira a noite; `fecha` igual a `abre` é um turno de 24 h. Até 28 turnos (quatro por dia).
 - A resposta traz `ubsId`, `horarios`, `abertaAgora`, `fechaAs` e `fechaEm` já recalculados, nos mesmos formatos de `GET /api/ubs/{id}`.
-- Erros em `application/problem+json`: `401` sem token, `403` para quem não é `GESTOR`, `404` para UBS inexistente e `400` para hora inválida, dia ausente, lista ausente ou dois turnos no mesmo dia começando na mesma hora.
+- Segue o [escopo do gestor](#escopo-do-gestor): com vínculo, o gestor só cadastra o horário da própria UBS; sem vínculo, o de qualquer UBS.
+- Erros em `application/problem+json`: `401` sem token, `403` para quem não é `GESTOR` ou para gestor com vínculo pedindo outra UBS (mesmo que ela não exista), `404` para UBS inexistente (gestor sem vínculo) e `400` para hora inválida, dia ausente, lista ausente ou dois turnos no mesmo dia começando na mesma hora.
 
 Unidade que a gestão ainda não cadastrou continua com `horarios: []` e `abertaAgora: null`, e fica de fora do filtro `abertas=true`.
 

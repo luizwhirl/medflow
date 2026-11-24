@@ -13,6 +13,7 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
+import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
@@ -32,6 +33,7 @@ class GestaoHorarioIntegrationTests(
     @Autowired private val ubsRepository: UbsRepository,
     @Autowired private val usuarios: UsuarioRepository,
     @Autowired private val jwtService: JwtService,
+    @Autowired private val jdbc: JdbcTemplate,
 ) {
 
     private fun ubs() = ubsRepository.saveAndFlush(
@@ -47,10 +49,13 @@ class GestaoHorarioIntegrationTests(
         ),
     ).id!!
 
-    private fun token(papel: PapelUsuario): String {
-        val conta = usuarios.saveAndFlush(Usuario("Conta", "${papel.name.lowercase()}@teste.com", "hash", papel))
-        return jwtService.emitir(conta).token
+    /** Uma conta por papel no teste: reaproveita a já criada, porque o e-mail é único. */
+    private fun conta(papel: PapelUsuario): Usuario {
+        val email = "${papel.name.lowercase()}@teste.com"
+        return usuarios.findByEmail(email) ?: usuarios.saveAndFlush(Usuario("Conta", email, "hash", papel))
     }
+
+    private fun token(papel: PapelUsuario): String = jwtService.emitir(conta(papel)).token
 
     private fun cadastrar(ubsId: Long, json: String, token: String? = token(PapelUsuario.GESTOR)) =
         mockMvc.put("/api/gestao/ubs/$ubsId/horarios") {
@@ -130,6 +135,33 @@ class GestaoHorarioIntegrationTests(
 
         cadastrar(id, segundaASexta, token = null).andExpect { status { isUnauthorized() } }
         cadastrar(id, segundaASexta, token = token(PapelUsuario.CIDADAO)).andExpect { status { isForbidden() } }
+    }
+
+    @Test
+    fun `gestor com vinculo so cadastra o horario da propria UBS`() {
+        val propria = ubs()
+        val outra = ubsRepository.saveAndFlush(
+            Ubs(
+                cnes = "9999802",
+                nome = "UBS de Outro Gestor",
+                tipo = TipoUnidade.UBS,
+                bairro = "Centro",
+                endereco = "Rua D, 4",
+                codigoIbgeMunicipio = "2704302",
+                latitude = -9.67,
+                longitude = -35.74,
+            ),
+        ).id!!
+        val gestor = conta(PapelUsuario.GESTOR)
+        jdbc.update("UPDATE usuario SET ubs_gestao_id = ? WHERE id = ?", propria, gestor.id)
+
+        cadastrar(propria, segundaASexta).andExpect { status { isOk() } }
+        cadastrar(outra, segundaASexta).andExpect {
+            status { isForbidden() }
+            content { contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON) }
+        }
+        // UBS que não existe também dá 403 para o gestor com vínculo, sem revelar quais ids existem
+        cadastrar(999999, segundaASexta).andExpect { status { isForbidden() } }
     }
 
     @Test
