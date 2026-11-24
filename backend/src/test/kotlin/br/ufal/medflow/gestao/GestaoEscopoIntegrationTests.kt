@@ -98,7 +98,11 @@ class GestaoEscopoIntegrationTests(
 
     @Test
     fun `UBS inexistente retorna 404 e id invalido retorna 400`() {
-        escopo("marta@medflow.local", "999999").andExpect { status { isNotFound() } }
+        escopo("marta@medflow.local", "999999").andExpect {
+            status { isNotFound() }
+            content { contentTypeCompatibleWith("application/problem+json") }
+            jsonPath("$.title") { value("Recurso não encontrado") }
+        }
         escopo("marta@medflow.local", "0").andExpect { status { isBadRequest() } }
         escopo("marta@medflow.local", "abc").andExpect { status { isBadRequest() } }
     }
@@ -145,5 +149,71 @@ class GestaoEscopoIntegrationTests(
 
         jdbc.update("UPDATE usuario SET ubs_gestao_id = NULL WHERE id = ?", gestor.id)
         assertEquals(1, jdbc.update("DELETE FROM ubs WHERE id = ?", ubs))
+    }
+
+    @Test
+    fun `gestor com vinculo pedindo UBS inexistente recebe 403 e nao 404`() {
+        // validar a existência antes do vínculo revelaria quais ids existem
+        escopo("carlos@medflow.local", "999999").andExpect {
+            status { isForbidden() }
+            jsonPath("$.title") { value("Acesso negado") }
+        }
+    }
+
+    @Test
+    fun `conta que deixou de ser gestora nao ve o painel com o token antigo`() {
+        val gestor = usuarios.saveAndFlush(Usuario("Rebaixado", "rebaixado@teste.com", "hash", PapelUsuario.GESTOR))
+        val jwt = jwtService.emitir(gestor).token
+        jdbc.update("UPDATE usuario SET papel = 'CIDADAO' WHERE id = ?", gestor.id)
+
+        mockMvc.get("/api/gestao/escopo") { header("Authorization", "Bearer $jwt") }
+            .andExpect { status { isUnauthorized() } }
+    }
+
+    private fun gestorSemVinculo(email: String) =
+        usuarios.saveAndFlush(Usuario("Gestor", email, "hash", PapelUsuario.GESTOR))
+
+    private fun novaUbs(cnes: String): Long {
+        jdbc.update(
+            "INSERT INTO ubs (cnes, nome, tipo, bairro, endereco, codigo_ibge_municipio, latitude, longitude) " +
+                "VALUES (?, 'UBS Vínculo', 'UBS', 'Centro', 'Rua A, 1', '9999999', -9.6, -35.7)",
+            cnes,
+        )
+        return idUbs(cnes)
+    }
+
+    @Test
+    fun `vincularGestor liga pelo CNES e devolve 1`() {
+        val gestor = gestorSemVinculo("vincula@teste.com")
+        val ubs = novaUbs("9980001")
+
+        assertEquals(1, usuarios.vincularGestor("vincula@teste.com", "9980001"))
+        assertEquals(ubs, usuarios.findUbsGestaoId(requireNotNull(gestor.id)))
+    }
+
+    @Test
+    fun `CNES inexistente nao muda o vinculo e o gestor continua sem ver a rede por engano`() {
+        val semVinculo = gestorSemVinculo("sem-vinculo@teste.com")
+        val comVinculo = gestorSemVinculo("com-vinculo@teste.com")
+        val ubs = novaUbs("9980002")
+        usuarios.vincularGestor("com-vinculo@teste.com", "9980002")
+
+        assertEquals(0, usuarios.vincularGestor("sem-vinculo@teste.com", "0000000"))
+        assertEquals(0, usuarios.vincularGestor("com-vinculo@teste.com", "0000000"))
+
+        assertEquals(null, usuarios.findUbsGestaoId(requireNotNull(semVinculo.id)))
+        assertEquals(ubs, usuarios.findUbsGestaoId(requireNotNull(comVinculo.id))) // não foi para NULL
+    }
+
+    @Test
+    fun `vincularGestor nao troca o vinculo de quem ja tem e so mexe em gestor`() {
+        val gestor = gestorSemVinculo("ja-vinculado@teste.com")
+        val primeira = novaUbs("9980003")
+        novaUbs("9980004")
+        usuarios.vincularGestor("ja-vinculado@teste.com", "9980003")
+
+        assertEquals(0, usuarios.vincularGestor("ja-vinculado@teste.com", "9980004"))
+        assertEquals(primeira, usuarios.findUbsGestaoId(requireNotNull(gestor.id)))
+        assertEquals(0, usuarios.vincularGestor("rita@medflow.local", "9980003")) // cidadã
     }
 }

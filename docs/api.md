@@ -330,7 +330,7 @@ A normalização valida o formato do código IBGE, mas não verifica a existênc
 
 ## Escopo do gestor
 
-Um gestor pode ter vínculo com uma UBS (`usuario.ubs_gestao_id`, definido direto no banco). Todos os endpoints de `/api/gestao` respeitam esse escopo:
+Um gestor pode ter vínculo com uma UBS (`usuario.ubs_gestao_id`). Por enquanto o vínculo só é definido direto no banco (não há endpoint nem tela para isso). **Regra:** todo endpoint de `/api/gestao` deve resolver o escopo chamando o `EscopoGestaoService`; o código não impõe isso sozinho, então cada rota nova precisa fazer a chamada (e ter teste).
 
 | Gestor | O que vê | Pedir `ubsId` |
 | --- | --- | --- |
@@ -343,7 +343,9 @@ Um gestor pode ter vínculo com uma UBS (`usuario.ubs_gestao_id`, definido diret
 { "ubs": { "id": 1, "nome": "UBS Benedito Bentes I", "cnes": "9000101" }, "restrito": true }
 ```
 
-Para o gestor sem vínculo e sem `ubsId`, a resposta é `{ "ubs": null, "restrito": false }`. Conta de gestor apagada deixa de valer (`401`), em vez de ver a rede.
+Para o gestor sem vínculo e sem `ubsId`, a resposta é `{ "ubs": null, "restrito": false }`. Conta apagada, ou que deixou de ser gestora, deixa de valer mesmo com o token antigo (`401`), em vez de ver a rede.
+
+Atenção: hoje **gestor sem vínculo vê a rede toda**. Esquecer de preencher o vínculo no cadastro dá acesso total; esse comportamento foi escolhido para o MVP e está para confirmação do produto. Se mudar, a visão da rede passa a ser explícita (coluna ou papel próprio) e o gestor sem vínculo e sem essa permissão recebe `403`.
 
 ## Exemplos
 

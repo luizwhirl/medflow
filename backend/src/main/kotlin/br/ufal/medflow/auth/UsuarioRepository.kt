@@ -15,11 +15,19 @@ interface UsuarioRepository : JpaRepository<Usuario, Long> {
     @Query(value = "select ubs_gestao_id from usuario where id = :id", nativeQuery = true)
     fun findUbsGestaoId(@Param("id") id: Long): Long?
 
-    /** Vincula o gestor (pelo e-mail) à UBS (pelo CNES). Devolve quantas contas mudaram. */
+    fun existsByIdAndPapel(id: Long, papel: PapelUsuario): Boolean
+
+    /**
+     * Vincula o gestor (pelo e-mail) à UBS (pelo CNES), mas só se ele ainda não tiver vínculo e a UBS existir.
+     * Sem a checagem da UBS, um CNES errado gravaria `NULL` e o gestor passaria a ver a rede toda.
+     * Devolve quantas contas mudaram.
+     */
     @Transactional
     @Modifying
     @Query(
-        value = "update usuario set ubs_gestao_id = (select id from ubs where cnes = :cnes) where email = :email and papel = 'GESTOR'",
+        value = "update usuario set ubs_gestao_id = (select id from ubs where cnes = :cnes) " +
+            "where email = :email and papel = 'GESTOR' and ubs_gestao_id is null " +
+            "and exists (select 1 from ubs where cnes = :cnes)",
         nativeQuery = true,
     )
     fun vincularGestor(@Param("email") email: String, @Param("cnes") cnes: String): Int
