@@ -44,11 +44,11 @@ ubs 1───* item_estoque *───1 medicamento
 | `remessa` | Remessa de um medicamento da CAF para uma UBS, com quantidade e previsão de chegada | — |
 | `remessa_evento` | Momento em que a remessa chegou a cada etapa (`PEDIDO`, `SEPARADO_CAF`, `EM_TRANSPORTE`, `RECEBIDO`, `DISPONIVEL`) | (`remessa_id`, `etapa`) |
 | `movimentacao_estoque` | Entradas, dispensações e ajustes de um item de estoque, com quantidade com sinal e data | — |
-| `item_lista_desejo` | Medicamentos que o cidadão quer ser avisado quando chegarem | (`usuario_id`, `ubs_id`, `medicamento_id`) |
+| `item_lista_desejo` | Medicamentos que o cidadão quer ser avisado quando chegarem | (`dispositivo_id`, `ubs_id`, `medicamento_id`) |
 
-A partir da migration `V5__lista_desejos_usuario.sql`, cada item da lista de desejos pertence a um usuário autenticado, identificado por `usuario_id`, que referencia `usuario(id)`.
+Desde a migration `V14__lista_desejos_dispositivo.sql`, cada item da lista de desejos pertence a um aparelho, identificado por `dispositivo_id` (UUID gerado no navegador e enviado no cabeçalho `X-Dispositivo-Id`), já que o app não tem login para o cidadão.
 
-A combinação (`usuario_id`, `ubs_id`, `medicamento_id`) é única, impedindo que um mesmo cidadão cadastre o mesmo medicamento mais de uma vez para a mesma UBS. Cidadãos diferentes podem cadastrar o mesmo medicamento e UBS em suas próprias listas.
+A combinação (`dispositivo_id`, `ubs_id`, `medicamento_id`) é única, impedindo que um mesmo aparelho cadastre o mesmo medicamento mais de uma vez para a mesma UBS. Aparelhos diferentes podem cadastrar o mesmo medicamento e UBS em suas próprias listas.
 
 ### Migrations da lista de desejos
 
@@ -65,6 +65,8 @@ Essa proteção impede a exclusão silenciosa de dados. Antes de implantar a V5 
 A migration `V5_1__lista_desejos_cascade_usuario.sql` adiciona `ON DELETE CASCADE` à chave estrangeira `fk_item_lista_desejo_usuario`.
 
 Quando um usuário é excluído, o PostgreSQL remove automaticamente os itens de sua lista de desejos, preservando os registros de outros usuários.
+
+A migration `V14__lista_desejos_dispositivo.sql` troca o dono da lista da conta pelo aparelho: apaga os itens ligados a contas (só existiam em desenvolvimento, criados pelas contas de exemplo), remove `usuario_id` (o que também remove a unicidade da V5 e a chave estrangeira da V5_1) e cria `dispositivo_id UUID NOT NULL` com a nova `uk_item_lista_desejo`.
 
 A V5 original não é modificada, preservando o histórico e o checksum do Flyway.
 

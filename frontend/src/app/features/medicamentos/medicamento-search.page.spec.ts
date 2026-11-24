@@ -190,6 +190,7 @@ describe('MedicamentoSearchPage', () => {
     http
       .expectOne('/api/ubs?lat=0&lng=0&medicamentoId=1')
       .flush([ubs(1, 'UBS Benedito Bentes I', 0.26), ubs(3, 'UBS Clima Bom', 2.4)]);
+    http.expectOne('/api/lista-desejos').flush([]);
     tick(250);
     http.expectOne('/api/medicamentos').flush(pagina([]));
     fixture.detectChanges();
@@ -227,6 +228,7 @@ describe('MedicamentoSearchPage', () => {
     http
       .expectOne('/api/ubs?lat=0&lng=0&medicamentoId=1')
       .flush([ubs(1, 'UBS Benedito Bentes I', 0.26), ubs(3, 'UBS Clima Bom', 2.4)]);
+    http.expectOne('/api/lista-desejos').flush([]);
     tick(250);
     http.expectOne('/api/medicamentos').flush(pagina([]));
     fixture.detectChanges();

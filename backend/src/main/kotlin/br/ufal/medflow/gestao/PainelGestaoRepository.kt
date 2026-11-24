@@ -57,10 +57,13 @@ class PainelGestaoRepository(jdbcTemplate: JdbcTemplate) {
         params(ubsId).addValue("hoje", hoje),
     ) { rs, _ -> ContagemRemessas(rs.getInt("total"), rs.getInt("atrasadas"), rs.data("proxima")) }!!
 
-    /** Pacientes (e medicamentos) da lista de desejos cujo item não está disponível na UBS desejada. */
+    /**
+     * Pacientes (e medicamentos) da lista de desejos cujo item não está disponível na UBS desejada.
+     * Sem login, cada paciente é um aparelho distinto (dispositivo_id).
+     */
     fun contarDemanda(ubsId: Long?): ContagemDemanda = jdbc.queryForObject(
         """
-        SELECT COUNT(DISTINCT w.usuario_id) AS pacientes, COUNT(DISTINCT w.medicamento_id) AS medicamentos
+        SELECT COUNT(DISTINCT w.dispositivo_id) AS pacientes, COUNT(DISTINCT w.medicamento_id) AS medicamentos
         FROM item_lista_desejo w
         LEFT JOIN item_estoque i ON i.ubs_id = w.ubs_id AND i.medicamento_id = w.medicamento_id
         WHERE $NAO_DISPONIVEL AND ${escopo("w.ubs_id", ubsId)}
@@ -141,7 +144,7 @@ class PainelGestaoRepository(jdbcTemplate: JdbcTemplate) {
     fun demandaPorUbs(ubsId: Long?, limite: Int): List<DemandaItemResponse> = jdbc.query(
         """
         SELECT w.ubs_id, u.nome AS ubs_nome, w.medicamento_id, m.nome AS medicamento_nome, m.concentracao,
-               COUNT(DISTINCT w.usuario_id) AS pacientes, MAX(i.status) AS status, MAX(i.quantidade) AS quantidade
+               COUNT(DISTINCT w.dispositivo_id) AS pacientes, MAX(i.status) AS status, MAX(i.quantidade) AS quantidade
         FROM item_lista_desejo w
         JOIN ubs u ON u.id = w.ubs_id
         JOIN medicamento m ON m.id = w.medicamento_id
@@ -165,7 +168,7 @@ class PainelGestaoRepository(jdbcTemplate: JdbcTemplate) {
     /** Medicamentos mais desejados na lista de desejos (qualquer situação do estoque), no escopo. */
     fun maisProcurados(ubsId: Long?, limite: Int): List<MaisProcuradoResponse> = jdbc.query(
         """
-        SELECT w.medicamento_id, m.nome AS medicamento_nome, m.concentracao, COUNT(DISTINCT w.usuario_id) AS pacientes
+        SELECT w.medicamento_id, m.nome AS medicamento_nome, m.concentracao, COUNT(DISTINCT w.dispositivo_id) AS pacientes
         FROM item_lista_desejo w JOIN medicamento m ON m.id = w.medicamento_id
         WHERE ${escopo("w.ubs_id", ubsId)}
         GROUP BY w.medicamento_id, m.nome, m.concentracao
@@ -230,7 +233,7 @@ class PainelGestaoRepository(jdbcTemplate: JdbcTemplate) {
         SELECT * FROM (
         SELECT i.ubs_id, u.nome AS ubs_nome, i.medicamento_id, m.nome AS medicamento_nome, m.concentracao,
                i.quantidade, COALESCE(m.limite_reservado, :limiteGlobal) AS minimo,
-               (SELECT COUNT(DISTINCT w.usuario_id) FROM item_lista_desejo w
+               (SELECT COUNT(DISTINCT w.dispositivo_id) FROM item_lista_desejo w
                 WHERE w.ubs_id = i.ubs_id AND w.medicamento_id = i.medicamento_id) AS aguardando,
                (SELECT MIN(r.previsao_chegada) FROM remessa r
                 WHERE r.ubs_id = i.ubs_id AND r.medicamento_id = i.medicamento_id AND $REMESSA_A_CAMINHO) AS remessa_prevista

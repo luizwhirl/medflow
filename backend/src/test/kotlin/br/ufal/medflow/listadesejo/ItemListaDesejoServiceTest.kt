@@ -1,8 +1,5 @@
 package br.ufal.medflow.listadesejo
 
-import br.ufal.medflow.auth.PapelUsuario
-import br.ufal.medflow.auth.Usuario
-import br.ufal.medflow.auth.UsuarioRepository
 import br.ufal.medflow.medicamento.Medicamento
 import br.ufal.medflow.medicamento.MedicamentoRepository
 import br.ufal.medflow.ubs.TipoUnidade
@@ -16,6 +13,7 @@ import org.mockito.Mockito.mock
 import org.springframework.dao.DataIntegrityViolationException
 import java.sql.SQLException
 import java.util.Optional
+import java.util.UUID
 import kotlin.test.assertFailsWith
 import kotlin.test.assertSame
 
@@ -23,26 +21,18 @@ import kotlin.test.assertSame
 class ItemListaDesejoServiceTest {
 
     private val itens = mock(ItemListaDesejoRepository::class.java)
-    private val usuarios = mock(UsuarioRepository::class.java)
     private val unidades = mock(UbsRepository::class.java)
     private val medicamentos = mock(MedicamentoRepository::class.java)
 
     private val service = ItemListaDesejoService(
         itens,
-        usuarios,
         unidades,
         medicamentos,
     )
 
-    private fun prepararCriacao() {
-        val usuario = Usuario(
-            nome = "Cidadão Teste",
-            email = "cidadao@teste.com",
-            senhaHash = "hash-teste",
-            papel = PapelUsuario.CIDADAO,
-            id = 1L,
-        )
+    private val aparelho = UUID.fromString("3f1c2b7e-8a4d-4e1f-9b2c-5d6e7f8a9b0c")
 
+    private fun prepararCriacao() {
         val ubs = Ubs(
             cnes = "9000101",
             nome = "UBS Teste",
@@ -64,10 +54,9 @@ class ItemListaDesejoServiceTest {
             id = 3L,
         )
 
-        given(usuarios.findById(1L)).willReturn(Optional.of(usuario))
         given(unidades.findById(2L)).willReturn(Optional.of(ubs))
         given(medicamentos.findById(3L)).willReturn(Optional.of(medicamento))
-        given(itens.existsByUsuarioIdAndUbsIdAndMedicamentoId(1L, 2L, 3L))
+        given(itens.existsByDispositivoIdAndUbsIdAndMedicamentoId(aparelho, 2L, 3L))
             .willReturn(false)
     }
 
@@ -98,7 +87,7 @@ class ItemListaDesejoServiceTest {
 
         assertFailsWith<ItemListaDesejoDuplicadoException> {
             service.criar(
-                1L,
+                aparelho,
                 CriarItemListaDesejoRequest(
                     ubsId = 2L,
                     medicamentoId = 3L,
@@ -121,7 +110,7 @@ class ItemListaDesejoServiceTest {
 
         assertFailsWith<ItemListaDesejoDuplicadoException> {
             service.criar(
-                1L,
+                aparelho,
                 CriarItemListaDesejoRequest(
                     ubsId = 2L,
                     medicamentoId = 3L,
@@ -144,7 +133,7 @@ class ItemListaDesejoServiceTest {
 
         val lancada = assertFailsWith<DataIntegrityViolationException> {
             service.criar(
-                1L,
+                aparelho,
                 CriarItemListaDesejoRequest(
                     ubsId = 2L,
                     medicamentoId = 3L,
