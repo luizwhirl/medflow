@@ -2,7 +2,7 @@ import { NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
-import { catchError, forkJoin, map, of, switchMap } from 'rxjs';
+import { catchError, distinctUntilChanged, forkJoin, map, of, switchMap } from 'rxjs';
 
 import {
   compararDistancia,
@@ -448,6 +448,8 @@ export class HomePage {
         ubsId: this.preferencias.ubsReferenciaId(),
       })),
     ).pipe(
+      // só refaz as chamadas quando a lista ou a UBS mudam, não a cada preferência salva
+      distinctUntilChanged((a, b) => a.ubsId === b.ubsId && a.ids.join() === b.ids.join()),
       switchMap(({ ids, ubsId }) =>
         ubsId === null || ids.length === 0
           ? of(new Map<number, string | null>())

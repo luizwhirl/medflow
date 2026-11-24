@@ -28,6 +28,8 @@ data class ItemListaDesejoResponse(
     val ubsNome: String,
     val medicamentoId: Long,
     val medicamentoNome: String,
+    /** Evita que o front busque o medicamento só para mostrar a concentração. */
+    val medicamentoConcentracao: String,
     val notificar: Boolean,
     val criadoEm: Instant,
 )
@@ -39,6 +41,7 @@ fun ItemListaDesejo.toResponse() = ItemListaDesejoResponse(
     ubsNome = ubs.nome,
     medicamentoId = requireNotNull(medicamento.id),
     medicamentoNome = medicamento.nome,
+    medicamentoConcentracao = medicamento.concentracao,
     notificar = notificar,
     criadoEm = criadoEm,
 )

@@ -66,8 +66,7 @@ export const routes: Routes = [
       {
         path: 'lista',
         title: 'Minha lista · UBS Conecta',
-        data: { titulo: 'Minha lista' },
-        loadComponent: () => import('./features/em-breve/em-breve.page').then((m) => m.EmBrevePage),
+        loadComponent: () => import('./features/lista/lista.page').then((m) => m.ListaPage),
       },
       {
         path: 'avisos',

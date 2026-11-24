@@ -22,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional
 import org.testcontainers.junit.jupiter.Testcontainers
 import java.time.LocalDate
 import java.time.ZoneId
+import java.util.UUID
 import kotlin.math.acos
 import kotlin.math.cos
 import kotlin.math.sin
@@ -88,13 +89,11 @@ class PainelGestaoIntegrationTests(
         item, numero, hoje.plusDays(validadeEmDias), quantidade,
     )
 
-    private fun paciente(nome: String) = id(
-        "INSERT INTO usuario (nome, email, senha_hash, papel) VALUES (?, ?, 'hash', 'CIDADAO') RETURNING id",
-        nome, "${nome.lowercase()}@painel.teste",
-    )
+    /** Sem login, o paciente é um aparelho: um UUID fixo por nome, para os testes lerem bem. */
+    private fun paciente(nome: String): UUID = UUID.nameUUIDFromBytes(nome.toByteArray())
 
-    private fun desejo(usuario: Long, ubs: Long, medicamento: Long) = jdbc.update(
-        "INSERT INTO item_lista_desejo (usuario_id, ubs_id, medicamento_id) VALUES (?, ?, ?)", usuario, ubs, medicamento,
+    private fun desejo(aparelho: UUID, ubs: Long, medicamento: Long) = jdbc.update(
+        "INSERT INTO item_lista_desejo (dispositivo_id, ubs_id, medicamento_id) VALUES (?, ?, ?)", aparelho, ubs, medicamento,
     )
 
     private fun cenario(): Cenario {
