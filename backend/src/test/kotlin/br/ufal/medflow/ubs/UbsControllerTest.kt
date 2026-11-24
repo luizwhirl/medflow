@@ -326,4 +326,18 @@ class UbsControllerTest(@Autowired private val mockMvc: MockMvc) {
 
         verifyNoInteractions(ubsEstoqueService)
     }
+
+    @Test
+    fun `bairros sao publicos e vem do repositorio`() {
+        given(ubsRepository.findBairros()).willReturn(listOf("Benedito Bentes", "Clima Bom"))
+
+        mockMvc.get("/api/ubs/bairros").andExpect {
+            status { isOk() }
+            jsonPath("$.length()") { value(2) }
+            jsonPath("$[0]") { value("Benedito Bentes") }
+            jsonPath("$[1]") { value("Clima Bom") }
+        }
+
+        verifyNoInteractions(ubsEstoqueService, ubsProximidadeService)
+    }
 }

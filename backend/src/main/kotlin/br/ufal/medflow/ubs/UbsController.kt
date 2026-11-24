@@ -53,6 +53,14 @@ class UbsController(
         return ubsProximidadeService.buscar(lat, lng, raioKm, medicamentoId)
     }
 
+    @Operation(
+        summary = "Lista os bairros com UBS",
+        description = "Bairros que têm ao menos uma unidade, sem repetição e em ordem alfabética. " +
+            "Usado na boas-vindas para quem não quer compartilhar a localização.",
+    )
+    @GetMapping("/bairros")
+    fun bairros(): List<String> = ubsRepository.findBairros()
+
     @GetMapping("/{id}")
     fun buscar(@PathVariable id: Long): UbsResponse =
         (ubsRepository.findByIdOrNull(id) ?: throw RecursoNaoEncontradoException("UBS", id)).toResponse()
