@@ -432,9 +432,9 @@ Rotas do painel, só para o papel `GESTOR`, todas com `GET` e `?ubsId=` opcional
 | `/api/gestao/remanejamento` | Sugestões de remanejamento entre UBS da mesma cidade |
 | `/api/gestao/demanda-reprimida` | Pacientes da lista de desejos esperando um item sem estoque, e os medicamentos mais desejados |
 | `/api/gestao/lotes-vencendo` | Lotes com saldo que vencem até `dias` dias (padrão 60), inclusive os já vencidos |
-| `/api/gestao/sincronizacao-atrasada` | UBS que nunca sincronizaram ou sincronizaram há mais de `horas` horas (padrão 24) |
+| `/api/gestao/sincronizacao-atrasada` | UBS que nunca sincronizaram ou cuja posição é de mais de `dias` dias de calendário atrás (padrão 1: a posição de ontem ainda vale) |
 
-Parâmetros de tamanho: `limite` (remanejamento e demanda, 1 a 100, padrão 20; lotes e itens de atenção, 1 a 200, padrão 50), `dias` (1 a 365) e `horas` (1 a 720). Fora disso, `400`.
+Parâmetros de tamanho: `limite` (remanejamento e demanda, 1 a 100, padrão 20; lotes e itens de atenção, 1 a 200, padrão 50), `dias` (lotes: 1 a 365, padrão 60; sincronização atrasada: 1 a 30, padrão 1). Fora disso, `400`.
 
 ### Indicadores
 
@@ -524,7 +524,9 @@ Atenção: cada destino é avaliado sozinho, então a mesma UBS de origem pode a
 
 ### Lotes vencendo e sincronização atrasada
 
-Cada lote traz `numeroLote`, `validade`, `quantidade`, `diasParaVencer` (negativo se já venceu), o medicamento e a UBS. O "hoje" é o de Maceió. Cada UBS atrasada traz `ultimaSincronizacao` (`null` se nunca sincronizou, e essas vêm primeiro) e `atrasoHoras`.
+Cada lote traz `numeroLote`, `validade`, `quantidade`, `diasParaVencer` (negativo se já venceu), o medicamento e a UBS. O "hoje" é o de Maceió. Cada UBS atrasada traz `ultimaSincronizacao` (`null` se nunca sincronizou, e essas vêm primeiro) e `atrasoDias`, os dias de calendário entre a data da posição e hoje (`1` é a posição de ontem; `null` se nunca sincronizou).
+
+**Como o atraso é medido:** a `ultimaSincronizacao` das UBS que vêm da BNAFAR é a data da posição gravada à meia-noite (fuso de Maceió), e não a hora em que a sincronização rodou. Por isso o critério é em **dias de calendário**, e não em horas: com `dias = 1`, a posição de ontem continua valendo o dia todo de hoje, e só a de anteontem (ou mais antiga) é atrasada. O limite é o início do dia `hoje - dias`. É a mesma regra do aviso de dados atrasados (`app.avisos.atraso-dias`), e vale também para `ubsComSincronizacaoAtrasada` nos indicadores.
 
 
 ## Rastreamento da remessa

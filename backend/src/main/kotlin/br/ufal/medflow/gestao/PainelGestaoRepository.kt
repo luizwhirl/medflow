@@ -206,7 +206,7 @@ class PainelGestaoRepository(jdbcTemplate: JdbcTemplate) {
         )
     }
 
-    fun ubsComSincronizacaoAtrasada(ubsId: Long?, limite: Instant, agora: Instant): List<SincronizacaoAtrasadaResponse> = jdbc.query(
+    fun ubsComSincronizacaoAtrasada(ubsId: Long?, limite: Instant, hoje: LocalDate): List<SincronizacaoAtrasadaResponse> = jdbc.query(
         """
         SELECT u.id, u.nome, u.cnes, u.ultima_sincronizacao
         FROM ubs u
@@ -219,7 +219,7 @@ class PainelGestaoRepository(jdbcTemplate: JdbcTemplate) {
         SincronizacaoAtrasadaResponse(
             ubs = UbsEscopoResponse(rs.getLong("id"), rs.getString("nome"), rs.getString("cnes")),
             ultimaSincronizacao = ultima,
-            atrasoHoras = ultima?.let { java.time.Duration.between(it, agora).toHours() },
+            atrasoDias = ultima?.let { java.time.temporal.ChronoUnit.DAYS.between(it.atZone(FUSO_PAINEL).toLocalDate(), hoje) },
         )
     }
 

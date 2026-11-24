@@ -81,14 +81,14 @@ class PainelGestaoController(private val painel: PainelGestaoService) {
         @RequestParam(defaultValue = "50") @Min(1) @Max(200) limite: Int,
     ): List<LoteVencendoResponse> = painel.lotesVencendo(usuarioId(jwt), ubsId, dias, limite)
 
-    @Operation(summary = "UBS com sincronização atrasada", description = "UBS que nunca sincronizaram ou sincronizaram há mais de `horas` horas.")
+    @Operation(summary = "UBS com sincronização atrasada", description = "UBS que nunca sincronizaram ou cuja posição é de mais de `dias` dias de calendário atrás (fuso de Maceió). Com 1, a posição de ontem ainda vale.")
     @GetMapping("/sincronizacao-atrasada")
     fun sincronizacaoAtrasada(
         @AuthenticationPrincipal jwt: Jwt,
         @Parameter(description = UBS_ID) @RequestParam(required = false) @Positive ubsId: Long?,
-        @Parameter(description = "Atraso mínimo em horas (1 a 720). Sem ele, 24.")
-        @RequestParam(defaultValue = "$HORAS_ATRASO_PADRAO") @Min(1) @Max(720) horas: Int,
-    ): List<SincronizacaoAtrasadaResponse> = painel.sincronizacaoAtrasada(usuarioId(jwt), ubsId, horas)
+        @Parameter(description = "Dias de calendário de tolerância (1 a 30). Sem ele, 1: a posição de ontem ainda vale.")
+        @RequestParam(defaultValue = "$DIAS_ATRASO_PADRAO") @Min(1) @Max(30) dias: Int,
+    ): List<SincronizacaoAtrasadaResponse> = painel.sincronizacaoAtrasada(usuarioId(jwt), ubsId, dias)
 
     private fun usuarioId(jwt: Jwt): Long = jwt.subject?.toLongOrNull() ?: throw CredenciaisInvalidasException()
 }
