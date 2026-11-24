@@ -7,6 +7,10 @@ import org.springframework.data.repository.query.Param
 interface UbsRepository : JpaRepository<Ubs, Long> {
     fun findAllByOrderByNomeAsc(): List<Ubs>
 
+    /** Bairros que têm ao menos uma UBS, sem repetição e em ordem alfabética. */
+    @Query("select distinct u.bairro from Ubs u order by u.bairro")
+    fun findBairros(): List<String>
+
     fun findByCnesIn(cnes: Collection<String>): List<Ubs>
 
     fun countByCodigoIbgeMunicipio(ibge: String): Long
