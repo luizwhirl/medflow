@@ -5,6 +5,7 @@ Base: `http://localhost:8080/api`. A documentação interativa fica em `/swagger
 | Método | Rota | Descrição |
 | --- | --- | --- |
 | GET | `/ubs` | Lista as unidades por nome. Com `lat` e `lng`, da mais próxima para a mais distante (veja abaixo) |
+| GET | `/ubs/bairros` | Bairros que têm UBS, sem repetição e em ordem alfabética (boas-vindas) |
 | GET | `/ubs/{id}` | Detalhe de uma unidade |
 | GET | `/ubs/{id}/estoque` | Lista os itens do estoque da UBS, com filtro opcional por status |
 | GET | `/ubs/{id}/estoque/resumo` | Resumo do estoque da UBS, com contagens por status e filtro opcional |
@@ -14,6 +15,7 @@ Base: `http://localhost:8080/api`. A documentação interativa fica em `/swagger
 | GET | `/medicamentos/{id}` | Detalhe de um medicamento |
 | GET | `/medicamentos/{id}/disponibilidade` | Unidades com o medicamento (disponíveis primeiro) |
 | GET | `/medicamentos/{id}/disponibilidade/resumo` | Total de unidades e unidades com estoque disponível, com filtro opcional por município |
+| GET | `/avisos?ubsId=&medicamentoIds=` | Avisos da UBS para os medicamentos acompanhados (veja abaixo) |
 | GET | `/lista-desejos` | Lista os medicamentos desejados pelo cidadão autenticado |
 | POST | `/lista-desejos` | Adiciona um medicamento à lista de desejos |
 | PATCH | `/lista-desejos/{id}` | Ativa ou desativa a notificação de um item |
@@ -300,6 +302,41 @@ Se o medicamento informado não existir, a API retorna `404` no padrão `applica
 Se o parâmetro `ibge` tiver formato inválido (não numérico ou diferente de 6 ou 7 dígitos), a API retorna `400` no padrão `application/problem+json`, com o título `Parâmetro inválido`.
 
 A normalização valida o formato do código IBGE, mas não verifica a existência do município. Portanto, um código com formato válido que não corresponda a nenhuma UBS cadastrada pode resultar em contagens zeradas.
+
+## Avisos
+
+`GET /api/avisos?ubsId=1&medicamentoIds=3,5` é público (sem login): o cidadão informa a UBS de referência e os medicamentos que acompanha (até 50, separados por vírgula; `medicamentoIds` é opcional). A resposta vem do mais recente para o mais antigo, e um aviso sem data (UBS que nunca sincronizou) vai para o fim.
+
+| `tipo` | Quando aparece | Campos além de `id`, `tipo`, `ubsId` e `ubsNome` |
+| --- | --- | --- |
+| `DISPONIVEL` | O medicamento está com status `DISPONIVEL` e quantidade maior que zero na UBS | `medicamentoId`, `medicamentoNome`, `medicamentoConcentracao`, `quantidade`, `ocorridoEm` (atualização do estoque) |
+| `REMESSA` | Há remessa do medicamento para a UBS que ainda não chegou à etapa `DISPONIVEL` | os do medicamento, `quantidade`, `etapa` (a mais avançada registrada; `PEDIDO` se não houver eventos), `previsaoChegada` (`AAAA-MM-DD`), `ocorridoEm` (momento da etapa) |
+| `SINCRONIZACAO_ATRASADA` | A UBS está há mais de 24 h sem sincronizar, ou nunca sincronizou | `ocorridoEm` (última sincronização; ausente se nunca sincronizou) |
+
+```json
+[
+  {
+    "id": "remessa-7-EM_TRANSPORTE",
+    "tipo": "REMESSA",
+    "ubsId": 1,
+    "ubsNome": "UBS Benedito Bentes I",
+    "medicamentoId": 3,
+    "medicamentoNome": "Metformina",
+    "medicamentoConcentracao": "850 mg",
+    "quantidade": 300,
+    "etapa": "EM_TRANSPORTE",
+    "previsaoChegada": "2026-11-25",
+    "ocorridoEm": "2026-11-23T09:00:00Z"
+  }
+]
+```
+
+O `id` é estável para o mesmo acontecimento, para o frontend guardar o que já foi lido: `disponivel-{ubs}-{medicamento}`, `remessa-{remessa}-{etapa}` (muda quando a remessa avança) e `sincronizacao-{ubs}-{segundos da última sincronização}` (muda a cada novo atraso). Campos sem valor não aparecem no JSON.
+
+| Situação | Resposta |
+| --- | --- |
+| Sem `ubsId`, `ubsId` não positivo, id de medicamento não numérico ou não positivo, ou mais de 50 medicamentos | `400` |
+| UBS inexistente | `404` com `title: "Recurso não encontrado"` |
 
 ## Exemplos
 
