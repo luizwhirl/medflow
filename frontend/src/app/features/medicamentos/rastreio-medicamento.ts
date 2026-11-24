@@ -2,7 +2,17 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, input, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { catchError, forkJoin, map, Observable, of, startWith, switchMap, throwError } from 'rxjs';
+import {
+  catchError,
+  distinctUntilChanged,
+  forkJoin,
+  map,
+  Observable,
+  of,
+  startWith,
+  switchMap,
+  throwError,
+} from 'rxjs';
 
 import {
   compararDistancia,
@@ -14,11 +24,15 @@ import {
 import { Disponibilidade, statusExibido, temEstoque } from '../../core/models/estoque.model';
 import { ItemListaDesejo } from '../../core/models/lista-desejos.model';
 import { Medicamento } from '../../core/models/medicamento.model';
+import { RemessaRastreamento } from '../../core/models/rastreamento.model';
+import { formatarDia, linhaDoTempo, PASSOS_REMESSA } from '../../core/remessa';
+import { Ubs } from '../../core/models/ubs.model';
 import { ListaDesejosService } from '../../core/services/lista-desejos.service';
 import { MedicamentoService } from '../../core/services/medicamento.service';
 import { PreferenciasService } from '../../core/services/preferencias.service';
 import { UbsService } from '../../core/services/ubs.service';
 import { Button } from '../../shared/components/button';
+import { Funcionamento } from '../../shared/components/funcionamento';
 import { MapaIlustrado } from '../../shared/components/mapa-ilustrado';
 import { EtapaTimeline, Timeline } from '../../shared/components/timeline';
 
@@ -26,19 +40,24 @@ type Estado =
   | { carregando: true }
   | { carregando: false; medicamento: Medicamento | null; disponibilidade: Disponibilidade[] };
 
-export const ETAPAS_REMESSA: readonly EtapaTimeline[] = [
-  { titulo: 'Pedido aprovado pela UBS' },
-  { titulo: 'Separado na Central de Abastecimento' },
-  { titulo: 'Em trânsito' },
-  { titulo: 'Disponível na sua UBS' },
-];
+/** Passos sem datas, para quando não há remessa a mostrar. */
+export const ETAPAS_REMESSA: readonly EtapaTimeline[] = PASSOS_REMESSA.map((p) => ({
+  titulo: p.titulo,
+}));
+
+/** Remessa para a UBS de referência. */
+type EstadoRemessa =
+  | { tipo: 'carregando' }
+  | { tipo: 'sem-referencia' }
+  | { tipo: 'erro' }
+  | { tipo: 'pronto'; remessa: RemessaRastreamento | null };
 
 const ORDEM = { DISPONIVEL: 0, RESERVADO: 1, EM_FALTA: 2 } as const;
 
 /** Detalhe do medicamento (Figma: "Desktop · Buscar e rastrear", painel da direita). */
 @Component({
   selector: 'app-rastreio-medicamento',
-  imports: [RouterLink, Button, Timeline, MapaIlustrado],
+  imports: [RouterLink, Button, Timeline, MapaIlustrado, Funcionamento],
   template: `
     @let e = estado();
     @if (e.carregando) {
@@ -155,6 +174,9 @@ const ORDEM = { DISPONIVEL: 0, RESERVADO: 1, EM_FALTA: 2 } as const;
         >
           <p class="font-bold">Em falta na {{ a.ubs }}</p>
           <p class="mt-1">
+            @if (avisoRemessa(); as aviso) {
+              {{ aviso }}
+            }
             @if (a.alternativa) {
               Enquanto isso, a {{ a.alternativa }} tem estoque.
             } @else {
@@ -182,12 +204,33 @@ const ORDEM = { DISPONIVEL: 0, RESERVADO: 1, EM_FALTA: 2 } as const;
             </svg>
             Rastreamento da remessa
           </h2>
-          <app-timeline [etapas]="etapas" [atual]="etapaAtual()" />
-          @if (etapaAtual() === null) {
-            <p class="mt-4 text-sm text-content-muted">
-              A BNAFAR ainda não informa as etapas da remessa; as datas aparecem quando esse dado
-              estiver disponível.
-            </p>
+          @if (linha(); as l) {
+            <app-timeline [etapas]="l.etapas" [atual]="l.atual" />
+          } @else {
+            <app-timeline [etapas]="etapas" />
+            @switch (remessa().tipo) {
+              @case ('carregando') {
+                <p class="mt-4 text-sm text-content-muted">Carregando a remessa…</p>
+              }
+              @case ('sem-referencia') {
+                <p class="mt-4 text-sm text-content-muted">
+                  <a routerLink="/mapa" class="font-semibold text-brand-600 hover:underline"
+                    >Escolha sua UBS</a
+                  >
+                  para acompanhar a remessa deste remédio.
+                </p>
+              }
+              @case ('erro') {
+                <p class="mt-4 text-sm text-content-muted">
+                  Não foi possível carregar a remessa agora.
+                </p>
+              }
+              @default {
+                <p class="mt-4 text-sm text-content-muted">
+                  Nenhuma remessa deste remédio para a sua UBS.
+                </p>
+              }
+            }
           }
         </section>
 
@@ -208,6 +251,7 @@ const ORDEM = { DISPONIVEL: 0, RESERVADO: 1, EM_FALTA: 2 } as const;
                       }
                       {{ u.referencia ? 'Sua UBS' : u.d.ubs.bairro }}
                     </span>
+                    <app-funcionamento class="block text-sm" [ubs]="u.funcionamento" />
                   </a>
                   <span
                     class="whitespace-nowrap rounded-full px-3 py-1 text-sm font-semibold"
@@ -313,11 +357,24 @@ export class RastreioMedicamento {
     { initialValue: new Map<number, number>() },
   );
 
+  /**
+   * Horário de cada UBS (`abertaAgora`/`fechaAs`/`fechaEm`), por id. A disponibilidade do medicamento não
+   * traz o horário, então ele vem da lista de UBS, numa chamada só.
+   */
+  private readonly funcionamentos = toSignal(
+    this.ubsService.listar().pipe(
+      map((lista) => new Map(lista.map((u) => [u.id, u]))),
+      catchError(() => of(new Map<number, Ubs>())),
+    ),
+    { initialValue: new Map<number, Ubs>() },
+  );
+
   /** Unidades com o item: disponíveis primeiro, depois pela distância. */
   protected readonly unidades = computed(() => {
     const e = this.estado();
     if (e.carregando) return [];
     const distancias = this.distancias();
+    const funcionamentos = this.funcionamentos();
     const ref = this.preferencias.ubsReferenciaId();
     return e.disponibilidade
       .map((d) => ({
@@ -325,6 +382,7 @@ export class RastreioMedicamento {
         status: statusExibido(d),
         distancia: distancias.get(d.ubs.id) ?? null,
         referencia: d.ubs.id === ref,
+        funcionamento: funcionamentos.get(d.ubs.id) ?? d.ubs,
       }))
       .sort(
         (a, b) => ORDEM[a.status] - ORDEM[b.status] || compararDistancia(a.distancia, b.distancia),
@@ -345,14 +403,45 @@ export class RastreioMedicamento {
     };
   });
 
-  /**
-   * A API só informa o estoque nas unidades, não a etapa da remessa.
-   * Só marcamos a remessa como concluída quando a UBS de referência tem o item em estoque;
-   * sem UBS de referência ou sem registro nela, a etapa fica desconhecida.
-   */
-  protected readonly etapaAtual = computed(() => {
-    const ref = this.unidades().find((u) => u.referencia);
-    return ref && temEstoque(ref.d) ? ETAPAS_REMESSA.length - 1 : null;
+  /** Remessa deste remédio para a UBS de referência (uma chamada por remédio e UBS). */
+  protected readonly remessa = toSignal(
+    toObservable(
+      computed(() => ({ id: this.id(), ubsId: this.preferencias.ubsReferenciaId() })),
+    ).pipe(
+      // outras preferências (uso contínuo, buscas recentes) não devem pedir a remessa de novo
+      distinctUntilChanged((a, b) => a.id === b.id && a.ubsId === b.ubsId),
+      switchMap(({ id, ubsId }) =>
+        ubsId === null
+          ? of<EstadoRemessa>({ tipo: 'sem-referencia' })
+          : this.medicamentoService.rastreamento(id, ubsId).pipe(
+              map((r): EstadoRemessa => ({ tipo: 'pronto', remessa: r.remessa })),
+              catchError(() => of<EstadoRemessa>({ tipo: 'erro' })),
+              startWith<EstadoRemessa>({ tipo: 'carregando' }),
+            ),
+      ),
+    ),
+    { initialValue: { tipo: 'carregando' } as EstadoRemessa },
+  );
+
+  private readonly remessaAtual = computed(() => {
+    const r = this.remessa();
+    return r.tipo === 'pronto' ? r.remessa : null;
+  });
+
+  /** Etapas com as datas da API; `null` sem remessa. */
+  protected readonly linha = computed(() => {
+    const r = this.remessaAtual();
+    return r ? linhaDoTempo(r) : null;
+  });
+
+  /** Frase sobre a próxima remessa no alerta de falta. */
+  protected readonly avisoRemessa = computed(() => {
+    const r = this.remessaAtual();
+    if (!r || r.concluida) return null;
+    const recebida = r.linhaDoTempo.some((e) => e.etapa === 'RECEBIDO' && e.ocorridoEm);
+    return recebida
+      ? 'A próxima remessa já chegou e está em conferência.'
+      : `Próxima remessa chega ${formatarDia(r.previsaoChegada)}.`;
   });
 
   constructor() {

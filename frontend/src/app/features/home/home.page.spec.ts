@@ -166,6 +166,9 @@ describe('HomePage', () => {
     http.expectOne('/api/ubs').flush([ubs(1, 'UBS Centro'), ubs(2, 'UBS Clima Bom')]);
     http.expectOne('/api/medicamentos/categorias').flush(['Diabetes', 'Hipertensão']);
     http.expectOne('/api/medicamentos/1').flush(metformina);
+    http
+      .expectOne('/api/medicamentos/1/rastreamento?ubsId=2')
+      .flush({ medicamentoId: 1, ubsId: 2, remessa: null });
     http.expectOne('/api/medicamentos/1/disponibilidade').flush([
       { ubs: ubs(1, 'UBS Centro'), status: 'DISPONIVEL', quantidade: 10, atualizadoEm: '' },
       { ubs: ubs(2, 'UBS Clima Bom'), status: 'EM_FALTA', quantidade: 0, atualizadoEm: '' },
@@ -190,6 +193,9 @@ describe('HomePage', () => {
     http.expectOne('/api/ubs').flush([ubs(1, 'UBS Centro'), ubs(2, 'UBS Clima Bom')]);
     http.expectOne('/api/medicamentos/categorias').flush([]);
     http.expectOne('/api/medicamentos/1').flush(metformina);
+    http
+      .expectOne('/api/medicamentos/1/rastreamento?ubsId=2')
+      .flush({ medicamentoId: 1, ubsId: 2, remessa: null });
     http
       .expectOne('/api/medicamentos/1/disponibilidade')
       .flush([
@@ -219,6 +225,9 @@ describe('HomePage', () => {
     http.expectOne('/api/ubs').flush([ubs(1, 'UBS Centro'), ubs(2, 'UBS Clima Bom')]);
     http.expectOne('/api/medicamentos/categorias').flush([]);
     http.expectOne('/api/medicamentos/1').flush(metformina);
+    http
+      .expectOne('/api/medicamentos/1/rastreamento?ubsId=2')
+      .flush({ medicamentoId: 1, ubsId: 2, remessa: null });
     http.expectOne('/api/medicamentos/1/disponibilidade').flush([
       { ubs: ubs(3, 'UBS Longe'), status: 'DISPONIVEL', quantidade: 4, atualizadoEm: '' },
       { ubs: ubs(1, 'UBS Centro'), status: 'DISPONIVEL', quantidade: 10, atualizadoEm: '' },
@@ -246,4 +255,44 @@ describe('HomePage', () => {
     expect(cartoes[0].textContent).toContain('800 m');
     http.verify();
   }));
+
+  it('mostra quando chega a remessa a caminho da UBS de referência', () => {
+    const fixture = TestBed.createComponent(HomePage);
+    fixture.detectChanges();
+
+    http.expectOne('/api/ubs').flush([ubs(1, 'UBS Centro'), ubs(2, 'UBS Clima Bom')]);
+    http.expectOne('/api/medicamentos/categorias').flush([]);
+    http.expectOne('/api/medicamentos/1').flush(metformina);
+    http.expectOne('/api/medicamentos/1/rastreamento?ubsId=2').flush({
+      medicamentoId: 1,
+      ubsId: 2,
+      remessa: {
+        id: 4,
+        quantidade: 300,
+        previsaoChegada: '2026-10-22',
+        etapaAtual: 'EM_TRANSPORTE',
+        concluida: false,
+        linhaDoTempo: [
+          { etapa: 'PEDIDO', ocorridoEm: '2026-10-19T12:00:00Z' },
+          { etapa: 'SEPARADO_CAF', ocorridoEm: '2026-10-20T12:00:00Z' },
+          { etapa: 'EM_TRANSPORTE', ocorridoEm: '2026-10-21T12:00:00Z' },
+          { etapa: 'RECEBIDO', ocorridoEm: null },
+          { etapa: 'DISPONIVEL', ocorridoEm: null },
+        ],
+      },
+    });
+    http
+      .expectOne('/api/medicamentos/1/disponibilidade')
+      .flush([
+        { ubs: ubs(2, 'UBS Clima Bom'), status: 'EM_FALTA', quantidade: 0, atualizadoEm: '' },
+      ]);
+    fixture.detectChanges();
+
+    const continuos = (fixture.nativeElement as HTMLElement).querySelector(
+      '[aria-labelledby="titulo-continuos"]',
+    )!.textContent!;
+    expect(continuos).toContain('Chega qui, 22/10');
+    expect(continuos).not.toContain('Sem previsão de remessa');
+    http.verify();
+  });
 });

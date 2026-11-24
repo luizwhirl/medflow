@@ -2,7 +2,7 @@ import { NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
-import { catchError, forkJoin, map, of, switchMap } from 'rxjs';
+import { catchError, distinctUntilChanged, forkJoin, map, of, switchMap } from 'rxjs';
 
 import {
   compararDistancia,
@@ -16,10 +16,12 @@ import { Medicamento } from '../../core/models/medicamento.model';
 import { StatusEstoque } from '../../core/models/status-estoque';
 import { Ubs, UbsProxima } from '../../core/models/ubs.model';
 import { MedicamentoService } from '../../core/services/medicamento.service';
+import { textoChegada } from '../../core/remessa';
 import { PreferenciasService } from '../../core/services/preferencias.service';
 import { UbsService } from '../../core/services/ubs.service';
 import { Button } from '../../shared/components/button';
 import { Chip } from '../../shared/components/chip';
+import { Funcionamento } from '../../shared/components/funcionamento';
 import { MapaIlustrado } from '../../shared/components/mapa-ilustrado';
 import { SearchField } from '../../shared/components/search-field';
 import { StatusBadge } from '../../shared/components/status-badge';
@@ -50,6 +52,7 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
     StatusBadge,
     SyncIndicator,
     MapaIlustrado,
+    Funcionamento,
   ],
   template: `
     <ng-template #pilula>
@@ -285,6 +288,7 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
                   <p class="text-sm text-content-muted">{{ distancia(p.distancia) }}</p>
                 }
                 <h3 class="mt-1 truncate text-lg font-bold">{{ p.ubs.nome }}</h3>
+                <app-funcionamento class="mt-1 block text-sm" [ubs]="p.ubs" />
                 @if (remedios().length) {
                   <div
                     class="mt-3 h-2 overflow-hidden rounded-full bg-outline"
@@ -335,6 +339,7 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
                 }
                 {{ u.bairro }}
               </p>
+              <app-funcionamento class="mt-2 block" [ubs]="u" />
               <div class="mt-5 flex gap-3">
                 <a appButton class="flex-1" [routerLink]="['/ubs', u.id]">Ver estoque</a>
                 <a
@@ -436,6 +441,35 @@ export class HomePage {
     { initialValue: [] as { medicamento: Medicamento; disponibilidade: Disponibilidade[] }[] },
   );
 
+  /**
+   * "Chega qui, 22/10" por id de remédio, da remessa a caminho da UBS de referência.
+   * Uma chamada por remédio; sem UBS de referência, nenhuma.
+   */
+  private readonly chegadas = toSignal(
+    toObservable(
+      computed(() => ({
+        ids: this.preferencias.remediosContinuos(),
+        ubsId: this.preferencias.ubsReferenciaId(),
+      })),
+    ).pipe(
+      // só refaz as chamadas quando a lista ou a UBS mudam, não a cada preferência salva
+      distinctUntilChanged((a, b) => a.ubsId === b.ubsId && a.ids.join() === b.ids.join()),
+      switchMap(({ ids, ubsId }) =>
+        ubsId === null || ids.length === 0
+          ? of(new Map<number, string | null>())
+          : forkJoin(
+              ids.map((id) =>
+                this.medicamentoService.rastreamento(id, ubsId).pipe(
+                  map((r) => [id, textoChegada(r.remessa)] as const),
+                  catchError(() => of([id, null] as const)),
+                ),
+              ),
+            ).pipe(map((pares) => new Map<number, string | null>(pares))),
+      ),
+    ),
+    { initialValue: new Map<number, string | null>() },
+  );
+
   protected readonly remedios = computed((): Remedio[] => {
     const refId = this.preferencias.ubsReferenciaId();
     const distancias = this.distancias();
@@ -475,6 +509,8 @@ export class HomePage {
   protected previsao(r: Remedio): string {
     if (r.naReferencia && temEstoque(r.naReferencia))
       return `~${r.naReferencia.quantidade} un. em estoque`;
+    const chegada = this.chegadas().get(r.medicamento.id);
+    if (chegada) return chegada;
     if (r.naReferencia?.status === 'RESERVADO')
       return `${r.naReferencia.quantidade} un. reservadas`;
     return 'Sem previsão de remessa';
