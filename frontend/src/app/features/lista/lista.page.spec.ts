@@ -4,19 +4,17 @@ import { TestBed, fakeAsync, flushMicrotasks } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 
 import { ItemListaDesejo } from '../../core/models/lista-desejos.model';
-import { Medicamento } from '../../core/models/medicamento.model';
 import { StatusEstoque } from '../../core/models/status-estoque';
 import { Ubs } from '../../core/models/ubs.model';
 import { ListaPage } from './lista.page';
 
 const ubs = (id: number, nome: string) =>
   ({ id, nome, bairro: 'Centro', latitude: 0, longitude: 0 }) as Ubs;
-const med = (id: number, nome: string, concentracao: string) =>
-  ({ id, nome, concentracao }) as Medicamento;
 const desejo = (
   id: number,
   medicamentoId: number,
   medicamentoNome: string,
+  medicamentoConcentracao: string,
   ubsId = 1,
   notificar = true,
 ): ItemListaDesejo => ({
@@ -25,6 +23,7 @@ const desejo = (
   ubsNome: ubsId === 1 ? 'UBS Centro' : `UBS ${ubsId}`,
   medicamentoId,
   medicamentoNome,
+  medicamentoConcentracao,
   notificar,
   criadoEm: '',
 });
@@ -56,7 +55,10 @@ describe('ListaPage', () => {
 
   afterEach(() => http.verify());
 
-  /** Abre a página com Metformina (em falta na UBS Centro) e Losartana (disponível nela). */
+  /**
+   * Abre a página com Metformina (em falta na UBS Centro) e Losartana (disponível nela).
+   * O nome e a concentração vêm da lista: só a disponibilidade é buscada por medicamento.
+   */
   function abrir(localizacao = false) {
     preparar(localizacao);
     const fixture = TestBed.createComponent(ListaPage);
@@ -66,8 +68,10 @@ describe('ListaPage', () => {
     http.expectOne('/api/ubs/1').flush(ubs(1, 'UBS Centro'));
     http
       .expectOne('/api/lista-desejos')
-      .flush([desejo(10, 1, 'Metformina'), desejo(11, 2, 'Losartana', 1, false)]);
-    http.expectOne('/api/medicamentos/1').flush(med(1, 'Metformina', '850 mg'));
+      .flush([
+        desejo(10, 1, 'Metformina', '850 mg'),
+        desejo(11, 2, 'Losartana', '50 mg', 1, false),
+      ]);
     http
       .expectOne('/api/medicamentos/1/disponibilidade')
       .flush([
@@ -75,7 +79,6 @@ describe('ListaPage', () => {
         disp(ubs(3, 'UBS Perto'), 'DISPONIVEL', 12),
         disp(ubs(1, 'UBS Centro'), 'EM_FALTA', 0),
       ]);
-    http.expectOne('/api/medicamentos/2').flush(med(2, 'Losartana', '50 mg'));
     http
       .expectOne('/api/medicamentos/2/disponibilidade')
       .flush([disp(ubs(1, 'UBS Centro'), 'DISPONIVEL', 80)]);
@@ -130,7 +133,7 @@ describe('ListaPage', () => {
     expect(interruptor(el, 'Losartana 50 mg').disabled).toBeTrue();
     const req = http.expectOne({ method: 'PATCH', url: '/api/lista-desejos/11' });
     expect(req.request.body).toEqual({ notificar: true });
-    req.flush(desejo(11, 2, 'Losartana', 1, true));
+    req.flush(desejo(11, 2, 'Losartana', '50 mg', 1, true));
     fixture.detectChanges();
 
     expect(interruptor(el, 'Losartana 50 mg').getAttribute('aria-checked')).toBe('true');

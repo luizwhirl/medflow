@@ -7,7 +7,6 @@ import { catchError, finalize, forkJoin, map, Observable, of, startWith, switchM
 import { compararDistancia, Coordenadas, formatarDistancia, posicaoAtual } from '../../core/geo';
 import { Disponibilidade, statusExibido, temEstoque } from '../../core/models/estoque.model';
 import { ItemListaDesejo } from '../../core/models/lista-desejos.model';
-import { Medicamento } from '../../core/models/medicamento.model';
 import { StatusEstoque } from '../../core/models/status-estoque';
 import { Ubs } from '../../core/models/ubs.model';
 import { ListaDesejosService } from '../../core/services/lista-desejos.service';
@@ -16,15 +15,10 @@ import { PreferenciasService } from '../../core/services/preferencias.service';
 import { UbsService } from '../../core/services/ubs.service';
 import { StatusBadge } from '../../shared/components/status-badge';
 
-interface Detalhe {
-  medicamento: Medicamento | null;
-  disponibilidade: Disponibilidade[];
-}
-
 type Carga =
   | { tipo: 'carregando' }
   | { tipo: 'erro' }
-  | { tipo: 'ok'; itens: ItemListaDesejo[]; detalhes: Map<number, Detalhe> };
+  | { tipo: 'ok'; itens: ItemListaDesejo[]; disponibilidades: Map<number, Disponibilidade[]> };
 
 interface Linha {
   item: ItemListaDesejo;
@@ -296,21 +290,24 @@ export class ListaPage {
   protected readonly erroAcao = signal<string | null>(null);
   protected readonly anuncio = signal('');
 
-  /** Lista da API e, para cada medicamento, o nome completo e a disponibilidade nas UBS. */
+  /**
+   * Lista da API e a disponibilidade de cada medicamento nas UBS (uma chamada por medicamento;
+   * nome e concentração já vêm na própria lista).
+   */
   protected readonly carga = toSignal(
     toObservable(this.tentativa).pipe(
       switchMap(() =>
         this.listaService.listar().pipe(
           switchMap((itens) => {
             const ids = [...new Set(itens.map((i) => i.medicamentoId))];
-            const detalhes = ids.length
-              ? forkJoin(ids.map((id) => this.detalhe(id)))
-              : of([] as Detalhe[]);
-            return detalhes.pipe(
+            const disponibilidades = ids.length
+              ? forkJoin(ids.map((id) => this.disponibilidade(id)))
+              : of([] as Disponibilidade[][]);
+            return disponibilidades.pipe(
               map((d): Carga => ({
                 tipo: 'ok',
                 itens,
-                detalhes: new Map(ids.map((id, i) => [id, d[i]])),
+                disponibilidades: new Map(ids.map((id, i) => [id, d[i]])),
               })),
             );
           }),
@@ -354,23 +351,23 @@ export class ListaPage {
 
   protected readonly linhas = computed((): Linha[] => {
     const c = this.carga();
-    const detalhes = c.tipo === 'ok' ? c.detalhes : new Map<number, Detalhe>();
+    const disponibilidades =
+      c.tipo === 'ok' ? c.disponibilidades : new Map<number, Disponibilidade[]>();
     const distancias = this.distancias();
     const ocupados = this.ocupados();
     return this.itens().map((item) => {
-      const det = detalhes.get(item.medicamentoId);
-      const naUbs = det?.disponibilidade.find((d) => d.ubs.id === item.ubsId) ?? null;
+      const disponibilidade = disponibilidades.get(item.medicamentoId) ?? [];
+      const naUbs = disponibilidade.find((d) => d.ubs.id === item.ubsId) ?? null;
       const temNaUbs = naUbs !== null && temEstoque(naUbs);
       const alternativa = temNaUbs
         ? null
-        : ((det?.disponibilidade ?? [])
+        : (disponibilidade
             .filter((d) => temEstoque(d) && d.ubs.id !== item.ubsId)
             .map((d) => ({ ubs: d.ubs, distancia: distancias.get(d.ubs.id) ?? null }))
             .sort((a, b) => compararDistancia(a.distancia, b.distancia))[0] ?? null);
-      const m = det?.medicamento;
       return {
         item,
-        nome: m ? `${m.nome} ${m.concentracao}` : item.medicamentoNome,
+        nome: nomeCompleto(item),
         status: naUbs ? statusExibido(naUbs) : null,
         previsao: temNaUbs
           ? `~${naUbs!.quantidade} un. em estoque`
@@ -407,7 +404,6 @@ export class ListaPage {
   }
 
   protected remover(item: ItemListaDesejo): void {
-    // O nome completo (com a concentração) vem da linha, que some da lista ao remover.
     const nome = this.nome(item);
     this.executar(item, nome, this.listaService.remover(item.id), () => {
       this.itens.update((lista) => lista.filter((i) => i.id !== item.id));
@@ -440,15 +436,17 @@ export class ListaPage {
   }
 
   private nome(item: ItemListaDesejo): string {
-    return this.linhas().find((l) => l.item.id === item.id)?.nome ?? item.medicamentoNome;
+    return nomeCompleto(item);
   }
 
-  private detalhe(id: number) {
-    return forkJoin({
-      medicamento: this.medicamentoService.buscarPorId(id).pipe(catchError(() => of(null))),
-      disponibilidade: this.medicamentoService
-        .disponibilidade(id)
-        .pipe(catchError(() => of([] as Disponibilidade[]))),
-    });
+  /** Sem a disponibilidade (erro), o item aparece sem status em vez de derrubar a lista toda. */
+  private disponibilidade(id: number) {
+    return this.medicamentoService
+      .disponibilidade(id)
+      .pipe(catchError(() => of([] as Disponibilidade[])));
   }
+}
+
+function nomeCompleto(item: ItemListaDesejo): string {
+  return `${item.medicamentoNome} ${item.medicamentoConcentracao}`.trim();
 }

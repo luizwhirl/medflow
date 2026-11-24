@@ -5,6 +5,7 @@ export interface ItemListaDesejo {
   ubsNome: string;
   medicamentoId: number;
   medicamentoNome: string;
+  medicamentoConcentracao: string;
   /** Se o cidadão quer ser avisado quando o item chegar. */
   notificar: boolean;
   criadoEm: string;
