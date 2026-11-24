@@ -4,11 +4,12 @@ Base: `http://localhost:8080/api`. A documentação interativa fica em `/swagger
 
 | Método | Rota | Descrição |
 | --- | --- | --- |
-| GET | `/ubs` | Lista as unidades por nome. Com `lat` e `lng`, da mais próxima para a mais distante (veja abaixo) |
-| GET | `/ubs/{id}` | Detalhe de uma unidade |
+| GET | `/ubs` | Lista as unidades por nome. Com `lat` e `lng`, da mais próxima para a mais distante; com `abertas=true`, só as abertas agora (veja abaixo) |
+| GET | `/ubs/{id}` | Detalhe de uma unidade, com o horário de funcionamento |
 | GET | `/ubs/{id}/estoque` | Itens do estoque da UBS, paginados, com filtro opcional por status |
 | GET | `/ubs/{id}/movimentacoes` | Últimas movimentações de estoque da UBS, com filtro opcional por medicamento |
 | GET | `/ubs/{id}/estoque/resumo` | Resumo do estoque da UBS, com contagens por status e filtro opcional |
+| PUT | `/gestao/ubs/{id}/horarios` | Cadastra o horário de funcionamento da UBS (só `GESTOR`; veja abaixo) |
 | GET | `/medicamentos?busca=` | Medicamentos paginados, por nome; `busca` filtra por nome ou categoria |
 | GET | `/medicamentos?categoria=` | Filtra medicamentos por categoria; pode ser combinado com `busca` |
 | GET | `/medicamentos/categorias` | Lista as categorias distintas dos medicamentos cadastrados |
@@ -239,6 +240,73 @@ Sem parâmetros, a rota lista as unidades por nome, como sempre. Com `lat` e `ln
 ```
 
 Sem `raioKm` a busca usa 20 km, para não varrer todas as unidades do banco. A caixa de latitude/longitude (índice `idx_ubs_localizacao`) descarta as unidades distantes antes da conta de distância. Para raios grandes a resposta pode ser longa: esta rota ainda não é paginada.
+
+## Horário de funcionamento e "aberta agora"
+
+`GET /api/ubs?abertas=true` · `GET /api/ubs?lat=-9.55&lng=-35.72&abertas=true` · `GET /api/ubs/{id}`
+
+Toda UBS em `GET /api/ubs` (com ou sem `lat`/`lng`) e em `GET /api/ubs/{id}` traz três campos novos:
+
+| Campo | Conteúdo |
+| --- | --- |
+| `horarios` | Turnos por dia da semana (`SEGUNDA` ... `DOMINGO`), com `abre` e `fecha` em `HH:mm`. Vazio quando a unidade não tem horário cadastrado |
+| `abertaAgora` | `true` ou `false` no horário atual de Maceió (`America/Maceio`); `null` quando a unidade não tem horário cadastrado |
+| `fechaAs` | Hora em que fecha (`HH:mm`), só quando está aberta; senão `null` |
+| `fechaEm` | Data e hora em que fecha, com fuso (ex.: `2026-11-21T07:00:00-03:00`). Num turno que vira a noite, é no dia seguinte. `null` quando está fechada ou quando não tem hora de fechar (unidade 24 h) |
+
+Com `abertas=true`, a lista fica só com as unidades abertas agora; quem não tem horário cadastrado fica de fora. `abertas=false` ou sem o parâmetro não filtra. O filtro vale junto com `lat`, `lng`, `raioKm` e `medicamentoId`.
+
+Regras:
+
+- Um turno vale de `abre` (inclusive) até `fecha` (exclusive): às 17:00 uma unidade "7h às 17h" já está fechada.
+- Se `fecha` for antes de `abre`, o turno vira a noite e termina no dia seguinte (ex.: sexta, 19:00 às 07:00 vale até sábado, 07:00).
+- Se `abre` for igual a `fecha`, o turno dura 24 h (ex.: `00:00` às `00:00`).
+- Turnos emendados (07:00–12:00 e 12:00–17:00) contam como um só: `fechaAs` é `17:00`.
+- Se os turnos emendados cobrem a semana inteira (unidade 24 h todos os dias), `abertaAgora` é `true` e `fechaAs`/`fechaEm` ficam `null`.
+- Dias sem turno (fim de semana, na maioria das unidades) ficam fechados.
+- Unidade sem nenhum turno cadastrado tem `horarios: []` e `abertaAgora: null` (situação desconhecida), e fica de fora com `abertas=true`.
+
+Limitações conhecidas:
+
+- O cálculo usa o fuso de Maceió (`America/Maceio`) para todas as unidades. Para UBS de estados com outro fuso (Acre, Amazonas, Mato Grosso, entre outros), `abertaAgora` fica deslocado. Quando o app atender outros estados, o fuso deve passar a vir da UF da unidade.
+
+```json
+{
+  "id": 1, "cnes": "9000101", "nome": "UBS Benedito Bentes I", "horario": "Seg a Sex · 7h às 17h",
+  "horarios": [
+    { "diaSemana": "SEGUNDA", "abre": "07:00", "fecha": "17:00" },
+    { "diaSemana": "TERCA", "abre": "07:00", "fecha": "17:00" }
+  ],
+  "abertaAgora": true,
+  "fechaAs": "17:00"
+}
+```
+
+O campo `horario` (texto livre) continua na resposta como descrição. Os turnos ficam na tabela `horario_funcionamento` (migration `V9`); no perfil `dev`, o seed `V1005` preenche os turnos das unidades de exemplo de acordo com esse texto.
+
+### De onde vêm os horários em produção
+
+A BNAFAR, que cria as unidades na sincronização, não informa horário, e o CNES só traz turnos genéricos ("manhã e tarde", "24 horas"), sem a hora de abrir e de fechar. Por isso, em produção, o horário de cada UBS é cadastrado pela gestão:
+
+`PUT /api/gestao/ubs/{id}/horarios` (exige token com o papel `GESTOR`)
+
+```json
+{
+  "turnos": [
+    { "diaSemana": "SEGUNDA", "abre": "07:00", "fecha": "17:00" },
+    { "diaSemana": "SEXTA", "abre": "19:00", "fecha": "07:00" },
+    { "diaSemana": "DOMINGO", "abre": "00:00", "fecha": "00:00" }
+  ]
+}
+```
+
+- Os turnos enviados **substituem** todos os anteriores da UBS. Lista vazia apaga o horário, e a unidade volta a ter `abertaAgora: null`.
+- Horas em `HH:mm`. `fecha` antes de `abre` vira a noite; `fecha` igual a `abre` é um turno de 24 h. Até 28 turnos (quatro por dia).
+- A resposta traz `ubsId`, `horarios`, `abertaAgora`, `fechaAs` e `fechaEm` já recalculados, nos mesmos formatos de `GET /api/ubs/{id}`.
+- Segue o [escopo do gestor](#escopo-do-gestor): com vínculo, o gestor só cadastra o horário da própria UBS; sem vínculo, o de qualquer UBS.
+- Erros em `application/problem+json`: `401` sem token, `403` para quem não é `GESTOR` ou para gestor com vínculo pedindo outra UBS (mesmo que ela não exista), `404` para UBS inexistente (gestor sem vínculo) e `400` para hora inválida, dia ausente, lista ausente ou dois turnos no mesmo dia começando na mesma hora.
+
+Unidade que a gestão ainda não cadastrou continua com `horarios: []` e `abertaAgora: null`, e fica de fora do filtro `abertas=true`.
 
 ## Resumo do estoque da UBS
 
