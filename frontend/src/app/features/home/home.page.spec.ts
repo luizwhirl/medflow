@@ -62,6 +62,7 @@ describe('PreferenciasService', () => {
       ubsReferenciaId: 7,
       remediosContinuos: [5],
       buscasRecentes: [],
+      boasVindasConcluidas: false,
     });
   });
 });
@@ -104,6 +105,7 @@ describe('HomePage', () => {
     expect(texto('titulo-continuos')).toContain('Metformina 850 mg');
     expect(texto('titulo-continuos')).toContain('Em falta');
     expect(texto('titulo-atalhos')).toContain('Hipertensão');
+    http.expectOne('/api/avisos?ubsId=2&medicamentoIds=1').flush([]);
     http.verify();
   });
 
@@ -126,6 +128,7 @@ describe('HomePage', () => {
     expect(continuos).toContain('Sem registro na sua UBS');
     expect(continuos).not.toContain('Disponível');
     expect(continuos).toContain('Nenhuma UBS com estoque');
+    http.expectOne('/api/avisos?ubsId=2&medicamentoIds=1').flush([]);
     http.verify();
   });
 
@@ -166,6 +169,49 @@ describe('HomePage', () => {
       'UBS Centro',
     ]);
     expect(cartoes[0].textContent).toContain('800 m');
+    http.expectOne('/api/avisos?ubsId=2&medicamentoIds=1').flush([]);
     http.verify();
   }));
+
+  it('o cartão "Avisos recentes" mostra os três mais recentes, com os não lidos em destaque', () => {
+    localStorage.setItem('medflow.avisos-lidos', JSON.stringify(['disponivel-2-1']));
+    const fixture = TestBed.createComponent(HomePage);
+    fixture.detectChanges();
+    http.expectOne('/api/ubs').flush([ubs(2, 'UBS Clima Bom')]);
+    http.expectOne('/api/medicamentos/categorias').flush([]);
+    http.expectOne('/api/medicamentos/1').flush(metformina);
+    http.expectOne('/api/medicamentos/1/disponibilidade').flush([]);
+    const aviso = (id: string, tipo: string, extra = {}) => ({
+      id,
+      tipo,
+      ubsId: 2,
+      ubsNome: 'UBS Clima Bom',
+      medicamentoId: 1,
+      medicamentoNome: 'Metformina',
+      medicamentoConcentracao: '850 mg',
+      quantidade: 30,
+      ...extra,
+    });
+    http
+      .expectOne('/api/avisos?ubsId=2&medicamentoIds=1')
+      .flush([
+        aviso('remessa-9-EM_TRANSPORTE', 'REMESSA', { etapa: 'EM_TRANSPORTE' }),
+        aviso('disponivel-2-1', 'DISPONIVEL'),
+        aviso('remessa-8-PEDIDO', 'REMESSA', { etapa: 'PEDIDO' }),
+        aviso('remessa-7-PEDIDO', 'REMESSA', { etapa: 'PEDIDO' }),
+      ]);
+    fixture.detectChanges();
+
+    const itens = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('[aria-label="Avisos recentes"] li'),
+    );
+    expect(itens.map((li) => li.querySelector('span span')!.textContent!.trim())).toEqual([
+      'Metformina 850 mg a caminho',
+      'Metformina 850 mg disponível',
+      'Pedido de Metformina 850 mg feito',
+    ]);
+    expect(itens[0].querySelector('.font-semibold')).not.toBeNull();
+    expect(itens[1].querySelector('.font-semibold')).toBeNull();
+    http.verify();
+  });
 });

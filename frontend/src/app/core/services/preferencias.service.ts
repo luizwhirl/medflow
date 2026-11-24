@@ -1,4 +1,4 @@
-import { Injectable, signal } from '@angular/core';
+import { computed, Injectable, signal } from '@angular/core';
 
 const CHAVE = 'medflow.preferencias';
 const MAX_BUSCAS = 3;
@@ -7,6 +7,8 @@ interface Preferencias {
   ubsReferenciaId: number | null;
   remediosContinuos: number[];
   buscasRecentes: string[];
+  /** Se o cidadão já passou pela boas-vindas (escolheu a localização, o bairro ou pulou). */
+  boasVindasConcluidas: boolean;
 }
 
 /**
@@ -20,6 +22,14 @@ export class PreferenciasService {
   readonly ubsReferenciaId = () => this.estado().ubsReferenciaId;
   readonly remediosContinuos = () => this.estado().remediosContinuos;
   readonly buscasRecentes = () => this.estado().buscasRecentes;
+  /** Quem já tem UBS de referência (de antes da boas-vindas existir) também não precisa dela. */
+  readonly boasVindasConcluidas = computed(
+    () => this.estado().boasVindasConcluidas || this.estado().ubsReferenciaId !== null,
+  );
+
+  concluirBoasVindas(): void {
+    this.atualizar({ boasVindasConcluidas: true });
+  }
 
   definirUbsReferencia(id: number | null): void {
     this.atualizar({ ubsReferenciaId: id });
@@ -58,9 +68,15 @@ export class PreferenciasService {
         ubsReferenciaId: typeof salvo?.ubsReferenciaId === 'number' ? salvo.ubsReferenciaId : null,
         remediosContinuos: lista<number>(salvo?.remediosContinuos, 'number'),
         buscasRecentes: lista<string>(salvo?.buscasRecentes, 'string').slice(0, MAX_BUSCAS),
+        boasVindasConcluidas: salvo?.boasVindasConcluidas === true,
       };
     } catch {
-      return { ubsReferenciaId: null, remediosContinuos: [], buscasRecentes: [] };
+      return {
+        ubsReferenciaId: null,
+        remediosContinuos: [],
+        buscasRecentes: [],
+        boasVindasConcluidas: false,
+      };
     }
   }
 }
