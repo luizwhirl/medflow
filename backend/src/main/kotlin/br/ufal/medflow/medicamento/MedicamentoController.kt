@@ -2,6 +2,7 @@ package br.ufal.medflow.medicamento
 
 import br.ufal.medflow.common.PaginaResponse
 import br.ufal.medflow.common.Paginacao
+import br.ufal.medflow.common.ParametroInvalidoException
 import br.ufal.medflow.common.RecursoNaoEncontradoException
 import br.ufal.medflow.common.toPaginaResponse
 import br.ufal.medflow.estoque.DisponibilidadeResponse
@@ -9,10 +10,15 @@ import br.ufal.medflow.estoque.ItemEstoqueRepository
 import br.ufal.medflow.estoque.ResumoDisponibilidadeResponse
 import br.ufal.medflow.estoque.toDisponibilidadeResponse
 import io.swagger.v3.oas.annotations.Parameter
+import io.swagger.v3.oas.annotations.enums.ParameterIn
+import io.swagger.v3.oas.annotations.media.ArraySchema
+import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
+import org.springframework.data.domain.PageRequest
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.util.MultiValueMap
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RequestMapping
@@ -28,10 +34,25 @@ class MedicamentoController(
     private val medicamentoDisponibilidadeService: MedicamentoDisponibilidadeService,
 ) {
 
-    /** Lista medicamentos em ordem de nome, paginado; `busca` e `categoria` podem ser combinados. */
+    private companion object {
+        const val MAX_ALTERNATIVAS = 3
+        const val MAX_TAMANHO_BUSCA = 200
+    }
+
+    /** Lista medicamentos com paginação, busca tolerante e filtro por categoria. */
     @GetMapping
+    @Parameter(
+        name = "busca",
+        `in` = ParameterIn.QUERY,
+        description = "Até três termos ou alternativas de reconhecimento de voz.",
+        array = ArraySchema(
+            schema = Schema(type = "string", maxLength = MAX_TAMANHO_BUSCA),
+            maxItems = MAX_ALTERNATIVAS,
+        ),
+    )
     fun listar(
-        @RequestParam(required = false) busca: String?,
+        @Parameter(hidden = true)
+        @RequestParam parametros: MultiValueMap<String, String>,
         @RequestParam(required = false) categoria: String?,
         @Parameter(description = "Página, a partir de 0.")
         @RequestParam(defaultValue = "0") @Min(0) pagina: Int,
@@ -39,26 +60,44 @@ class MedicamentoController(
         @RequestParam(defaultValue = "${Paginacao.TAMANHO_PADRAO}") @Min(1) @Max(Paginacao.TAMANHO_MAXIMO.toLong())
         tamanho: Int,
     ): PaginaResponse<MedicamentoResponse> {
-        val termo = busca?.trim().orEmpty()
+        // Preserva vírgulas dentro de uma transcrição.
+        val alternativas = parametros["busca"].orEmpty()
+
+        if (
+            alternativas.size > MAX_ALTERNATIVAS ||
+            alternativas.any { it.length > MAX_TAMANHO_BUSCA }
+        ) {
+            throw ParametroInvalidoException("busca")
+        }
+
+        val termos = alternativas
+            .map { it.replace(Regex("[\\r\\n]+"), " ").trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+
         val categoriaFiltrada = categoria?.trim().orEmpty()
-        val paginacao = Paginacao.de(pagina, tamanho, "nome")
+
+        // Nas consultas nativas, a ordenação já está definida no SQL.
+        val paginaSemOrdem = PageRequest.of(pagina, tamanho)
 
         val resultado = when {
-            termo.isNotEmpty() && categoriaFiltrada.isNotEmpty() ->
-                medicamentoRepository.buscarPorCategoriaETermo(
-                    termo,
+            termos.isNotEmpty() ->
+                medicamentoRepository.buscarPorRelevancia(
+                    termos.joinToString("\n"),
                     categoriaFiltrada,
-                    paginacao,
+                    paginaSemOrdem,
                 )
 
             categoriaFiltrada.isNotEmpty() ->
-                medicamentoRepository.buscarPorCategoria(categoriaFiltrada, paginacao)
-
-            termo.isNotEmpty() ->
-                medicamentoRepository.buscar(termo, paginacao)
+                medicamentoRepository.buscarPorCategoria(
+                    categoriaFiltrada,
+                    paginaSemOrdem,
+                )
 
             else ->
-                medicamentoRepository.findAll(paginacao)
+                medicamentoRepository.findAll(
+                    Paginacao.de(pagina, tamanho, "nome"),
+                )
         }
 
         return resultado.toPaginaResponse { it.toResponse() }

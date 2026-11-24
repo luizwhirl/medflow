@@ -51,7 +51,7 @@ class MedicamentoRepositoryIntegrationTests(
             ),
         )
 
-        val resultado = medicamentoRepository.buscarPorCategoriaETermo(
+        val resultado = medicamentoRepository.buscarPorRelevancia(
             "Medicamento Teste Filtro",
             "Diabetes",
             Pageable.unpaged(),
