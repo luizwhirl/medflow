@@ -156,3 +156,16 @@ Windows bloquear scripts, rode uma vez `Set-ExecutionPolicy -Scope CurrentUser R
 
 - Linha de comando: `docker compose exec db psql -U medflow -d medflow`
 - pgAdmin: `docker compose --profile tools up -d` → http://localhost:5050 (host `db`, usuário/senha `medflow`)
+
+## Avisos por dispositivo
+
+A migration `V16__avisos.sql` cria a estrutura de avisos
+identificados por `dispositivo_id UUID`, sem vínculo com
+contas de usuários.
+
+Os destinatários são identificados pelo UUID do dispositivo
+da lista de desejos, conforme o modelo estabelecido pela
+migration `V14__lista_desejos_dispositivo.sql`.
+
+A restrição de unicidade por `(dispositivo_id, chave_evento)`
+evita a duplicação de avisos para o mesmo evento e dispositivo.

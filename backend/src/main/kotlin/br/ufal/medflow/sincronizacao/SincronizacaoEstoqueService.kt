@@ -1,5 +1,6 @@
 package br.ufal.medflow.sincronizacao
 
+import br.ufal.medflow.aviso.GeracaoAvisoService
 import br.ufal.medflow.estoque.ItemEstoque
 import br.ufal.medflow.estoque.ItemEstoqueRepository
 import br.ufal.medflow.estoque.LoteEstoque
@@ -34,6 +35,7 @@ class SincronizacaoEstoqueService(
     private val itemRepository: ItemEstoqueRepository,
     private val loteRepository: LoteEstoqueRepository,
     private val regraStatus: RegraStatusEstoque,
+    private val geracaoAvisos: GeracaoAvisoService,
     transactionManager: PlatformTransactionManager,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -191,27 +193,46 @@ class SincronizacaoEstoqueService(
             .associateBy { it.ubs.cnes to it.medicamento.catmat }
         val resultado = HashMap<Pair<String, String>, ItemEstoque>()
         val novos = mutableListOf<ItemEstoque>()
+        val novasDisponibilidades = mutableListOf<Pair<Ubs, Medicamento>>()
         var atualizados = 0
 
         for ((chave, lista) in porItem) {
             val quantidade = lista.sumOf { it.posicao.quantidadeInteira().toLong() }.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
             val medicamento = medicamentoPorCatmat.porChave.getValue(chave.second)
+
             val status = regraStatus.calcular(quantidade, limiteDoMedicamento = medicamento.limiteReservado)
+
             val atualizadoEm = lista.maxOf { it.posicao.dataPosicao }.comoInstante()
 
             val existente = existentes[chave]
             if (existente == null) {
-                novos += ItemEstoque(ubsPorCnes.porChave.getValue(chave.first), medicamento, status, quantidade, atualizadoEm)
+                val ubs = ubsPorCnes.porChave.getValue(chave.first)
+
+                novos += ItemEstoque(ubs, medicamento, status, quantidade, atualizadoEm)
+
+                // A primeira posição disponível também gera aviso.
+                if (status == StatusEstoque.DISPONIVEL) {
+                    novasDisponibilidades += ubs to medicamento
+                }
             } else {
+                val ficouDisponivel = existente.status != StatusEstoque.DISPONIVEL &&
+                    status == StatusEstoque.DISPONIVEL
+
                 if (existente.quantidade != quantidade || existente.status != status || existente.atualizadoEm != atualizadoEm) {
                     existente.quantidade = quantidade
                     existente.status = status
                     existente.atualizadoEm = atualizadoEm
                     atualizados++
                 }
+
+                if (ficouDisponivel) {
+                    novasDisponibilidades += existente.ubs to existente.medicamento
+                }
+
                 resultado[chave] = existente
             }
         }
+
         for ((chave, existente) in existentes) {
             if (chave in porItem) continue
             resultado[chave] = existente
@@ -222,7 +243,14 @@ class SincronizacaoEstoqueService(
                 atualizados++
             }
         }
+
         itemRepository.saveAll(novos).forEach { resultado[it.ubs.cnes to it.medicamento.catmat] = it }
+
+        // Gera avisos somente para transições reais, na mesma transação do estoque.
+        novasDisponibilidades.forEach { (ubs, medicamento) ->
+            geracaoAvisos.registrarDisponibilidade(ubs, medicamento)
+        }
+
         return Itens(resultado, Contagem(criados = novos.size, atualizados = atualizados))
     }
 
@@ -264,6 +292,7 @@ class SincronizacaoEstoqueService(
             }
             remover += atuais.filterKeys { it !in desejados }.values
         }
+
         loteRepository.saveAll(novos)
         loteRepository.deleteAll(remover)
         return Contagem(criados = novos.size, atualizados = atualizados, removidos = remover.size)

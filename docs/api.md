@@ -21,10 +21,13 @@ Base: `http://localhost:8080/api`. A documentação interativa fica em `/swagger
 | POST | `/lista-desejos` | Adiciona um medicamento à lista de desejos |
 | PATCH | `/lista-desejos/{id}` | Ativa ou desativa a notificação de um item |
 | DELETE | `/lista-desejos/{id}` | Remove um item da lista de desejos |
+| GET | `/avisos` | Lista os 50 avisos mais recentes do dispositivo (`X-Dispositivo-Id`) |
+| GET | `/avisos/nao-lidos/total` | Total de avisos não lidos do dispositivo |
+| PATCH | `/avisos/lidas` | Marca como lidos os avisos do dispositivo |
 
 ## Autenticação
 
-A leitura de UBS e medicamentos (`GET /api/ubs/**` e `GET /api/medicamentos/**`), a saúde (`/actuator/health`) e a documentação (Swagger) são públicas. A lista de desejos (`/api/lista-desejos` e subrotas) também é pública e identificada pelo aparelho (veja [Lista de desejos](#lista-de-desejos)). Todo o resto exige login. O prefixo `/api/gestao` é só do papel `GESTOR`. Rota que não existe também responde `401` sem token.
+A leitura de UBS e medicamentos (`GET /api/ubs/**` e `GET /api/medicamentos/**`), a saúde (`/actuator/health`) e a documentação (Swagger) são públicas. A lista de desejos (`/api/lista-desejos` e subrotas) também é pública e identificada pelo aparelho (veja [Lista de desejos](#lista-de-desejos)). Os avisos (`/api/avisos` e subrotas) também são públicos e identificados pelo cabeçalho `X-Dispositivo-Id`. Todo o resto exige login. O prefixo `/api/gestao` é só do papel `GESTOR`. Rota que não existe também responde `401` sem token.
 
 | Método | Rota | Quem | Descrição |
 | --- | --- | --- | --- |
@@ -38,7 +41,7 @@ A leitura de UBS e medicamentos (`GET /api/ubs/**` e `GET /api/medicamentos/**`)
 { "token": "eyJhbGciOiJIUzI1NiJ9...", "tipo": "Bearer", "expiraEmSegundos": 28800, "papel": "CIDADAO" }
 ```
 
-Nas demais chamadas, envie `Authorization: Bearer <token>`. O token é um JWT assinado com HS256, vale 8 horas (`JWT_EXPIRACAO`) e leva o id da conta (`sub`), o `email` e o `papel` (`CIDADAO` ou `GESTOR`).
+Nas chamadas autenticadas, envie `Authorization: Bearer <token>`. As rotas de avisos não exigem token e utilizam `X-Dispositivo-Id`. O token é um JWT assinado com HS256, vale 8 horas (`JWT_EXPIRACAO`) e leva o id da conta (`sub`), o `email` e o `papel` (`CIDADAO` ou `GESTOR`).
 
 `POST /api/auth/cadastro` com `{"nome": "...", "email": "...", "senha": "..."}` (senha de 8 a 72 caracteres) devolve `201` com `id`, `nome`, `email` e `papel`. O papel **não** pode ser escolhido: toda conta criada por aqui é `CIDADAO`. Conta de `GESTOR` só é criada direto no banco, com a senha em BCrypt.
 
@@ -50,7 +53,7 @@ Nas demais chamadas, envie `Authorization: Bearer <token>`. O token é um JWT as
 | Cadastro com e-mail que já existe (a caixa não importa) | `409` com `title: "E-mail já cadastrado"` |
 | Corpo inválido (campo vazio, e-mail ruim, senha curta) | `400` |
 
-Todos os erros seguem o padrão `application/problem+json`. O CORS libera o cabeçalho `Authorization` para as origens de `CORS_ALLOWED_ORIGINS`.
+Todos os erros seguem o padrão `application/problem+json`. O CORS libera os cabeçalhos `Authorization` e `X-Dispositivo-Id` para as origens de `CORS_ALLOWED_ORIGINS`.
 
 Com o suporte nativo a RFC 9457 habilitado, erros gerados automaticamente pelo Spring MVC podem apresentar o campo `title` em inglês, como `"Bad Request"` (400), `"Method Not Allowed"` (405) e `"Unsupported Media Type"` (415). Já os erros tratados pelos handlers de domínio utilizam títulos em português, como `"Parâmetro inválido"` e `"Recurso não encontrado"`. Para identificar erros programaticamente, utilize o código HTTP (`status`), em vez de depender do texto de `title`.
 
@@ -170,7 +173,84 @@ As consultas de propriedade são filtradas diretamente no banco de dados pelo `X
 
 Os erros de domínio utilizam o padrão RFC 9457 (`application/problem+json`).
 
-O campo `notificar` controla a preferência de aviso. O envio efetivo das notificações será implementado na F5.
+O campo `notificar` controla a geração dos avisos persistidos pela API. Com `false`, o cidadão não recebe novos avisos relacionados àquele item. Os avisos já gerados permanecem disponíveis no histórico.
+
+## Avisos do cidadão (sem login)
+
+Os avisos são registros armazenados no banco e vinculados a um **UUID do dispositivo**, e não à conta do usuário. Não há push, SMS ou e-mail nesta funcionalidade. O navegador gera um UUID aleatório, mantém esse valor em `localStorage` e o envia no cabeçalho `X-Dispositivo-Id`, o mesmo utilizado pela lista de desejos do PR #33.
+
+**Exemplo:** `X-Dispositivo-Id: 15da7427-97f6-4bf1-9d99-004af964e951`.
+
+Não é necessário enviar `Authorization`. Os três endpoints exigem um UUID com 36 caracteres no formato canônico; se faltar ou estiver inválido, retornam `400` (`application/problem+json`). O identificador funciona como uma chave de acesso de posse do navegador, **não como autenticação forte**: quem descobrir o UUID poderá consultar ou marcar os avisos desse dispositivo. Por isso, não exponha o UUID em URLs, logs ou analytics e não grave informações pessoais nem condições de saúde detalhadas nos avisos.
+
+### Listar avisos
+
+`GET /api/avisos`
+
+Retorna até **50 avisos mais recentes** do dispositivo, ordenados por `criadoEm` decrescente e, em caso de empate, por `id` decrescente. Se não houver avisos, retorna `[]`.
+
+```json
+[
+  {
+    "id": 21,
+    "tipo": "MEDICAMENTO_DISPONIVEL",
+    "titulo": "Medicamento disponível",
+    "texto": "O medicamento acompanhado está disponível na UBS selecionada.",
+    "lido": false,
+    "criadoEm": "2026-11-19T16:30:00Z"
+  }
+]
+```
+
+### Contar avisos não lidos
+
+`GET /api/avisos/nao-lidos/total`
+
+A contagem é executada no banco, inclusive para avisos além dos 50 mais recentes.
+
+```json
+{ "naoLidos": 7 }
+```
+
+### Marcar avisos como lidos
+
+`PATCH /api/avisos/lidas`
+
+Não recebe corpo. Marca como lidos somente os avisos do UUID informado. A atualização é feita no banco e não remove o histórico.
+
+```json
+{ "atualizados": 2 }
+```
+
+### Geração automática
+
+| Tipo | Quando é gerado |
+| --- | --- |
+| `MEDICAMENTO_DISPONIVEL` | Na sincronização, quando o medicamento passa a estar disponível na UBS acompanhada. |
+| `UBS_DADOS_ATRASADOS` | Na verificação de atraso dos dados da UBS acompanhada. |
+
+O destinatário deve ter um item de lista de desejos com `dispositivo_id` definido e `notificar = true`. Para disponibilidade, o par UBS/medicamento deve coincidir. Para atraso, basta acompanhar a UBS.
+
+A geração de disponibilidade evita produzir novo aviso se o dispositivo já tiver um aviso **não lido** para a mesma UBS e medicamento. Depois de marcar esse aviso como lido, somente uma **nova transição real de estoque para disponível** poderá produzir outro. A geração ocorre na mesma transação da sincronização de estoque; falhas provocam rollback conjunto.
+
+Avisos de atraso têm chave derivada da UBS e da última referência de dados. A constraint `uk_aviso_dispositivo_evento` impede duplicação quando o job é repetido. Atraso é calculado por **dias de calendário no fuso `America/Maceio`**, não por uma janela móvel de horas. Por padrão, a UBS está atrasada quando a posição é **anterior ao início de ontem** ou não existe data de referência. Uma posição de ontem não dispara aviso logo após a meia-noite de hoje. A tolerância é configurada por `app.avisos.atraso-dias` (padrão `1`, inteiro positivo). O job depende de `app.sync.ativo=true`.
+
+### Migrations e dados de exemplo
+
+A migration `V16__avisos.sql` cria avisos identificados por `dispositivo_id UUID`, sem vínculo com contas de usuários. A lista de desejos utiliza o modelo exclusivamente por dispositivo estabelecido pela migration `V14__lista_desejos_dispositivo.sql`.
+
+No perfil `dev`, `AvisosDeExemplo` insere idempotentemente **três avisos fictícios** (dois não lidos, um lido) para o UUID de demonstração `15da7427-97f6-4bf1-9d99-004af964e951`. Para testá-los no frontend, use esse UUID no `localStorage` de desenvolvimento e no cabeçalho `X-Dispositivo-Id`; não o utilize como UUID de um dispositivo real.
+
+### Integração e erros
+
+| Situação | Resposta |
+| --- | --- |
+| UUID ausente ou inválido | `400 Bad Request` (`Parâmetro inválido`) |
+| UUID válido sem avisos | `200 OK` com `[]` |
+| UUID válido sem avisos não lidos | `200 OK` com `{"naoLidos": 0}` |
+| UUID válido sem avisos para marcar | `200 OK` com `{"atualizados": 0}` |
+
+A API não verifica uma sessão ou conta de cidadão. A separação dos registros usa exclusivamente `dispositivo_id`; não exponha esse identificador a terceiros. A lista de desejos e os avisos utilizam o mesmo UUID no frontend.
 
 ## Paginação
 
