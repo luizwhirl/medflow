@@ -10,7 +10,7 @@ Base: `http://localhost:8080/api`. A documentação interativa fica em `/swagger
 | GET | `/ubs/{id}/movimentacoes` | Últimas movimentações de estoque da UBS, com filtro opcional por medicamento |
 | GET | `/ubs/{id}/estoque/resumo` | Resumo do estoque da UBS, com contagens por status e filtro opcional |
 | PUT | `/gestao/ubs/{id}/horarios` | Cadastra o horário de funcionamento da UBS (só `GESTOR`; veja abaixo) |
-| GET | `/medicamentos?busca=` | Medicamentos paginados, por nome; `busca` filtra por nome ou categoria |
+| GET | `/medicamentos?busca=` | Medicamentos paginados; `busca` aceita termos e alternativas, ordenados por relevância |
 | GET | `/medicamentos?categoria=` | Filtra medicamentos por categoria; pode ser combinado com `busca` |
 | GET | `/medicamentos/categorias` | Lista as categorias distintas dos medicamentos cadastrados |
 | GET | `/medicamentos/{id}` | Detalhe de um medicamento |
@@ -193,11 +193,58 @@ O campo `notificar` controla a preferência de aviso. O envio efetivo das notifi
 | `pagina` | `0` | a partir de 0 |
 | `tamanho` | `20` | de 1 a 100 |
 
-Fora da regra retorna `400` (`application/problem+json`). Página além do fim vem com `itens` vazio e os totais preenchidos. A ordem é por nome (do medicamento, no estoque), com o `id` desempatando, então a mesma página traz sempre os mesmos itens.
+Fora da regra retorna `400` (`application/problem+json`). Página além do fim vem com `itens` vazio e os totais preenchidos. Sem busca textual, a ordem é por nome (do medicamento, no estoque), com o `id` desempatando, então a mesma página traz sempre os mesmos itens.
 
 Ficam sem paginação, por terem tamanho limitado: `/ubs/{id}/estoque/resumo` (as contagens precisam do estoque inteiro), `/medicamentos/{id}/disponibilidade` (uma linha por UBS, e a busca do front conta "Em X de Y UBS" com a lista completa) e `/medicamentos/categorias`.
 
-A busca por nome e categoria usa índices `pg_trgm` (veja [banco-de-dados.md](banco-de-dados.md#índices-da-busca)).
+A busca utiliza colunas normalizadas e índices `pg_trgm` da migration V15. Sem termo de busca, a ordem continua sendo por nome e ID.
+
+## Busca tolerante de medicamentos
+
+A rota `GET /api/medicamentos` aceita tanto termos digitados quanto
+transcrições do reconhecimento de voz.
+
+Exemplos:
+
+- `/api/medicamentos?busca=met`
+- `/api/medicamentos?busca=losartana%2050%20miligramas`
+- `/api/medicamentos?busca=dipirona%20sodica`
+- `/api/medicamentos?busca=metiformina`
+- `/api/medicamentos?busca=losartan&busca=metformina`
+- `/api/medicamentos?busca=losartana&categoria=Hipertensao`
+
+A busca ignora acentos, maiúsculas, pontuação, números isolados,
+unidades de medida e palavras comuns que não ajudam a identificar
+o medicamento.
+
+Uma palavra correspondente ao nome ou à categoria já pode incluir
+o medicamento no resultado. Termos com pelo menos cinco caracteres
+também podem encontrar nomes semelhantes por meio do `pg_trgm`.
+
+Os resultados são classificados pela quantidade de palavras
+correspondentes, prefixo do nome, correspondência textual e
+similaridade. Nome e ID são utilizados como desempate.
+
+O parâmetro `busca` pode ser repetido até três vezes, com no máximo
+200 caracteres por alternativa. Os resultados são combinados sem
+duplicar medicamentos. Cada medicamento utiliza a pontuação de sua
+melhor alternativa. Vírgulas dentro de uma transcrição são tratadas
+como pontuação, não como separadores de alternativas.
+
+Se forem informadas mais de três alternativas ou uma alternativa
+exceder 200 caracteres, a API retorna `400` no formato
+`application/problem+json`.
+
+Uma busca não vazia contendo apenas palavras descartadas retorna
+uma página vazia. Sem busca, a listagem continua funcionando normalmente.
+
+Os parâmetros `categoria`, `pagina` e `tamanho` permanecem disponíveis,
+com os mesmos limites e formato de resposta.
+
+A migration V15 habilita `unaccent` e adiciona índices GIN nas
+colunas normalizadas de nome e categoria. Um trigger mantém essas
+colunas atualizadas quando o cadastro do medicamento é inserido
+ou alterado.
 
 ## Filtro por categoria
 
@@ -213,7 +260,7 @@ Listar as categorias disponíveis:
 
 `GET /api/medicamentos/categorias`
 
-A categoria é filtrada sem diferenciar letras maiúsculas de minúsculas. Se nenhuma categoria corresponder, a listagem de medicamentos retorna uma página vazia (`itens: []`, `totalItens: 0`).
+A categoria é filtrada por igualdade, ignorando acentos e diferenças entre letras maiúsculas e minúsculas. Se nenhuma categoria corresponder, a listagem de medicamentos retorna uma página vazia (`itens: []`, `totalItens: 0`).
 
 Status de estoque: `DISPONIVEL`, `RESERVADO`, `EM_FALTA`.
 
