@@ -166,18 +166,19 @@ class PainelGestaoRepository(jdbcTemplate: JdbcTemplate) {
     }
 
     /** Medicamentos mais desejados na lista de desejos (qualquer situação do estoque), no escopo. */
-    fun maisProcurados(ubsId: Long?, limite: Int): List<MaisProcuradoResponse> = jdbc.query(
+    /** Buscas no app desde [desde] (inclusive); na UBS, as de quem a tem como referência. */
+    fun maisProcurados(ubsId: Long?, desde: LocalDate, limite: Int): List<MaisProcuradoResponse> = jdbc.query(
         """
-        SELECT w.medicamento_id, m.nome AS medicamento_nome, m.concentracao, COUNT(DISTINCT w.dispositivo_id) AS pacientes
-        FROM item_lista_desejo w JOIN medicamento m ON m.id = w.medicamento_id
-        WHERE ${escopo("w.ubs_id", ubsId)}
-        GROUP BY w.medicamento_id, m.nome, m.concentracao
-        ORDER BY pacientes DESC, m.nome
+        SELECT b.medicamento_id, m.nome AS medicamento_nome, m.concentracao, SUM(b.total) AS buscas
+        FROM contagem_busca b JOIN medicamento m ON m.id = b.medicamento_id
+        WHERE b.dia >= :desde AND ${escopo("b.ubs_id", ubsId)}
+        GROUP BY b.medicamento_id, m.nome, m.concentracao
+        ORDER BY buscas DESC, m.nome
         LIMIT :limite
         """,
-        params(ubsId).addValue("limite", limite),
+        params(ubsId).addValue("desde", desde).addValue("limite", limite),
     ) { rs, _ ->
-        MaisProcuradoResponse(MedicamentoResumoResponse(rs.getLong("medicamento_id"), nomeComConcentracao(rs)), rs.getInt("pacientes"))
+        MaisProcuradoResponse(MedicamentoResumoResponse(rs.getLong("medicamento_id"), nomeComConcentracao(rs)), rs.getInt("buscas"))
     }
 
     fun lotesVencendo(ubsId: Long?, ate: LocalDate, hoje: LocalDate, limite: Int): List<LoteVencendoResponse> = jdbc.query(

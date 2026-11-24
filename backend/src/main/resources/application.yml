@@ -40,6 +40,9 @@ app:
     max-paginas: 500
     timeout-conexao: 5s
     timeout-leitura: 30s
+  buscas: # contagem de buscas para o "mais procurados" do painel (PDS-49)
+    retencao-meses: 12 # dias mais antigos que isso são apagados (LGPD)
+    cron-limpeza: 0 0 3 * * * # todo dia às 3h (fuso de Maceió)
   sync:
     ativo: ${SYNC_ATIVO:false}
     municipios: ${SYNC_MUNICIPIOS:} # IBGE (6 ou 7 dígitos), separados por vírgula

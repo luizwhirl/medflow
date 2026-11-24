@@ -1,6 +1,6 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, input, signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import {
   catchError,
@@ -446,6 +446,18 @@ export class RastreioMedicamento {
 
   constructor() {
     posicaoAtual().then((p) => this.posicao.set(p));
+    // Uma procura por medicamento aberto; falhar aqui não atrapalha a tela.
+    toObservable(this.id)
+      .pipe(
+        distinctUntilChanged(),
+        switchMap((id) =>
+          this.medicamentoService
+            .registrarBusca(id, this.preferencias.ubsReferenciaId())
+            .pipe(catchError(() => of(null))),
+        ),
+        takeUntilDestroyed(),
+      )
+      .subscribe();
   }
 
   /** Adiciona à Minha lista (na UBS de referência) ou tira dela. */

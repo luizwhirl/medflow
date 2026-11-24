@@ -16,6 +16,7 @@ Base: `http://localhost:8080/api`. A documentação interativa fica em `/swagger
 | GET | `/medicamentos/{id}` | Detalhe de um medicamento |
 | GET | `/medicamentos/{id}/disponibilidade` | Unidades com o medicamento (disponíveis primeiro) |
 | GET | `/medicamentos/{id}/rastreamento?ubsId=` | Remessa do medicamento para a UBS: etapa atual, previsão de chegada e linha do tempo |
+| POST | `/medicamentos/{id}/buscas` | Conta uma procura do medicamento para o "mais procurados" da gestão (sem login, veja [Contagem de buscas](#contagem-de-buscas)) |
 | GET | `/medicamentos/{id}/disponibilidade/resumo` | Total de unidades e unidades com estoque disponível, com filtro opcional por município |
 | GET | `/lista-desejos` | Lista os medicamentos desejados pelo aparelho (sem login, cabeçalho `X-Dispositivo-Id`) |
 | POST | `/lista-desejos` | Adiciona um medicamento à lista de desejos |
@@ -557,7 +558,7 @@ Rotas do painel, só para o papel `GESTOR`, todas com `GET` e `?ubsId=` opcional
 | `/api/gestao/indicadores` | KPIs do painel |
 | `/api/gestao/itens-atencao` | Itens sem saldo ou até o mínimo, com pacientes aguardando e a remessa prevista (a tabela principal do painel) |
 | `/api/gestao/remanejamento` | Sugestões de remanejamento entre UBS da mesma cidade |
-| `/api/gestao/demanda-reprimida` | Pacientes da lista de desejos esperando um item sem estoque, e os medicamentos mais desejados |
+| `/api/gestao/demanda-reprimida` | Pacientes da lista de desejos esperando um item sem estoque, e os medicamentos mais procurados no app nos últimos 7 dias |
 | `/api/gestao/lotes-vencendo` | Lotes com saldo que vencem até `dias` dias (padrão 60), inclusive os já vencidos |
 | `/api/gestao/sincronizacao-atrasada` | UBS que nunca sincronizaram ou cuja posição é de mais de `dias` dias de calendário atrás (padrão 1: a posição de ontem ainda vale) |
 
@@ -588,7 +589,7 @@ Parâmetros de tamanho: `limite` (remanejamento e demanda, 1 a 100, padrão 20; 
 - `emFaltaComRemessa`: itens em falta com remessa **em andamento** (sem `DISPONIVEL`) para a mesma UBS. Uma remessa só recebida ainda conta aqui, porque o item segue sem estar disponível na prateleira; uma remessa já disponível não conta.
 - `pacientesAguardando` e `medicamentosAguardados`: contas e medicamentos distintos da lista de desejos em que o item **não está disponível** na UBS desejada, isto é, sem posição, com status diferente de `DISPONIVEL` ou sem saldo (mesma regra da disponibilidade de medicamentos). Sem login, a contagem é por aparelho (`dispositivo_id`): cada aparelho distinto conta como um paciente.
 - `ultimaSincronizacao`: a da UBS do escopo; na rede, a mais recente.
-- Sem fonte de dados, ficam de fora: `prazoReposicaoDias` e a contagem de buscas (`buscas`) que o front de demonstração usa. Em "mais procurados" entra o número de pacientes da lista de desejos.
+- Sem fonte de dados, fica de fora o `prazoReposicaoDias` que o front de demonstração usa.
 
 ### Itens de atenção
 
@@ -642,12 +643,12 @@ Atenção: cada destino é avaliado sozinho, então a mesma UBS de origem pode a
       "pacientesAguardando": 2, "status": "EM_FALTA", "quantidade": 0 }
   ],
   "maisProcurados": [
-    { "medicamento": { "id": 1, "nome": "Metformina 850 mg" }, "pacientes": 2 }
+    { "medicamento": { "id": 1, "nome": "Metformina 850 mg" }, "buscas": 42 }
   ]
 }
 ```
 
-`status` e `quantidade` são `null` quando a UBS ainda não tem posição do medicamento. `maisProcurados` conta a lista de desejos em qualquer situação do estoque.
+`status` e `quantidade` são `null` quando a UBS ainda não tem posição do medicamento. `maisProcurados` soma as [buscas](#contagem-de-buscas) de hoje e dos 6 dias anteriores (fuso de Maceió), da mais procurada para a menos, com o nome desempatando. Com `ubsId` (ou para o gestor com vínculo), contam só as buscas de quem tem essa UBS como referência; na rede, todas, inclusive as de quem ainda não escolheu UBS. Medicamento sem busca no período não aparece.
 
 ### Lotes vencendo e sincronização atrasada
 
@@ -686,6 +687,20 @@ Cada lote traz `numeroLote`, `validade`, `quantidade`, `diasParaVencer` (negativ
 - Sem remessa, a resposta é `200` com `"remessa": null`.
 - `404` se o medicamento ou a UBS não existir; `400` se `ubsId` faltar ou não for um número positivo.
 - A BNAFAR pública não informa remessas em trânsito: os dados vêm de cadastro, e no perfil `dev`, do seed.
+
+## Contagem de buscas
+
+`POST /api/medicamentos/{id}/buscas` (público, sem login). O app chama uma vez a cada medicamento aberto (na busca ou no detalhe). Corpo opcional:
+
+```json
+{ "ubsId": 1 }
+```
+
+`ubsId` é a UBS de referência de quem procurou; sem ela, mande `{}` ou nenhum corpo. Responde `204`, `404` se o medicamento ou a UBS não existir e `400` se algum id não for positivo.
+
+**O que é guardado (LGPD):** só a contagem, na tabela `contagem_busca` (V17): uma linha por dia, medicamento e UBS, com o `total` de procuras. Nada do que foi digitado ou falado, nenhum identificador do aparelho e nenhum horário. As linhas com mais de 12 meses são apagadas todo dia às 3h (`app.buscas.retencao-meses` e `app.buscas.cron-limpeza`).
+
+A rota não tem como saber se a procura é de uma pessoa real, então a contagem pode ser inflada de propósito. Ela serve como tendência no painel, não como número exato.
 
 ## Movimentações de estoque
 

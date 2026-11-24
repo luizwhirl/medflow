@@ -261,6 +261,7 @@ describe('MedicamentoSearchPage', () => {
     http.expectOne('/api/medicamentos/categorias').flush([]);
     http.expectOne('/api/medicamentos/1').flush(metformina);
     http.expectOne('/api/medicamentos/1/disponibilidade').flush(disponibilidade);
+    http.expectOne({ method: 'POST', url: '/api/medicamentos/1/buscas' }).flush(null);
     if (comReferencia) {
       http
         .expectOne('/api/medicamentos/1/rastreamento?ubsId=1')
@@ -367,6 +368,7 @@ describe('MedicamentoSearchPage', () => {
         atualizadoEm: '',
       },
     ]);
+    http.expectOne({ method: 'POST', url: '/api/medicamentos/1/buscas' }).flush(null);
     http
       .expectOne('/api/medicamentos/1/rastreamento?ubsId=1')
       .flush({ medicamentoId: 1, ubsId: 1, remessa: null });
