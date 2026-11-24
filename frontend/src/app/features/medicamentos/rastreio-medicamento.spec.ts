@@ -13,6 +13,7 @@ const desejo = (ubsId: number, notificar: boolean): ItemListaDesejo => ({
   ubsNome: `UBS ${ubsId}`,
   medicamentoId: 7,
   medicamentoNome: 'Metformina',
+  medicamentoConcentracao: '850 mg',
   notificar,
   criadoEm: '',
 });
@@ -102,5 +103,61 @@ describe('RastreioMedicamento · Avisar quando chegar', () => {
     fixture.detectChanges();
     expect(ajuda(el)).toBe('Não foi possível salvar o aviso agora. Tente de novo.');
     expect(botao(el).disabled).toBeFalse();
+  }));
+
+  it('se o item já existir (409), recarrega a lista e liga o aviso dele', fakeAsync(() => {
+    // A lista não carregou: o botão segue habilitado e o clique tenta criar o item.
+    localStorage.setItem(
+      'medflow.preferencias',
+      JSON.stringify({ ubsReferenciaId: 1, remediosContinuos: [], buscasRecentes: [] }),
+    );
+    spyOn(navigator.geolocation, 'getCurrentPosition').and.callFake((_ok, erro) =>
+      erro!({ code: 1 } as GeolocationPositionError),
+    );
+    TestBed.configureTestingModule({
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
+    });
+    http = TestBed.inject(HttpTestingController);
+    const fixture = TestBed.createComponent(RastreioMedicamento);
+    fixture.componentRef.setInput('id', 7);
+    fixture.detectChanges();
+    flushMicrotasks();
+    http.expectOne('/api/lista-desejos').error(new ProgressEvent('error'));
+    http
+      .expectOne('/api/medicamentos/7')
+      .flush({ id: 7, nome: 'Metformina', concentracao: '850 mg' } as Medicamento);
+    http.expectOne('/api/medicamentos/7/disponibilidade').flush([]);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(botao(el).disabled).toBeFalse();
+
+    botao(el).click();
+    http
+      .expectOne({ method: 'POST', url: '/api/lista-desejos' })
+      .flush(null, { status: 409, statusText: 'Conflict' });
+    http.expectOne({ method: 'GET', url: '/api/lista-desejos' }).flush([desejo(1, false)]);
+    const req = http.expectOne({ method: 'PATCH', url: '/api/lista-desejos/40' });
+    expect(req.request.body).toEqual({ notificar: true });
+    req.flush(desejo(1, true));
+    fixture.detectChanges();
+
+    expect(botao(el).textContent).toContain('Aviso ligado');
+    expect(ajuda(el)).toBe('Acompanhe em Minha lista.');
+  }));
+
+  it('o botão de uso contínuo não se confunde com a Minha lista', fakeAsync(() => {
+    const { fixture, el } = abrir(1, []);
+    const usoContinuo = Array.from(el.querySelectorAll('button')).find((b) =>
+      b.textContent!.includes('uso contínuo'),
+    )!;
+    expect(usoContinuo.textContent!.trim()).toBe('Marcar uso contínuo');
+    expect(el.textContent).not.toContain('Adicionar à lista');
+
+    usoContinuo.click();
+    fixture.detectChanges();
+    expect(usoContinuo.textContent!.trim()).toBe('Uso contínuo');
+    expect(usoContinuo.getAttribute('aria-pressed')).toBe('true');
+    // Grava só no navegador: nenhuma chamada à lista de desejos.
+    http.expectNone({ method: 'POST', url: '/api/lista-desejos' });
   }));
 });

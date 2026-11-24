@@ -1,7 +1,8 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, input, linkedSignal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { catchError, forkJoin, map, of, startWith, switchMap } from 'rxjs';
+import { catchError, forkJoin, map, Observable, of, startWith, switchMap, throwError } from 'rxjs';
 
 import {
   compararDistancia,
@@ -84,21 +85,23 @@ const ORDEM = { DISPONIVEL: 0, RESERVADO: 1, EM_FALTA: 2 } as const;
             appButton
             type="button"
             variante="secundario"
-            [attr.aria-pressed]="naLista()"
+            [attr.aria-pressed]="usoContinuo()"
+            title="Remédios de uso contínuo aparecem na Início e no Mapa"
             (click)="preferencias.alternarRemedioContinuo(id())"
           >
             <svg
               class="size-5"
               viewBox="0 0 24 24"
-              [attr.fill]="naLista() ? 'currentColor' : 'none'"
+              fill="none"
               stroke="currentColor"
               stroke-width="2"
+              stroke-linecap="round"
               stroke-linejoin="round"
               aria-hidden="true"
             >
-              <path d="M6 3h12v18l-6-4-6 4z" />
+              <path [attr.d]="usoContinuo() ? iconeMarcado : iconeUsoContinuo" />
             </svg>
-            {{ naLista() ? 'Na minha lista' : 'Adicionar à lista' }}
+            {{ usoContinuo() ? 'Uso contínuo' : 'Marcar uso contínuo' }}
           </button>
           <button
             appButton
@@ -248,9 +251,16 @@ export class RastreioMedicamento {
   protected readonly rota = linkRota;
   private readonly posicao = signal<Coordenadas | null>(null);
 
-  protected readonly naLista = computed(() =>
+  /**
+   * Remédio de uso contínuo (guardado no navegador, usado pela Início e pelo Mapa). Não é a
+   * "Minha lista": essa é a lista de desejos da API, alimentada pelo "Avisar quando chegar".
+   */
+  protected readonly usoContinuo = computed(() =>
     this.preferencias.remediosContinuos().includes(this.id()),
   );
+  protected readonly iconeUsoContinuo =
+    'M17 2l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3';
+  protected readonly iconeMarcado = 'M5 12.5 9.5 17 19 7';
 
   /** Lista de desejos deste aparelho; `undefined` enquanto carrega, `null` se falhou. */
   protected readonly desejos = linkedSignal(
@@ -361,7 +371,9 @@ export class RastreioMedicamento {
     const atual = this.desejo();
     const chamada = atual
       ? this.listaDesejos.definirAviso(atual.id, !atual.notificar)
-      : this.listaDesejos.adicionar(ref, this.id(), true);
+      : this.listaDesejos
+          .adicionar(ref, this.id(), true)
+          .pipe(catchError((erro) => this.ligarAvisoExistente(erro, ref)));
     this.erroAviso.set(null);
     this.salvandoAviso.set(true);
     chamada.subscribe({
@@ -374,5 +386,23 @@ export class RastreioMedicamento {
         this.salvandoAviso.set(false);
       },
     });
+  }
+
+  /**
+   * 409 ao criar: o item já está na lista, mas não o tínhamos (a lista não carregou ou foi
+   * alterada em outra aba). Recarrega a lista e liga o aviso do item que já existe.
+   */
+  private ligarAvisoExistente(erro: unknown, ubsId: number): Observable<ItemListaDesejo> {
+    if (!(erro instanceof HttpErrorResponse && erro.status === 409)) return throwError(() => erro);
+    return this.listaDesejos.listar().pipe(
+      switchMap((lista) => {
+        this.desejos.set(lista);
+        const existente = lista.find((d) => d.medicamentoId === this.id() && d.ubsId === ubsId);
+        if (!existente) return throwError(() => erro);
+        return existente.notificar
+          ? of(existente)
+          : this.listaDesejos.definirAviso(existente.id, true);
+      }),
+    );
   }
 }
