@@ -1,7 +1,5 @@
 package br.ufal.medflow.listadesejo
 
-import br.ufal.medflow.auth.CredenciaisInvalidasException
-import br.ufal.medflow.auth.UsuarioRepository
 import br.ufal.medflow.common.RecursoNaoEncontradoException
 import br.ufal.medflow.medicamento.MedicamentoRepository
 import br.ufal.medflow.ubs.UbsRepository
@@ -10,70 +8,49 @@ import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.sql.SQLException
+import java.util.UUID
 
 /** Indica que o medicamento já foi adicionado à lista para a mesma UBS. */
 class ItemListaDesejoDuplicadoException :
     RuntimeException("Medicamento já cadastrado na lista de desejos para esta UBS")
 
-/** Regras de negócio da lista de desejos, de uma conta logada ou de um aparelho sem login. */
+/** Regras de negócio da lista de desejos de um aparelho (sem login). */
 @Service
 @Transactional(readOnly = true)
 class ItemListaDesejoService(
     private val itemListaDesejoRepository: ItemListaDesejoRepository,
-    private val usuarioRepository: UsuarioRepository,
     private val ubsRepository: UbsRepository,
     private val medicamentoRepository: MedicamentoRepository,
 ) {
 
-    fun listar(dono: DonoLista): List<ItemListaDesejoResponse> {
-        val itens = when (dono) {
-            is DonoLista.Conta -> {
-                validarUsuario(dono.usuarioId)
-                itemListaDesejoRepository.findAllByUsuarioIdOrderByCriadoEmDescIdDesc(dono.usuarioId)
-            }
-            is DonoLista.Aparelho ->
-                itemListaDesejoRepository.findAllByDispositivoIdOrderByCriadoEmDescIdDesc(dono.dispositivoId)
-        }
-
-        return itens.map { it.toResponse() }
-    }
+    fun listar(dispositivoId: UUID): List<ItemListaDesejoResponse> =
+        itemListaDesejoRepository
+            .findAllByDispositivoIdOrderByCriadoEmDescIdDesc(dispositivoId)
+            .map { it.toResponse() }
 
     @Transactional
     fun criar(
-        dono: DonoLista,
+        dispositivoId: UUID,
         request: CriarItemListaDesejoRequest,
     ): ItemListaDesejoResponse {
-        val usuario = when (dono) {
-            is DonoLista.Conta ->
-                usuarioRepository.findByIdOrNull(dono.usuarioId) ?: throw CredenciaisInvalidasException()
-            is DonoLista.Aparelho -> null
-        }
-
         val ubs = ubsRepository.findByIdOrNull(request.ubsId)
             ?: throw RecursoNaoEncontradoException("UBS", request.ubsId)
 
         val medicamento = medicamentoRepository.findByIdOrNull(request.medicamentoId)
             ?: throw RecursoNaoEncontradoException("Medicamento", request.medicamentoId)
 
-        val jaExiste = when (dono) {
-            is DonoLista.Conta -> itemListaDesejoRepository.existsByUsuarioIdAndUbsIdAndMedicamentoId(
-                dono.usuarioId,
+        if (
+            itemListaDesejoRepository.existsByDispositivoIdAndUbsIdAndMedicamentoId(
+                dispositivoId,
                 request.ubsId,
                 request.medicamentoId,
             )
-            is DonoLista.Aparelho -> itemListaDesejoRepository.existsByDispositivoIdAndUbsIdAndMedicamentoId(
-                dono.dispositivoId,
-                request.ubsId,
-                request.medicamentoId,
-            )
-        }
-        if (jaExiste) {
+        ) {
             throw ItemListaDesejoDuplicadoException()
         }
 
         val item = ItemListaDesejo(
-            usuario = usuario,
-            dispositivoId = (dono as? DonoLista.Aparelho)?.dispositivoId,
+            dispositivoId = dispositivoId,
             ubs = ubs,
             medicamento = medicamento,
             notificar = request.notificar,
@@ -93,44 +70,27 @@ class ItemListaDesejoService(
 
     @Transactional
     fun atualizarNotificacao(
-        dono: DonoLista,
+        dispositivoId: UUID,
         itemId: Long,
         notificar: Boolean,
     ): ItemListaDesejoResponse {
-        val item = buscarDoDono(dono, itemId)
-
+        val item = buscarDoAparelho(dispositivoId, itemId)
         item.notificar = notificar
-
         return item.toResponse()
     }
 
     @Transactional
     fun remover(
-        dono: DonoLista,
+        dispositivoId: UUID,
         itemId: Long,
     ) {
-        itemListaDesejoRepository.delete(buscarDoDono(dono, itemId))
+        itemListaDesejoRepository.delete(buscarDoAparelho(dispositivoId, itemId))
     }
 
-    /** Item de outro dono responde como inexistente (404), para não revelar que ele existe. */
-    private fun buscarDoDono(dono: DonoLista, itemId: Long): ItemListaDesejo {
-        val item = when (dono) {
-            is DonoLista.Conta -> {
-                validarUsuario(dono.usuarioId)
-                itemListaDesejoRepository.findByIdAndUsuarioId(itemId, dono.usuarioId)
-            }
-            is DonoLista.Aparelho -> itemListaDesejoRepository.findByIdAndDispositivoId(itemId, dono.dispositivoId)
-        }
-
-        return item ?: throw RecursoNaoEncontradoException("Item da lista de desejos", itemId)
-    }
-
-    /** Um token de uma conta excluída não deve continuar autorizando operações. */
-    private fun validarUsuario(usuarioId: Long) {
-        if (!usuarioRepository.existsById(usuarioId)) {
-            throw CredenciaisInvalidasException()
-        }
-    }
+    /** Item de outro aparelho responde como inexistente (404), para não revelar que ele existe. */
+    private fun buscarDoAparelho(dispositivoId: UUID, itemId: Long): ItemListaDesejo =
+        itemListaDesejoRepository.findByIdAndDispositivoId(itemId, dispositivoId)
+            ?: throw RecursoNaoEncontradoException("Item da lista de desejos", itemId)
 
     /** SQLState 23505 indica violação de unicidade no PostgreSQL. */
     private fun Throwable.violaUnicidade(): Boolean =

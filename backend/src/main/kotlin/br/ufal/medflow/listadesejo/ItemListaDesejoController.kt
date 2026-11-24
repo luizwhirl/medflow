@@ -1,11 +1,8 @@
 package br.ufal.medflow.listadesejo
 
-import br.ufal.medflow.auth.CredenciaisInvalidasException
 import br.ufal.medflow.common.ParametroInvalidoException
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
-import org.springframework.security.core.annotation.AuthenticationPrincipal
-import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
@@ -18,10 +15,7 @@ import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
-/**
- * API da lista de desejos. Com JWT de cidadão, a lista é da conta; sem login, é do aparelho
- * informado no cabeçalho [CABECALHO_DISPOSITIVO].
- */
+/** API da lista de desejos, sem login: o dono é o aparelho informado no cabeçalho [CABECALHO_DISPOSITIVO]. */
 @RestController
 @RequestMapping("/api/lista-desejos")
 class ItemListaDesejoController(
@@ -30,29 +24,26 @@ class ItemListaDesejoController(
 
     @GetMapping
     fun listar(
-        @AuthenticationPrincipal jwt: Jwt?,
         @RequestHeader(CABECALHO_DISPOSITIVO, required = false) dispositivo: String?,
     ): List<ItemListaDesejoResponse> =
-        itemListaDesejoService.listar(dono(jwt, dispositivo))
+        itemListaDesejoService.listar(aparelho(dispositivo))
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     fun criar(
-        @AuthenticationPrincipal jwt: Jwt?,
         @RequestHeader(CABECALHO_DISPOSITIVO, required = false) dispositivo: String?,
         @Valid @RequestBody request: CriarItemListaDesejoRequest,
     ): ItemListaDesejoResponse =
-        itemListaDesejoService.criar(dono(jwt, dispositivo), request)
+        itemListaDesejoService.criar(aparelho(dispositivo), request)
 
     @PatchMapping("/{id}")
     fun atualizarNotificacao(
-        @AuthenticationPrincipal jwt: Jwt?,
         @RequestHeader(CABECALHO_DISPOSITIVO, required = false) dispositivo: String?,
         @PathVariable id: Long,
         @Valid @RequestBody request: AtualizarNotificacaoRequest,
     ): ItemListaDesejoResponse =
         itemListaDesejoService.atualizarNotificacao(
-            dono(jwt, dispositivo),
+            aparelho(dispositivo),
             id,
             // @NotNull valida a entrada, mas o DTO usa Boolean?;
             // esta checagem garante um Boolean não nulo para o serviço.
@@ -63,28 +54,21 @@ class ItemListaDesejoController(
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     fun remover(
-        @AuthenticationPrincipal jwt: Jwt?,
         @RequestHeader(CABECALHO_DISPOSITIVO, required = false) dispositivo: String?,
         @PathVariable id: Long,
     ) {
-        itemListaDesejoService.remover(dono(jwt, dispositivo), id)
+        itemListaDesejoService.remover(aparelho(dispositivo), id)
     }
 
-    /**
-     * Com JWT (o SecurityConfig só deixa passar o papel CIDADAO), o dono é a conta do `sub`.
-     * Sem login, é o aparelho do cabeçalho, que precisa ser um UUID no formato canônico.
-     */
-    private fun dono(jwt: Jwt?, dispositivo: String?): DonoLista {
-        if (jwt != null) {
-            return DonoLista.Conta(jwt.subject?.toLongOrNull() ?: throw CredenciaisInvalidasException())
-        }
+    /** O cabeçalho é obrigatório e precisa ser um UUID no formato canônico. */
+    private fun aparelho(dispositivo: String?): UUID {
         if (dispositivo == null || !UUID_CANONICO.matches(dispositivo)) {
             throw ParametroInvalidoException(
                 CABECALHO_DISPOSITIVO,
                 "Envie o cabeçalho $CABECALHO_DISPOSITIVO com o identificador (UUID) deste aparelho",
             )
         }
-        return DonoLista.Aparelho(UUID.fromString(dispositivo))
+        return UUID.fromString(dispositivo)
     }
 
     companion object {
