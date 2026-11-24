@@ -37,7 +37,7 @@ ubs 1───* item_estoque *───1 medicamento
 | --- | --- | --- |
 | `ubs` | Unidades de saúde, localização e última sincronização | `cnes` |
 | `medicamento` | Itens da RENAME/REMUME, com limite de reservado próprio (opcional) | `catmat` |
-| `usuario` | Contas autenticadas de cidadãos e gestores | `email` |
+| `usuario` | Contas autenticadas de cidadãos e gestores; o gestor pode ter vínculo com uma UBS | `email` |
 | `item_estoque` | Status e quantidade de um medicamento numa UBS | (`ubs_id`, `medicamento_id`) |
 | `lote_estoque` | Lotes de um item de estoque, com validade (a soma dos lotes é, no máximo, `item_estoque.quantidade`: posição sem validade conta no total, mas não vira lote) | (`item_estoque_id`, `numero_lote`) |
 | `remessa` | Remessa de um medicamento da CAF para uma UBS, com quantidade e previsão de chegada | — |
@@ -113,6 +113,10 @@ que atendem tanto o `LIKE` quanto a igualdade. O estoque da UBS já usa a chave 
 Com poucas linhas (como no seed) o planejador prefere o Seq Scan, o que é o certo nesse tamanho. Termos com menos de
 3 letras não formam trigramas e também caem no Seq Scan. O teste `IndicesBuscaMedicamentoIntegrationTests` gera
 volume e confere que os planos usam os índices.
+
+### Vínculo do gestor com a UBS
+
+A migration `V13__vinculo_gestor_ubs.sql` adiciona `usuario.ubs_gestao_id` (opcional), que referencia `ubs(id)`. Só o papel `GESTOR` pode ter vínculo (constraint `ck_usuario_ubs_gestao_so_gestor`). A chave estrangeira é `ON DELETE RESTRICT`: apagar a UBS deixaria o gestor sem vínculo e, com isso, vendo a rede toda. No perfil `dev`, Seu Carlos é vinculado à UBS `9000101`, e Dona Marta não tem vínculo.
 
 ## Regras para migrations
 

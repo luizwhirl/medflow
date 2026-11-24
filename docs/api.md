@@ -53,7 +53,7 @@ Todos os erros seguem o padrão `application/problem+json`. O CORS libera o cabe
 
 Com o suporte nativo a RFC 9457 habilitado, erros gerados automaticamente pelo Spring MVC podem apresentar o campo `title` em inglês, como `"Bad Request"` (400), `"Method Not Allowed"` (405) e `"Unsupported Media Type"` (415). Já os erros tratados pelos handlers de domínio utilizam títulos em português, como `"Parâmetro inválido"` e `"Recurso não encontrado"`. Para identificar erros programaticamente, utilize o código HTTP (`status`), em vez de depender do texto de `title`.
 
-No perfil `dev` existem duas contas de exemplo, com a senha `medflow-dev-123`: `rita@medflow.local` (cidadã) e `carlos@medflow.local` (gestor). Elas nunca são criadas em produção.
+No perfil `dev` existem três contas de exemplo, com a senha `medflow-dev-123`: `rita@medflow.local` (cidadã), `carlos@medflow.local` (gestor da UBS Benedito Bentes I) e `marta@medflow.local` (gestora sem vínculo, vê a rede toda). Elas nunca são criadas em produção.
 
 ## Lista de desejos
 
@@ -329,6 +329,25 @@ Se o medicamento informado não existir, a API retorna `404` no padrão `applica
 Se o parâmetro `ibge` tiver formato inválido (não numérico ou diferente de 6 ou 7 dígitos), a API retorna `400` no padrão `application/problem+json`, com o título `Parâmetro inválido`.
 
 A normalização valida o formato do código IBGE, mas não verifica a existência do município. Portanto, um código com formato válido que não corresponda a nenhuma UBS cadastrada pode resultar em contagens zeradas.
+
+## Escopo do gestor
+
+Um gestor pode ter vínculo com uma UBS (`usuario.ubs_gestao_id`). Por enquanto o vínculo só é definido direto no banco (não há endpoint nem tela para isso). **Regra:** todo endpoint de `/api/gestao` deve resolver o escopo chamando o `EscopoGestaoService`; o código não impõe isso sozinho, então cada rota nova precisa fazer a chamada (e ter teste).
+
+| Gestor | O que vê | Pedir `ubsId` |
+| --- | --- | --- |
+| Com vínculo | Só a UBS vinculada | A própria UBS é aceita; outra UBS responde `403` |
+| Sem vínculo | A rede toda | Filtra pela UBS informada (`404` se não existir) |
+
+`GET /api/gestao/escopo` (só `GESTOR`, `?ubsId=` opcional) mostra o escopo atual:
+
+```json
+{ "ubs": { "id": 1, "nome": "UBS Benedito Bentes I", "cnes": "9000101" }, "restrito": true }
+```
+
+Para o gestor sem vínculo e sem `ubsId`, a resposta é `{ "ubs": null, "restrito": false }`. Conta apagada, ou que deixou de ser gestora, deixa de valer mesmo com o token antigo (`401`), em vez de ver a rede.
+
+Atenção: hoje **gestor sem vínculo vê a rede toda**. Esquecer de preencher o vínculo no cadastro dá acesso total; esse comportamento foi escolhido para o MVP e está para confirmação do produto. Se mudar, a visão da rede passa a ser explícita (coluna ou papel próprio) e o gestor sem vínculo e sem essa permissão recebe `403`.
 
 ## Rastreamento da remessa
 
