@@ -56,7 +56,7 @@ describe('MedicamentoSearchPage', () => {
   beforeEach(() => {
     localStorage.setItem(
       'medflow.preferencias',
-      JSON.stringify({ ubsReferenciaId: 1, remediosContinuos: [], buscasRecentes: [] }),
+      JSON.stringify({ ubsReferenciaId: 1, buscasRecentes: [] }),
     );
     spyOn(navigator.geolocation, 'getCurrentPosition').and.callFake((ok) =>
       ok({ coords: { latitude: 0, longitude: 0 } } as GeolocationPosition),
@@ -80,6 +80,7 @@ describe('MedicamentoSearchPage', () => {
     fixture.detectChanges();
     flushMicrotasks();
     fixture.detectChanges();
+    http.expectOne('/api/lista-desejos').flush([{ id: 10, ubsId: 1, medicamentoId: 2 }]);
     http.expectOne('/api/medicamentos/categorias').flush([]);
     http.expectOne('/api/ubs?lat=0&lng=0&raioKm=5').flush([ubs(1, 'Perto', 1), ubs(2, 'Meio', 3)]);
     tick(250);
@@ -99,8 +100,10 @@ describe('MedicamentoSearchPage', () => {
     const el = fixture.nativeElement as HTMLElement;
     expect(resultados(el)).toEqual([
       'Metformina 850 mg comprimido Em 1 de 2 UBS próximas',
-      'Glibenclamida 850 mg comprimido Nenhuma UBS a até 5 km',
+      jasmine.stringContaining('Nenhuma UBS a até 5 km'),
     ]);
+    // Glibenclamida está na lista de desejos do aparelho.
+    expect(resultados(el)[1]).toContain('Glibenclamida 850 mg Na minha lista');
 
     const soDisponiveis = Array.from(el.querySelectorAll('app-chip button')).find((b) =>
       b.textContent!.includes('Só disponíveis'),
@@ -116,6 +119,7 @@ describe('MedicamentoSearchPage', () => {
     fixture.detectChanges();
     flushMicrotasks();
     fixture.detectChanges();
+    http.expectOne('/api/lista-desejos').flush([]);
     http.expectOne('/api/medicamentos/categorias').flush([]);
     http.expectOne('/api/ubs?lat=0&lng=0&raioKm=5').flush([ubs(1, 'Perto', 1)]);
     tick(250);
@@ -143,6 +147,7 @@ describe('MedicamentoSearchPage', () => {
     fixture.detectChanges();
     flushMicrotasks();
     fixture.detectChanges();
+    http.expectOne('/api/lista-desejos').flush([]);
     http.expectOne('/api/medicamentos/categorias').flush(['Diabetes']);
     http.expectOne('/api/ubs?lat=0&lng=0&raioKm=5').flush([]);
     tick(250);
