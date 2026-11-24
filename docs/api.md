@@ -17,14 +17,14 @@ Base: `http://localhost:8080/api`. A documentação interativa fica em `/swagger
 | GET | `/medicamentos/{id}/disponibilidade` | Unidades com o medicamento (disponíveis primeiro) |
 | GET | `/medicamentos/{id}/rastreamento?ubsId=` | Remessa do medicamento para a UBS: etapa atual, previsão de chegada e linha do tempo |
 | GET | `/medicamentos/{id}/disponibilidade/resumo` | Total de unidades e unidades com estoque disponível, com filtro opcional por município |
-| GET | `/lista-desejos` | Lista os medicamentos desejados pelo aparelho (sem login) ou pelo cidadão autenticado |
+| GET | `/lista-desejos` | Lista os medicamentos desejados pelo aparelho (sem login, cabeçalho `X-Dispositivo-Id`) |
 | POST | `/lista-desejos` | Adiciona um medicamento à lista de desejos |
 | PATCH | `/lista-desejos/{id}` | Ativa ou desativa a notificação de um item |
 | DELETE | `/lista-desejos/{id}` | Remove um item da lista de desejos |
 
 ## Autenticação
 
-A leitura de UBS e medicamentos (`GET /api/ubs/**` e `GET /api/medicamentos/**`), a saúde (`/actuator/health`) e a documentação (Swagger) são públicas. A lista de desejos (`/api/lista-desejos` e subrotas) funciona sem login, identificada pelo aparelho, ou com o token do papel `CIDADAO` (veja [Lista de desejos](#lista-de-desejos)). Todo o resto exige login. O prefixo `/api/gestao` é só do papel `GESTOR`. Rota que não existe também responde `401` sem token.
+A leitura de UBS e medicamentos (`GET /api/ubs/**` e `GET /api/medicamentos/**`), a saúde (`/actuator/health`) e a documentação (Swagger) são públicas. A lista de desejos (`/api/lista-desejos` e subrotas) também é pública e identificada pelo aparelho (veja [Lista de desejos](#lista-de-desejos)). Todo o resto exige login. O prefixo `/api/gestao` é só do papel `GESTOR`. Rota que não existe também responde `401` sem token.
 
 | Método | Rota | Quem | Descrição |
 | --- | --- | --- | --- |
@@ -45,7 +45,7 @@ Nas demais chamadas, envie `Authorization: Bearer <token>`. O token é um JWT as
 | Situação | Resposta |
 | --- | --- |
 | Sem token, token inválido, adulterado ou expirado | `401` com `title: "Não autenticado"` e cabeçalho `WWW-Authenticate` |
-| Papel sem permissão (cidadão em `/api/gestao` ou gestor em `/api/lista-desejos`) | `403` com `title: "Acesso negado"` |
+| Papel sem permissão (cidadão em `/api/gestao`) | `403` com `title: "Acesso negado"` |
 | Login com e-mail ou senha errados | `401` com `title: "Credenciais inválidas"` (a mesma resposta nos dois casos) |
 | Cadastro com e-mail que já existe (a caixa não importa) | `409` com `title: "E-mail já cadastrado"` |
 | Corpo inválido (campo vazio, e-mail ruim, senha curta) | `400` |
@@ -60,18 +60,17 @@ No perfil `dev` existem três contas de exemplo, com a senha `medflow-dev-123`: 
 
 A lista de desejos permite que um cidadão acompanhe medicamentos em uma UBS de referência e escolha se deseja receber avisos de disponibilidade.
 
-A lista pode pertencer a um aparelho sem login ou a uma conta de cidadão:
+O app não tem login para o cidadão: a lista pertence ao **aparelho**. Em todas as rotas, envie o cabeçalho `X-Dispositivo-Id` com um UUID no formato canônico (36 caracteres, ex.: `3f1c2b7e-8a4d-4e1f-9b2c-5d6e7f8a9b0c`). O frontend gera esse UUID uma vez com `crypto.randomUUID()` e o guarda no navegador.
 
-- **Sem login:** envie o cabeçalho `X-Dispositivo-Id` com um UUID no formato canônico (36 caracteres, ex.: `3f1c2b7e-8a4d-4e1f-9b2c-5d6e7f8a9b0c`). O frontend gera esse UUID uma vez com `crypto.randomUUID()` e o guarda no navegador. Quem tiver o UUID tem acesso à lista daquele aparelho, então ele deve ser tratado como um segredo do aparelho. Sem o cabeçalho, ou fora do formato, a resposta é `400` com `title: "Parâmetro inválido"`.
-- **Com login:** envie `Authorization: Bearer <token>` de uma conta `CIDADAO`. O proprietário é a conta da claim `sub`, e o cabeçalho `X-Dispositivo-Id` é ignorado. Token de `GESTOR` recebe `403`.
-
-Cada item pertence a um único dono (conta **ou** aparelho), garantido pela constraint `ck_item_lista_desejo_dono`. Item de outro dono responde `404`, como se não existisse.
+- Quem tiver o UUID tem acesso à lista daquele aparelho, então ele deve ser tratado como um segredo do aparelho.
+- Sem o cabeçalho, ou fora do formato, a resposta é `400` com `title: "Parâmetro inválido"`.
+- Item de outro aparelho responde `404`, como se não existisse.
 
 ### Listar desejos
 
 `GET /api/lista-desejos`
 
-Retorna os itens cadastrados pelo cidadão autenticado, ordenados do mais recente para o mais antigo.
+Retorna os itens do aparelho, ordenados do mais recente para o mais antigo.
 
 Exemplo de resposta (`200`):
 
@@ -83,13 +82,14 @@ Exemplo de resposta (`200`):
     "ubsNome": "UBS Centro",
     "medicamentoId": 3,
     "medicamentoNome": "Metformina",
+    "medicamentoConcentracao": "850 mg",
     "notificar": true,
     "criadoEm": "2026-11-17T15:00:00Z"
   }
 ]
 ```
 
-Se o cidadão não possuir itens, a resposta será uma lista vazia (`[]`).
+Se o aparelho não possuir itens, a resposta será uma lista vazia (`[]`).
 
 ### Adicionar medicamento
 
@@ -113,7 +113,7 @@ Corpo da requisição:
 
 A resposta retorna `201 Created` com os dados do item cadastrado, no mesmo formato apresentado na listagem.
 
-O mesmo dono não pode cadastrar duas vezes o mesmo medicamento para a mesma UBS. A unicidade é garantida pelas constraints `uk_item_lista_desejo`, baseada em `(usuario_id, ubs_id, medicamento_id)`, e `uk_item_lista_desejo_dispositivo`, baseada em `(dispositivo_id, ubs_id, medicamento_id)`.
+O mesmo aparelho não pode cadastrar duas vezes o mesmo medicamento para a mesma UBS. A unicidade é garantida pela constraint `uk_item_lista_desejo`, baseada em `(dispositivo_id, ubs_id, medicamento_id)`.
 
 Uma tentativa de cadastro duplicado retorna `409 Conflict` no padrão `application/problem+json`:
 
@@ -126,7 +126,7 @@ Uma tentativa de cadastro duplicado retorna `409 Conflict` no padrão `applicati
 }
 ```
 
-Donos diferentes (contas ou aparelhos) podem adicionar o mesmo medicamento para a mesma UBS, pois cada lista pertence ao respectivo dono.
+Aparelhos diferentes podem adicionar o mesmo medicamento para a mesma UBS, pois cada lista pertence ao respectivo aparelho.
 
 ### Ativar ou desativar notificações
 
@@ -150,24 +150,23 @@ Essa operação modifica apenas a preferência de notificação. O item permanec
 
 `DELETE /api/lista-desejos/{id}`
 
-Remove o item indicado da lista do cidadão autenticado.
+Remove o item indicado da lista do aparelho.
 
 Em caso de sucesso, retorna `204 No Content`, sem corpo na resposta.
 
 ### Segurança e tratamento de erros
 
-Cada cidadão pode listar, atualizar e remover somente os próprios itens.
+Cada aparelho pode listar, atualizar e remover somente os próprios itens.
 
-As consultas de propriedade são filtradas diretamente no banco de dados pelo ID do usuário autenticado. Se um cidadão tentar atualizar ou remover um item que pertence a outro usuário, a API retorna `404`, sem revelar os dados do proprietário.
+As consultas de propriedade são filtradas diretamente no banco de dados pelo `X-Dispositivo-Id`. Se um aparelho tentar atualizar ou remover um item de outro, a API retorna `404`, sem revelar os dados do proprietário.
 
 | Situação | Resposta |
 | --- | --- |
-| Requisição sem token ou com token inválido | `401 Unauthorized` |
-| Usuário com papel `GESTOR` | `403 Forbidden` |
+| Sem o cabeçalho `X-Dispositivo-Id`, ou fora do formato UUID | `400 Bad Request` |
 | IDs inválidos ou corpo inválido | `400 Bad Request` |
 | UBS ou medicamento inexistente no cadastro | `404 Not Found` |
-| Item inexistente ou pertencente a outro usuário no PATCH/DELETE | `404 Not Found` |
-| Medicamento já cadastrado para a mesma UBS e usuário | `409 Conflict` |
+| Item inexistente ou pertencente a outro aparelho no PATCH/DELETE | `404 Not Found` |
+| Medicamento já cadastrado para a mesma UBS e aparelho | `409 Conflict` |
 
 Os erros de domínio utilizam o padrão RFC 9457 (`application/problem+json`).
 
@@ -460,7 +459,7 @@ Parâmetros de tamanho: `limite` (remanejamento e demanda, 1 a 100, padrão 20; 
 - **Mínimo** de um medicamento: o `limite_reservado` dele ou, sem ele, `app.estoque.limite-reservado`. **Em falta** é sempre saldo zero (`quantidade = 0`), em `itensEmFalta`, em `emFaltaComRemessa` e nos itens de atenção; o `status` gravado não entra na conta. `abaixoDoMinimo` conta itens com saldo maior que zero e até o mínimo.
 - **Remessa a caminho** é a que ainda não foi recebida (sem as etapas `RECEBIDO` e `DISPONIVEL`). `remessasACaminho` conta essas; `remessasAtrasadas` conta as a caminho cuja previsão já passou; `proximaRemessa` é a menor previsão que ainda não passou (as atrasadas não entram).
 - `emFaltaComRemessa`: itens em falta com remessa **em andamento** (sem `DISPONIVEL`) para a mesma UBS. Uma remessa só recebida ainda conta aqui, porque o item segue sem estar disponível na prateleira; uma remessa já disponível não conta.
-- `pacientesAguardando` e `medicamentosAguardados`: contas e medicamentos distintos da lista de desejos em que o item **não está disponível** na UBS desejada, isto é, sem posição, com status diferente de `DISPONIVEL` ou sem saldo (mesma regra da disponibilidade de medicamentos). A contagem é por conta de usuário (`usuario_id`); se a lista de desejos passar a ser por dispositivo, estas consultas precisam acompanhar.
+- `pacientesAguardando` e `medicamentosAguardados`: contas e medicamentos distintos da lista de desejos em que o item **não está disponível** na UBS desejada, isto é, sem posição, com status diferente de `DISPONIVEL` ou sem saldo (mesma regra da disponibilidade de medicamentos). Sem login, a contagem é por aparelho (`dispositivo_id`): cada aparelho distinto conta como um paciente.
 - `ultimaSincronizacao`: a da UBS do escopo; na rede, a mais recente.
 - Sem fonte de dados, ficam de fora: `prazoReposicaoDias` e a contagem de buscas (`buscas`) que o front de demonstração usa. Em "mais procurados" entra o número de pacientes da lista de desejos.
 
