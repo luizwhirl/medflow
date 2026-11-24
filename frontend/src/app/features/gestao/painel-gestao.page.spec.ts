@@ -1,7 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { of, throwError } from 'rxjs';
+import { defer, Observable, of, Subject, throwError } from 'rxjs';
 
+import { PainelGestao } from '../../core/models/gestao.model';
 import { GestaoService, painelDemonstracao } from '../../core/services/gestao.service';
 import { PainelGestaoPage } from './painel-gestao.page';
 
@@ -9,7 +10,9 @@ describe('PainelGestaoPage', () => {
   // Segunda, 19/10/2026: a próxima remessa (+3 dias) cai na quinta, 22/10, como no Figma.
   const painel = painelDemonstracao(new Date(2026, 9, 19));
 
-  function montar(painel$ = of(painel)): ComponentFixture<PainelGestaoPage> {
+  function montar(
+    painel$: Observable<PainelGestao> = of(painel),
+  ): ComponentFixture<PainelGestaoPage> {
     TestBed.configureTestingModule({
       providers: [
         provideRouter([]),
@@ -112,8 +115,35 @@ describe('PainelGestaoPage', () => {
     expect(barras).toEqual([100, 74, 48, 45, 21]);
   });
 
-  it('mostra erro quando os indicadores não carregam', () => {
-    const f = montar(throwError(() => new Error('falhou')));
-    expect(texto(el(f).querySelector('.feedback-error'))).toContain('Não foi possível carregar');
+  it('mostra o esqueleto enquanto os indicadores carregam', () => {
+    const f = montar(new Subject<PainelGestao>());
+    expect(el(f).querySelector('app-esqueleto[role="status"]')?.getAttribute('aria-label')).toBe(
+      'Carregando os indicadores da farmácia',
+    );
+    expect(el(f).querySelector('section[aria-label="Indicadores"]')).toBeNull();
+  });
+
+  it('mostra erro quando os indicadores não carregam e tenta de novo', () => {
+    let tentativas = 0;
+    const f = montar(
+      defer(() => (++tentativas === 1 ? throwError(() => new Error('falhou')) : of(painel))),
+    );
+    expect(texto(el(f).querySelector('[role="alert"]'))).toContain(
+      'Não foi possível carregar os indicadores da farmácia',
+    );
+
+    Array.from(el(f).querySelectorAll<HTMLButtonElement>('[role="alert"] button'))
+      .find((b) => texto(b) === 'Tentar de novo')!
+      .click();
+    f.detectChanges();
+    expect(tentativas).toBe(2);
+    expect(el(f).querySelector('[role="alert"]')).toBeNull();
+    expect(linhas(f).length).toBe(5);
+  });
+
+  it('sem itens no filtro, mostra o estado vazio', () => {
+    const f = montar(of({ ...painel, itensAtencao: [], maisProcurados: [] }));
+    expect(texto(el(f).querySelector('tbody'))).toBe('Nenhum item pede atenção agora');
+    expect(texto(el(f).querySelector('ul'))).toContain('Nenhuma busca registrada');
   });
 });
