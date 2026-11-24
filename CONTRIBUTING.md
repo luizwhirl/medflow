@@ -9,7 +9,7 @@
 2. Faça commits pequenos e com mensagem clara (veja abaixo).
 3. Abra um Pull Request para a `develop` preenchendo o template, com pelo menos **1 revisor**.
    O título começa com o ticket do Jira entre colchetes (veja [Título do Pull Request](#título-do-pull-request)).
-4. O CI precisa passar (build + testes de backend e frontend) antes do merge.
+4. O CI precisa passar antes do merge: build e testes do backend, validação das migrations (Flyway, contra o banco da branch de destino) e, no front, Prettier, ESLint, build e testes.
 5. A `main` só recebe a `develop` quando fechamos uma entrega; ninguém abre PR de feature direto para ela.
 
 ## Mensagens de commit
@@ -52,5 +52,5 @@ Use o número do ticket que o PR resolve (o mesmo citado no corpo do PR).
 
 ```bash
 cd backend && ./gradlew build
-cd frontend && npm run format:check && npm run build && npm run test:ci
+cd frontend && npm run format:check && npm run lint && npm run build && npm run test:ci
 ```

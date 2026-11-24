@@ -59,6 +59,7 @@ npm install
 npm start             # http://localhost:4200 (proxy de /api para :8080)
 npm run test:ci       # testes unitários em Chrome headless
 npm run format        # Prettier
+npm run lint          # ESLint (angular-eslint); o CI também roda
 ```
 
 Se não tiver Chrome instalado, aponte `CHROME_BIN` para outro navegador Chromium (ex.: Edge).

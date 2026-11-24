@@ -152,7 +152,7 @@ describe('ReconhecimentoVozService', () => {
     });
   });
 
-  const erros: Array<[string, ErroVoz]> = [
+  const erros: [string, ErroVoz][] = [
     ['not-allowed', 'sem-permissao'],
     ['service-not-allowed', 'sem-permissao'],
     ['no-speech', 'sem-fala'],

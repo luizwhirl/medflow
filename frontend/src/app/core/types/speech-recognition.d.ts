@@ -34,9 +34,7 @@ export interface ReconhecimentoVoz {
   abort(): void;
 }
 
-export interface ConstrutorReconhecimentoVoz {
-  new (): ReconhecimentoVoz;
-}
+export type ConstrutorReconhecimentoVoz = new () => ReconhecimentoVoz;
 
 export interface AmbienteReconhecimentoVoz {
   readonly isSecureContext: boolean;
