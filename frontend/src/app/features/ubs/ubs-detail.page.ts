@@ -14,7 +14,10 @@ import { PreferenciasService } from '../../core/services/preferencias.service';
 import { UbsService } from '../../core/services/ubs.service';
 import { Button } from '../../shared/components/button';
 import { Chip } from '../../shared/components/chip';
+import { Esqueleto } from '../../shared/components/esqueleto';
+import { EstadoVazio, ICONES_VAZIO } from '../../shared/components/estado-vazio';
 import { MapaIlustrado } from '../../shared/components/mapa-ilustrado';
+import { MensagemErro } from '../../shared/components/mensagem-erro';
 import { StatusBadge } from '../../shared/components/status-badge';
 import { SyncIndicator } from '../../shared/components/sync-indicator';
 
@@ -41,7 +44,18 @@ const ICONE = {
 
 @Component({
   selector: 'app-ubs-detail-page',
-  imports: [NgTemplateOutlet, RouterLink, Button, Chip, MapaIlustrado, StatusBadge, SyncIndicator],
+  imports: [
+    NgTemplateOutlet,
+    RouterLink,
+    Button,
+    Chip,
+    Esqueleto,
+    EstadoVazio,
+    MapaIlustrado,
+    MensagemErro,
+    StatusBadge,
+    SyncIndicator,
+  ],
   template: `
     <ng-template #icone let-d>
       <svg
@@ -61,15 +75,22 @@ const ICONE = {
     @let e = estado();
     @switch (e.tipo) {
       @case ('carregando') {
-        <p class="body-muted">Carregando…</p>
+        <app-esqueleto formato="detalhe" [quantidade]="2" rotulo="Carregando a unidade" />
       }
       @case ('nao-encontrada') {
-        <p class="feedback-error">Unidade não encontrada.</p>
+        <app-estado-vazio
+          titulo="Unidade não encontrada"
+          texto="Ela pode ter saído da lista de unidades. Procure outra no mapa."
+          [icone]="iconesVazio.local"
+        >
+          <a appButton routerLink="/mapa">Abrir mapa</a>
+        </app-estado-vazio>
       }
       @case ('erro') {
-        <p class="feedback-error">
-          Não foi possível carregar a unidade agora. Verifique a conexão e tente de novo.
-        </p>
+        <app-mensagem-erro
+          titulo="Não foi possível carregar a unidade"
+          (tentarDeNovo)="recarregar()"
+        />
       }
       @case ('ok') {
         @let u = e.ubs;
@@ -242,12 +263,30 @@ const ICONE = {
                   </a>
                 </li>
               } @empty {
-                <li class="body-muted p-4">
-                  {{
-                    e.estoque.length === 0
-                      ? 'Sem itens de estoque registrados.'
-                      : 'Nenhum medicamento com essa situação.'
-                  }}
+                <li>
+                  @if (e.estoque.length === 0) {
+                    <app-estado-vazio
+                      [compacto]="true"
+                      titulo="Sem itens de estoque registrados"
+                      texto="Esta unidade ainda não informou o estoque da farmácia."
+                      [icone]="iconesVazio.caixa"
+                    />
+                  } @else {
+                    <app-estado-vazio
+                      [compacto]="true"
+                      titulo="Nenhum medicamento com essa situação"
+                      [icone]="iconesVazio.caixa"
+                    >
+                      <button
+                        appButton
+                        variante="fantasma"
+                        type="button"
+                        (click)="filtro.set(null)"
+                      >
+                        Ver todos
+                      </button>
+                    </app-estado-vazio>
+                  }
                 </li>
               }
             </ul>
@@ -262,6 +301,7 @@ export class UbsDetailPage {
   private readonly preferencias = inject(PreferenciasService);
 
   protected readonly icones = ICONE;
+  protected readonly iconesVazio = ICONES_VAZIO;
   protected readonly status = ORDEM_STATUS;
   protected readonly rotulo = STATUS_LABEL;
   protected readonly rota = linkRota;
@@ -274,9 +314,11 @@ export class UbsDetailPage {
 
   protected readonly referencia = computed(() => this.preferencias.ubsReferenciaId() === this.id());
 
+  private readonly tentativa = signal(0);
+
   protected readonly estado = toSignal(
-    toObservable(this.id).pipe(
-      switchMap((id) =>
+    toObservable(computed(() => ({ id: this.id(), tentativa: this.tentativa() }))).pipe(
+      switchMap(({ id }) =>
         forkJoin({
           ubs: this.ubsService.buscarPorId(id),
           estoque: this.ubsService.estoque(id),
@@ -354,6 +396,10 @@ export class UbsDetailPage {
               : 'Sem estoque',
       }));
   });
+
+  protected recarregar(): void {
+    this.tentativa.update((n) => n + 1);
+  }
 
   protected alternarReferencia(): void {
     this.preferencias.definirUbsReferencia(this.referencia() ? null : this.id());

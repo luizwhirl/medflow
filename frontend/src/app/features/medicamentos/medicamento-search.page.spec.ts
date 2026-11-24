@@ -162,6 +162,95 @@ describe('MedicamentoSearchPage', () => {
     http.verify();
   }));
 
+  /** Responde as chamadas a `url` que ainda estão abertas (as canceladas com o erro ficam de fora). */
+  function pendentes(url: string) {
+    http
+      .match(url)
+      .filter((r) => !r.cancelled)
+      .forEach((r) => r.flush([]));
+  }
+
+  /** Abre a busca e responde categorias e raio; a busca em si fica pendente. */
+  function abrirBusca() {
+    const fixture = TestBed.createComponent(MedicamentoSearchPage);
+    fixture.detectChanges();
+    flushMicrotasks();
+    fixture.detectChanges();
+    http.expectOne('/api/medicamentos/categorias').flush([]);
+    http.expectOne('/api/ubs?lat=0&lng=0&raioKm=5').flush([]);
+    return { fixture, el: fixture.nativeElement as HTMLElement };
+  }
+
+  it('mostra o esqueleto durante a busca e o erro com "Tentar de novo"', fakeAsync(() => {
+    const { fixture, el } = abrirBusca();
+    expect(el.querySelector('app-esqueleto')?.getAttribute('aria-label')).toBe(
+      'Buscando medicamentos',
+    );
+    expect(el.textContent).not.toContain('Nenhum medicamento encontrado');
+
+    tick(250);
+    http.expectOne('/api/medicamentos').error(new ProgressEvent('error'));
+    fixture.detectChanges();
+    expect(el.querySelector('[role="alert"]')!.textContent).toContain(
+      'Não foi possível buscar os medicamentos',
+    );
+    expect(el.textContent).not.toContain('0 resultados');
+
+    el.querySelector<HTMLButtonElement>('[role="alert"] button')!.click();
+    fixture.detectChanges();
+    tick(250);
+    http.expectOne('/api/medicamentos').flush(pagina([metformina]));
+    http.expectOne('/api/medicamentos/1/disponibilidade').flush([]);
+    fixture.detectChanges();
+    expect(resultados(el)).toEqual(['Metformina 850 mg comprimido Nenhuma UBS a até 5 km']);
+    http.verify();
+  }));
+
+  it('sem resultados, mostra o estado vazio com uma dica', fakeAsync(() => {
+    const { fixture, el } = abrirBusca();
+    tick(250);
+    http.expectOne('/api/medicamentos').flush(pagina([]));
+    fixture.detectChanges();
+    const vazio = el.querySelector('[aria-label="Resultados"] app-estado-vazio')!;
+    expect(vazio.textContent).toContain('Nenhum medicamento encontrado');
+    expect(vazio.textContent).toContain('Confira o nome ou tente outro termo');
+    http.verify();
+  }));
+
+  it('no detalhe, diferencia medicamento inexistente de falha de conexão', fakeAsync(() => {
+    const fixture = TestBed.createComponent(MedicamentoSearchPage);
+    fixture.componentRef.setInput('id', '99');
+    fixture.detectChanges();
+    flushMicrotasks();
+    fixture.detectChanges();
+    http.expectOne('/api/medicamentos/categorias').flush([]);
+    http.expectOne('/api/ubs?lat=0&lng=0&raioKm=5').flush([]);
+    http.expectOne('/api/ubs?lat=0&lng=0&medicamentoId=99').flush([]);
+    http.expectOne('/api/lista-desejos').flush([]);
+    http.expectOne('/api/medicamentos/99').flush(null, { status: 404, statusText: 'Não achado' });
+    pendentes('/api/medicamentos/99/disponibilidade');
+    tick(250);
+    http.expectOne('/api/medicamentos').flush(pagina([]));
+    fixture.detectChanges();
+
+    const detalhe = (fixture.nativeElement as HTMLElement).querySelector(
+      'app-rastreio-medicamento',
+    )!;
+    expect(detalhe.textContent).toContain('Medicamento não encontrado');
+    expect(detalhe.querySelector('a[href="/medicamentos"]')).not.toBeNull();
+
+    fixture.componentRef.setInput('id', '98');
+    fixture.detectChanges();
+    http.expectOne('/api/medicamentos/98').error(new ProgressEvent('error'));
+    pendentes('/api/medicamentos/98/disponibilidade');
+    http.expectOne('/api/ubs?lat=0&lng=0&medicamentoId=98').flush([]);
+    fixture.detectChanges();
+    expect(detalhe.querySelector('[role="alert"]')!.textContent).toContain(
+      'Não foi possível carregar o medicamento',
+    );
+    http.verify();
+  }));
+
   it('no detalhe, avisa a falta na UBS de referência e aponta onde tem', fakeAsync(() => {
     const fixture = TestBed.createComponent(MedicamentoSearchPage);
     fixture.componentRef.setInput('id', '1');

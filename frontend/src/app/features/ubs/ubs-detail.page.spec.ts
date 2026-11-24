@@ -236,16 +236,64 @@ describe('UbsDetailPage', () => {
     const comItens = abrir(ubs(), [item(1, 'Losartana', 'DISPONIVEL', 80)]);
     botao(comItens.el, 'Reservado').click();
     comItens.fixture.detectChanges();
-    expect(itens(comItens.el)).toEqual(['Nenhum medicamento com essa situação.']);
+    expect(itens(comItens.el)).toEqual(['Nenhum medicamento com essa situação Ver todos']);
+    botao(comItens.el, 'Ver todos').click();
+    comItens.fixture.detectChanges();
+    expect(itens(comItens.el).length).toBe(1);
 
     reiniciar();
-    expect(itens(abrir(ubs(), []).el)).toEqual(['Sem itens de estoque registrados.']);
+    expect(itens(abrir(ubs(), []).el)).toEqual([
+      'Sem itens de estoque registrados Esta unidade ainda não informou o estoque da farmácia.',
+    ]);
+  });
+
+  it('mostra o esqueleto enquanto carrega', () => {
+    const fixture = TestBed.createComponent(UbsDetailPage);
+    fixture.componentRef.setInput('id', '7');
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('app-esqueleto')?.getAttribute('aria-label')).toBe(
+      'Carregando a unidade',
+    );
+    http.expectOne('/api/ubs/7').flush(ubs());
+    http
+      .expectOne((r) => r.url === '/api/ubs/7/estoque')
+      .flush({
+        itens: [],
+        pagina: 0,
+        tamanho: 100,
+        totalItens: 0,
+        totalPaginas: 0,
+      });
+    fixture.detectChanges();
+    expect(el.querySelector('app-esqueleto')).toBeNull();
   });
 
   it('diferencia unidade inexistente de falha de conexão', () => {
-    expect(texto(abrir(null, [], 404).el)).toBe('Unidade não encontrada.');
+    const naoEncontrada = abrir(null, [], 404).el;
+    expect(texto(naoEncontrada)).toContain('Unidade não encontrada');
+    expect(botao(naoEncontrada, 'Abrir mapa').getAttribute('href')).toBe('/mapa');
 
     reiniciar();
-    expect(texto(abrir(null, [], 0).el)).toContain('Não foi possível carregar a unidade');
+    const erro = abrir(null, [], 0);
+    expect(texto(erro.el.querySelector('[role="alert"]'))).toContain(
+      'Não foi possível carregar a unidade',
+    );
+
+    // "Tentar de novo" busca de novo e mostra a unidade.
+    botao(erro.el, 'Tentar de novo').click();
+    erro.fixture.detectChanges();
+    http.expectOne('/api/ubs/7').flush(ubs());
+    http
+      .expectOne((r) => r.url === '/api/ubs/7/estoque')
+      .flush({
+        itens: ESTOQUE,
+        pagina: 0,
+        tamanho: 100,
+        totalItens: ESTOQUE.length,
+        totalPaginas: 1,
+      });
+    erro.fixture.detectChanges();
+    expect(texto(erro.el.querySelector('h1'))).toBe('UBS Clima Bom');
   });
 });
