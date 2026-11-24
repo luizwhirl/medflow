@@ -55,6 +55,10 @@ class PainelGestaoIntegrationTests(
 
     private fun token(email: String) = jwtService.emitir(requireNotNull(usuarios.findByEmail(email))).token
 
+    /** Posição da BNAFAR de [diasAtras] dias atrás: a data gravada à meia-noite em Maceió (0 = hoje). */
+    private fun meiaNoite(diasAtras: Long): String =
+        "'${hoje.minusDays(diasAtras).atStartOfDay(ZoneId.of("America/Maceio")).toInstant()}'::timestamptz"
+
     private fun id(sql: String, vararg args: Any?) = jdbc.queryForObject(sql, Long::class.java, *args)!!
 
     private fun ubs(cnes: String, nome: String, lat: Double, lng: Double, ibge: String = "9999999", ultima: String = "NOW()") = id(
@@ -97,9 +101,9 @@ class PainelGestaoIntegrationTests(
     )
 
     private fun cenario(): Cenario {
-        val a = ubs("9990001", "UBS Teste A", -9.60, -35.70, ultima = "NOW() - INTERVAL '2 days'")
-        val b = ubs("9990002", "UBS Teste B", -9.61, -35.70, ultima = "NOW() - INTERVAL '1 hour'")
-        val c = ubs("9990003", "UBS Teste C", -9.70, -35.70, ultima = "NOW() - INTERVAL '1 hour'")
+        val a = ubs("9990001", "UBS Teste A", -9.60, -35.70, ultima = meiaNoite(2))
+        val b = ubs("9990002", "UBS Teste B", -9.61, -35.70, ultima = meiaNoite(1))
+        val c = ubs("9990003", "UBS Teste C", -9.70, -35.70, ultima = meiaNoite(0))
         // outra cidade, a 110 m da A, com sobra de X: não pode ser origem de remanejamento
         val d = ubs("9990004", "UBS Teste D", -9.601, -35.70, ibge = "9999998")
         val x = medicamento("TESTE-X", "Alfa X", 10)
@@ -323,27 +327,42 @@ class PainelGestaoIntegrationTests(
     }
 
     @Test
-    fun `sincronizacao atrasada mostra quem passou do prazo e quem nunca sincronizou`() {
-        val c = cenario()
+    fun `sincronizacao atrasada conta dias de calendario e a posicao de ontem ainda vale`() {
+        val c = cenario() // A: posição de 2 dias atrás · B: de ontem · C: de hoje (sempre à meia-noite)
         ubs("9990009", "UBS Nunca Sincronizou", -9.65, -35.75, ultima = "NULL")
 
         pedir("sincronizacao-atrasada", ubsId = c.a).andExpect {
             jsonPath("$.length()") { value(1) }
             jsonPath("$[0].ubs.cnes") { value("9990001") }
-            // 2 dias; a folga de 1 hora cobre a diferença entre o relógio do contêiner e o da JVM
-            jsonPath("$[0].atrasoHoras") { value(org.hamcrest.Matchers.allOf(org.hamcrest.Matchers.greaterThanOrEqualTo(47), org.hamcrest.Matchers.lessThanOrEqualTo(49))) }
+            jsonPath("$[0].atrasoDias") { value(2) }
         }
-        pedir("sincronizacao-atrasada", ubsId = c.a, parametros = arrayOf("horas" to "72")).andExpect {
+        // a posição de ontem (B) está a mais de 24 h, mas ainda vale o dia todo de hoje: não é atraso
+        pedir("sincronizacao-atrasada", ubsId = c.b).andExpect { jsonPath("$.length()") { value(0) } }
+        pedir("sincronizacao-atrasada", ubsId = c.c).andExpect { jsonPath("$.length()") { value(0) } }
+        // com 2 dias de tolerância, a posição de 2 dias atrás (A) também vale
+        pedir("sincronizacao-atrasada", ubsId = c.a, parametros = arrayOf("dias" to "2")).andExpect {
             jsonPath("$.length()") { value(0) }
         }
         val rede = pedir("sincronizacao-atrasada").andExpect {
             status { isOk() }
             jsonPath("$[*].ubs.cnes") { value(hasItem("9990009")) }
             jsonPath("$[*].ubs.cnes") { value(hasItem("9990001")) }
-            jsonPath("$[*].ubs.cnes") { value(org.hamcrest.Matchers.not(hasItem("9990002"))) } // B sincronizou há 1 hora
+            jsonPath("$[*].ubs.cnes") { value(org.hamcrest.Matchers.not(hasItem("9990002"))) } // B: posição de ontem
+            jsonPath("$[*].ubs.cnes") { value(org.hamcrest.Matchers.not(hasItem("9990003"))) } // C: posição de hoje
         }.andReturn().response.contentAsString
-        val cnes = com.fasterxml.jackson.databind.ObjectMapper().readTree(rede).map { it["ubs"]["cnes"].asText() }
+        val raiz = com.fasterxml.jackson.databind.ObjectMapper().readTree(rede)
+        val cnes = raiz.map { it["ubs"]["cnes"].asText() }
         assertTrue(cnes.indexOf("9990009") < cnes.indexOf("9990001"), "quem nunca sincronizou vem primeiro: $cnes")
+        assertTrue(raiz.first { it["ubs"]["cnes"].asText() == "9990009" }["atrasoDias"].isNull)
+    }
+
+    @Test
+    fun `indicador de sincronizacao atrasada usa o mesmo criterio de dias de calendario`() {
+        val c = cenario()
+
+        pedir("indicadores", ubsId = c.a).andExpect { jsonPath("$.ubsComSincronizacaoAtrasada") { value(1) } }
+        pedir("indicadores", ubsId = c.b).andExpect { jsonPath("$.ubsComSincronizacaoAtrasada") { value(0) } }
+        pedir("indicadores", ubsId = c.c).andExpect { jsonPath("$.ubsComSincronizacaoAtrasada") { value(0) } }
     }
 
     @Test
@@ -374,7 +393,8 @@ class PainelGestaoIntegrationTests(
         pedir("demanda-reprimida", parametros = arrayOf("limite" to "101")).andExpect { status { isBadRequest() } }
         pedir("lotes-vencendo", parametros = arrayOf("dias" to "0")).andExpect { status { isBadRequest() } }
         pedir("lotes-vencendo", parametros = arrayOf("limite" to "201")).andExpect { status { isBadRequest() } }
-        pedir("sincronizacao-atrasada", parametros = arrayOf("horas" to "721")).andExpect { status { isBadRequest() } }
+        pedir("sincronizacao-atrasada", parametros = arrayOf("dias" to "31")).andExpect { status { isBadRequest() } }
+        pedir("sincronizacao-atrasada", parametros = arrayOf("dias" to "0")).andExpect { status { isBadRequest() } }
     }
 
     @Test
@@ -433,7 +453,7 @@ class PainelGestaoIntegrationTests(
         item(vizinha, m, 50) // sobra (50 > 2 x 10), na mesma cidade
         lote(itemDoCarlos, "CARLOS-VENCIDO", -3, 4)
         desejo(paciente("Gui"), propria, m)
-        jdbc.update("UPDATE ubs SET ultima_sincronizacao = NOW() - INTERVAL '3 days' WHERE id = ?", propria)
+        jdbc.update("UPDATE ubs SET ultima_sincronizacao = ${meiaNoite(3)} WHERE id = ?", propria)
         val carlos = "carlos@medflow.local"
 
         pedir("indicadores", email = carlos).andExpect { jsonPath("$.ubs.cnes") { value("9000101") } }
