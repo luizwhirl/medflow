@@ -62,6 +62,7 @@ describe('PreferenciasService', () => {
       ubsReferenciaId: 7,
       remediosContinuos: [5],
       buscasRecentes: [],
+      boasVindasConcluidas: false,
     });
   });
 });

@@ -31,6 +31,11 @@ export class UbsService {
     return this.http.get<UbsProxima[]>(this.baseUrl, { params });
   }
 
+  /** Bairros que têm UBS, em ordem alfabética (boas-vindas sem localização). */
+  bairros(): Observable<string[]> {
+    return this.http.get<string[]>(`${this.baseUrl}/bairros`);
+  }
+
   buscarPorId(id: number): Observable<Ubs> {
     return this.http.get<Ubs>(`${this.baseUrl}/${id}`);
   }
