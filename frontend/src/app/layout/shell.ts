@@ -1,7 +1,8 @@
 import { NgTemplateOutlet } from '@angular/common';
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 
+import { AvisosService } from '../core/services/avisos.service';
 import { ICONE_MARCA, NAV_ITEMS } from './nav-items';
 
 /**
@@ -66,12 +67,27 @@ import { ICONE_MARCA, NAV_ITEMS } from './nav-items';
               class="group flex flex-col items-center gap-1 py-1 text-xs font-medium text-content-muted xl:flex-row xl:gap-3 xl:rounded-control xl:px-4 xl:py-3 xl:text-base xl:font-normal xl:text-content [&.ativo]:text-brand-600 xl:[&.ativo]:bg-brand-50 xl:[&.ativo]:font-semibold"
             >
               <span
-                class="grid h-10 w-16 place-items-center rounded-full group-[.ativo]:bg-brand-100 xl:h-auto xl:w-auto xl:bg-transparent! xl:text-content-muted xl:group-[.ativo]:text-brand-600"
+                class="relative grid h-10 w-16 place-items-center rounded-full group-[.ativo]:bg-brand-100 xl:h-auto xl:w-auto xl:bg-transparent! xl:text-content-muted xl:group-[.ativo]:text-brand-600"
               >
                 <ng-container *ngTemplateOutlet="icone; context: { $implicit: item.icon }" />
+                @if (contador(item.path); as n) {
+                  <span
+                    class="absolute right-2 top-0 grid h-5 min-w-5 place-items-center rounded-full bg-status-falta px-1 text-[0.6875rem] font-bold text-white xl:hidden"
+                    aria-hidden="true"
+                    >{{ n }}</span
+                  >
+                }
               </span>
               <span class="xl:hidden">{{ item.curto }}</span>
               <span class="hidden xl:inline">{{ item.label }}</span>
+              @if (contador(item.path); as n) {
+                <span
+                  class="ml-auto hidden h-6 min-w-6 place-items-center rounded-full bg-status-falta px-1.5 text-xs font-bold text-white xl:grid"
+                  aria-hidden="true"
+                  >{{ n }}</span
+                >
+                <span class="sr-only">({{ n }} não {{ n === 1 ? 'lido' : 'lidos' }})</span>
+              }
             </a>
           }
         </nav>
@@ -116,8 +132,20 @@ import { ICONE_MARCA, NAV_ITEMS } from './nav-items';
             [attr.aria-current]="rla.isActive ? 'page' : null"
             class="flex min-w-0 flex-col items-center gap-0.5 px-0.5 py-2 text-[0.625rem] font-medium text-content-muted"
           >
-            <ng-container *ngTemplateOutlet="icone; context: { $implicit: item.icon }" />
+            <span class="relative">
+              <ng-container *ngTemplateOutlet="icone; context: { $implicit: item.icon }" />
+              @if (contador(item.path); as n) {
+                <span
+                  class="absolute -right-2.5 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-status-falta px-1 text-[0.625rem] font-bold text-white"
+                  aria-hidden="true"
+                  >{{ n }}</span
+                >
+              }
+            </span>
             <span class="w-full truncate text-center">{{ item.curto }}</span>
+            @if (contador(item.path); as n) {
+              <span class="sr-only">({{ n }} não {{ n === 1 ? 'lido' : 'lidos' }})</span>
+            }
           </a>
         }
       </nav>
@@ -125,6 +153,12 @@ import { ICONE_MARCA, NAV_ITEMS } from './nav-items';
   `,
 })
 export class Shell {
+  private readonly avisos = inject(AvisosService);
   protected readonly nav = NAV_ITEMS;
   protected readonly iconeMarca = ICONE_MARCA;
+
+  /** Número no item do menu (hoje, só os avisos não lidos); 0 esconde o contador. */
+  protected contador(path: string): number {
+    return path === '/avisos' ? this.avisos.naoLidos() : 0;
+  }
 }
