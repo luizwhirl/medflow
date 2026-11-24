@@ -43,6 +43,7 @@ describe('RastreioMedicamento · Avisar quando chegar', () => {
       .expectOne('/api/medicamentos/7')
       .flush({ id: 7, nome: 'Metformina', concentracao: '850 mg' } as Medicamento);
     http.expectOne('/api/medicamentos/7/disponibilidade').flush([]);
+    http.expectOne('/api/ubs').flush([]);
     fixture.detectChanges();
     semRemessa();
     return { fixture, el: fixture.nativeElement as HTMLElement };
@@ -139,6 +140,7 @@ describe('RastreioMedicamento · Avisar quando chegar', () => {
       .expectOne('/api/medicamentos/7')
       .flush({ id: 7, nome: 'Metformina', concentracao: '850 mg' } as Medicamento);
     http.expectOne('/api/medicamentos/7/disponibilidade').flush([]);
+    http.expectOne('/api/ubs').flush([]);
     fixture.detectChanges();
     semRemessa();
     const el = fixture.nativeElement as HTMLElement;

@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
 import org.springframework.context.annotation.Import
 import org.springframework.data.domain.PageImpl
+import org.springframework.data.domain.PageRequest
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
@@ -25,6 +26,7 @@ class MedicamentoControllerTest(@Autowired private val mockMvc: MockMvc) {
     private companion object {
         /** Página padrão da API: a primeira, 20 itens, em ordem de nome. */
         val PADRAO = Paginacao.de(0, Paginacao.TAMANHO_PADRAO, "nome")
+        val SEM_ORDEM = PageRequest.of(0, Paginacao.TAMANHO_PADRAO)
     }
 
     @MockitoBean
@@ -58,7 +60,7 @@ class MedicamentoControllerTest(@Autowired private val mockMvc: MockMvc) {
 
     @Test
     fun `busca ignora espacos nas pontas do termo`() {
-        given(medicamentoRepository.buscar("metformina", PADRAO))
+        given(medicamentoRepository.buscarPorRelevancia("metformina", "", SEM_ORDEM))
             .willReturn(pagina(metformina))
 
         mockMvc.get("/api/medicamentos") {
@@ -69,7 +71,7 @@ class MedicamentoControllerTest(@Autowired private val mockMvc: MockMvc) {
             jsonPath("$.itens[0].formaFarmaceutica") { value("comprimido") }
         }
 
-        verify(medicamentoRepository).buscar("metformina", PADRAO)
+        verify(medicamentoRepository).buscarPorRelevancia("metformina", "", SEM_ORDEM)
     }
 
     @Test
@@ -97,7 +99,7 @@ class MedicamentoControllerTest(@Autowired private val mockMvc: MockMvc) {
 
     @Test
     fun `filtra medicamentos por categoria`() {
-        given(medicamentoRepository.buscarPorCategoria("Diabetes", PADRAO))
+        given(medicamentoRepository.buscarPorCategoria("Diabetes", SEM_ORDEM))
             .willReturn(pagina(metformina))
 
         mockMvc.get("/api/medicamentos") {
@@ -109,16 +111,16 @@ class MedicamentoControllerTest(@Autowired private val mockMvc: MockMvc) {
             jsonPath("$.itens[0].categoria") { value("Diabetes") }
         }
 
-        verify(medicamentoRepository).buscarPorCategoria("Diabetes", PADRAO)
+        verify(medicamentoRepository).buscarPorCategoria("Diabetes", SEM_ORDEM)
     }
 
     @Test
     fun `combina busca textual com categoria`() {
         given(
-            medicamentoRepository.buscarPorCategoriaETermo(
+            medicamentoRepository.buscarPorRelevancia(
                 "metformina",
                 "Diabetes",
-                PADRAO,
+                SEM_ORDEM,
             ),
         ).willReturn(pagina(metformina))
 
@@ -132,16 +134,16 @@ class MedicamentoControllerTest(@Autowired private val mockMvc: MockMvc) {
             jsonPath("$.itens[0].categoria") { value("Diabetes") }
         }
 
-        verify(medicamentoRepository).buscarPorCategoriaETermo(
+        verify(medicamentoRepository).buscarPorRelevancia(
             "metformina",
             "Diabetes",
-            PADRAO,
+            SEM_ORDEM,
         )
     }
 
     @Test
     fun `categoria inexistente retorna lista vazia`() {
-        given(medicamentoRepository.buscarPorCategoria("Inexistente", PADRAO))
+        given(medicamentoRepository.buscarPorCategoria("Inexistente", SEM_ORDEM))
             .willReturn(pagina())
 
         mockMvc.get("/api/medicamentos") {
@@ -151,7 +153,7 @@ class MedicamentoControllerTest(@Autowired private val mockMvc: MockMvc) {
             jsonPath("$.itens.length()") { value(0) }
         }
 
-        verify(medicamentoRepository).buscarPorCategoria("Inexistente", PADRAO)
+        verify(medicamentoRepository).buscarPorCategoria("Inexistente", SEM_ORDEM)
     }
 
     @Test
@@ -238,4 +240,74 @@ class MedicamentoControllerTest(@Autowired private val mockMvc: MockMvc) {
 
         verify(medicamentoDisponibilidadeService).obterResumo(42L, null)
     }
+
+    @Test
+    fun `aceita alternativas de reconhecimento na mesma requisicao`() {
+        given(
+            medicamentoRepository.buscarPorRelevancia(
+                "losartan\nmetformina",
+                "",
+                SEM_ORDEM,
+            ),
+        ).willReturn(pagina(metformina))
+
+        mockMvc.get("/api/medicamentos") {
+            param("busca", "losartan", "metformina")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.itens[0].nome") { value("Metformina") }
+        }
+
+        verify(medicamentoRepository).buscarPorRelevancia(
+            "losartan\nmetformina",
+            "",
+            SEM_ORDEM,
+        )
+    }
+
+    @Test
+    fun `rejeita mais de tres alternativas`() {
+        mockMvc.get("/api/medicamentos") {
+            param("busca", "a", "b", "c", "d")
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.title") { value("Parâmetro inválido") }
+        }
+    }
+
+    @Test
+    fun `rejeita alternativa excessivamente longa`() {
+        mockMvc.get("/api/medicamentos") {
+            param("busca", "a".repeat(201))
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.title") { value("Parâmetro inválido") }
+        }
+    }
+
+    @Test
+    fun `preserva virgulas dentro de uma unica transcricao`() {
+        val termo = "remédio, de pressão, losartana, 50 mg"
+
+        given(
+            medicamentoRepository.buscarPorRelevancia(
+                termo,
+                "",
+                SEM_ORDEM,
+            ),
+        ).willReturn(pagina())
+
+        mockMvc.get("/api/medicamentos") {
+            param("busca", termo)
+        }.andExpect {
+            status { isOk() }
+        }
+
+        verify(medicamentoRepository).buscarPorRelevancia(
+            termo,
+            "",
+            SEM_ORDEM,
+        )
+    }
+
 }

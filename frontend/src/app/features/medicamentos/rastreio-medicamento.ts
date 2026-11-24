@@ -26,11 +26,13 @@ import { ItemListaDesejo } from '../../core/models/lista-desejos.model';
 import { Medicamento } from '../../core/models/medicamento.model';
 import { RemessaRastreamento } from '../../core/models/rastreamento.model';
 import { formatarDia, linhaDoTempo, PASSOS_REMESSA } from '../../core/remessa';
+import { Ubs } from '../../core/models/ubs.model';
 import { ListaDesejosService } from '../../core/services/lista-desejos.service';
 import { MedicamentoService } from '../../core/services/medicamento.service';
 import { PreferenciasService } from '../../core/services/preferencias.service';
 import { UbsService } from '../../core/services/ubs.service';
 import { Button } from '../../shared/components/button';
+import { Funcionamento } from '../../shared/components/funcionamento';
 import { MapaIlustrado } from '../../shared/components/mapa-ilustrado';
 import { EtapaTimeline, Timeline } from '../../shared/components/timeline';
 
@@ -55,7 +57,7 @@ const ORDEM = { DISPONIVEL: 0, RESERVADO: 1, EM_FALTA: 2 } as const;
 /** Detalhe do medicamento (Figma: "Desktop · Buscar e rastrear", painel da direita). */
 @Component({
   selector: 'app-rastreio-medicamento',
-  imports: [RouterLink, Button, Timeline, MapaIlustrado],
+  imports: [RouterLink, Button, Timeline, MapaIlustrado, Funcionamento],
   template: `
     @let e = estado();
     @if (e.carregando) {
@@ -244,6 +246,7 @@ const ORDEM = { DISPONIVEL: 0, RESERVADO: 1, EM_FALTA: 2 } as const;
                       }
                       {{ u.referencia ? 'Sua UBS' : u.d.ubs.bairro }}
                     </span>
+                    <app-funcionamento class="block text-sm" [ubs]="u.funcionamento" />
                   </a>
                   <span
                     class="whitespace-nowrap rounded-full px-3 py-1 text-sm font-semibold"
@@ -356,11 +359,24 @@ export class RastreioMedicamento {
     { initialValue: new Map<number, number>() },
   );
 
+  /**
+   * Horário de cada UBS (`abertaAgora`/`fechaAs`/`fechaEm`), por id. A disponibilidade do medicamento não
+   * traz o horário, então ele vem da lista de UBS, numa chamada só.
+   */
+  private readonly funcionamentos = toSignal(
+    this.ubsService.listar().pipe(
+      map((lista) => new Map(lista.map((u) => [u.id, u]))),
+      catchError(() => of(new Map<number, Ubs>())),
+    ),
+    { initialValue: new Map<number, Ubs>() },
+  );
+
   /** Unidades com o item: disponíveis primeiro, depois pela distância. */
   protected readonly unidades = computed(() => {
     const e = this.estado();
     if (e.carregando) return [];
     const distancias = this.distancias();
+    const funcionamentos = this.funcionamentos();
     const ref = this.preferencias.ubsReferenciaId();
     return e.disponibilidade
       .map((d) => ({
@@ -368,6 +384,7 @@ export class RastreioMedicamento {
         status: statusExibido(d),
         distancia: distancias.get(d.ubs.id) ?? null,
         referencia: d.ubs.id === ref,
+        funcionamento: funcionamentos.get(d.ubs.id) ?? d.ubs,
       }))
       .sort(
         (a, b) => ORDEM[a.status] - ORDEM[b.status] || compararDistancia(a.distancia, b.distancia),
