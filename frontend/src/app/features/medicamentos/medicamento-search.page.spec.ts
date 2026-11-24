@@ -174,6 +174,7 @@ describe('MedicamentoSearchPage', () => {
     fixture.detectChanges();
     flushMicrotasks();
     fixture.detectChanges();
+    http.expectOne('/api/lista-desejos').flush([]);
     http.expectOne('/api/medicamentos/categorias').flush([]);
     http.expectOne('/api/ubs?lat=0&lng=0&raioKm=5').flush([ubs(1, 'Perto', 1), ubs(2, 'Meio', 3)]);
     tick(250);

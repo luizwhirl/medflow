@@ -152,6 +152,8 @@ describe('UbsMapPage', () => {
     fixture.detectChanges();
     flushMicrotasks();
     fixture.detectChanges();
+    responderLista();
+    fixture.detectChanges();
     http.expectOne(proximas(6)).flush([
       // aberta, fechada (fora do horário ou fim de semana) e sem horário cadastrado
       {

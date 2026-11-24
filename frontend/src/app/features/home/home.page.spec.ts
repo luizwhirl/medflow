@@ -260,6 +260,8 @@ describe('HomePage', () => {
     const fixture = TestBed.createComponent(HomePage);
     fixture.detectChanges();
 
+    http.expectOne('/api/lista-desejos').flush([desejo(10, 1, 2)]);
+    fixture.detectChanges();
     http.expectOne('/api/ubs').flush([ubs(1, 'UBS Centro'), ubs(2, 'UBS Clima Bom')]);
     http.expectOne('/api/medicamentos/categorias').flush([]);
     http.expectOne('/api/medicamentos/1').flush(metformina);
