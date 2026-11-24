@@ -64,7 +64,7 @@ spring:
   config:
     activate:
       on-profile: dev
-  flyway:
+  flyway: # ao mudar, atualize também o serviço flyway do docker-compose.yml (usado por scripts/db-reset)
     locations: classpath:db/migration,classpath:db/seed
     out-of-order: true # permite novas migrations após os seeds V1000 e V1001
   jpa:

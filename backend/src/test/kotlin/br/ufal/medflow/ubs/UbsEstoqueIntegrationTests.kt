@@ -128,22 +128,23 @@ class UbsEstoqueIntegrationTests(
     }
 
     @Test
-    fun `rota original mantem lista e aceita filtro`() {
+    fun `rota de estoque pagina e aceita filtro`() {
         val ubsId = criarEstoqueTeste()
 
         mockMvc.get("/api/ubs/$ubsId/estoque").andExpect {
             status { isOk() }
-            jsonPath("$") { isArray() }
-            jsonPath("$.length()") { value(5) }
+            jsonPath("$.itens") { isArray() }
+            jsonPath("$.itens.length()") { value(5) }
+            jsonPath("$.totalItens") { value(5) }
         }
 
         mockMvc.get("/api/ubs/$ubsId/estoque") {
             param("status", "RESERVADO")
         }.andExpect {
             status { isOk() }
-            jsonPath("$") { isArray() }
-            jsonPath("$.length()") { value(1) }
-            jsonPath("$[0].status") { value("RESERVADO") }
+            jsonPath("$.itens") { isArray() }
+            jsonPath("$.itens.length()") { value(1) }
+            jsonPath("$.itens[0].status") { value("RESERVADO") }
         }
     }
 

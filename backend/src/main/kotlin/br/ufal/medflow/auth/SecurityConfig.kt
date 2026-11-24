@@ -26,12 +26,9 @@ import java.time.Clock
 import javax.crypto.spec.SecretKeySpec
 
 /**
- * API sem sessão: cada requisição leva um JWT (HS256).
- * Leitura de UBS e medicamentos é pública.
- * Avisos são públicos e isolados pelo UUID do aparelho (sem login).
- * A lista de desejos também deverá ser pública após a integração do PR #33.
- * O prefixo /api/gestao é exclusivo do papel GESTOR.
- * O restante exige login.
+ * API sem sessão: cada requisição leva um JWT (HS256). Leitura de UBS e medicamentos é pública,
+ * a lista de desejos e os avisos são públicos e identificados pelo aparelho (cabeçalho X-Dispositivo-Id),
+ * o prefixo `/api/gestao` é só do papel GESTOR e o restante exige login.
  */
 @Configuration
 @EnableWebSecurity
@@ -47,7 +44,7 @@ class SecurityConfig(private val props: JwtProperties) {
             csrf { disable() } // sem sessão nem cookie, não há o que forjar
             sessionManagement { sessionCreationPolicy = SessionCreationPolicy.STATELESS }
             authorizeHttpRequests {
-                // Erros tratados pelo Spring são encaminhados para /error.
+                // erro tratado pelo Spring (400, 404, 405, 415...) é encaminhado para /error e passa pelo filtro de novo
                 authorize(DispatcherTypeRequestMatcher(DispatcherType.ERROR), permitAll)
                 authorize(HttpMethod.OPTIONS, "/**", permitAll)
                 authorize(HttpMethod.POST, "/api/auth/login", permitAll)
@@ -58,16 +55,12 @@ class SecurityConfig(private val props: JwtProperties) {
                 authorize("/swagger-ui.html", permitAll)
                 authorize("/swagger-ui/**", permitAll)
                 authorize("/v3/api-docs/**", permitAll)
-
-                // A lista de desejos ainda usa JWT nesta branch, até entrar o PR #33.
-                authorize("/api/lista-desejos", hasRole("CIDADAO"))
-                authorize("/api/lista-desejos/**", hasRole("CIDADAO"))
+                // Sem login: o dono da lista é o aparelho do cabeçalho X-Dispositivo-Id.
+                authorize("/api/lista-desejos", permitAll)
+                authorize("/api/lista-desejos/**", permitAll)
                 authorize("/api/avisos", permitAll)
                 authorize("/api/avisos/**", permitAll)
-
-                // Funcionalidades exclusivas dos gestores.
                 authorize("/api/gestao/**", hasRole("GESTOR"))
-
                 authorize(anyRequest, authenticated)
             }
             oauth2ResourceServer {
@@ -83,7 +76,7 @@ class SecurityConfig(private val props: JwtProperties) {
         return http.build()
     }
 
-    /** A claim papel vira a autoridade ROLE_CIDADAO ou ROLE_GESTOR. */
+    /** A claim `papel` (CIDADAO ou GESTOR) vira a autoridade ROLE_CIDADAO ou ROLE_GESTOR. */
     private fun conversorDePapel() = JwtAuthenticationConverter().apply {
         setJwtGrantedAuthoritiesConverter(
             JwtGrantedAuthoritiesConverter().apply {

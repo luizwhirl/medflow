@@ -6,46 +6,38 @@ import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import java.util.UUID
 
-/** Acesso aos itens da lista de desejos, sempre filtrados pelo proprietário quando aplicável. */
+/** Acesso aos itens da lista de desejos, sempre filtrados pelo aparelho dono. */
 interface ItemListaDesejoRepository : JpaRepository<ItemListaDesejo, Long> {
 
     @EntityGraph(attributePaths = ["ubs", "medicamento"])
-    fun findAllByUsuarioIdOrderByCriadoEmDescIdDesc(
-        usuarioId: Long,
+    fun findAllByDispositivoIdOrderByCriadoEmDescIdDesc(
+        dispositivoId: UUID,
     ): List<ItemListaDesejo>
 
     @EntityGraph(attributePaths = ["ubs", "medicamento"])
-    fun findByIdAndUsuarioId(
+    fun findByIdAndDispositivoId(
         id: Long,
-        usuarioId: Long,
+        dispositivoId: UUID,
     ): ItemListaDesejo?
 
-    fun existsByUsuarioIdAndUbsIdAndMedicamentoId(
-        usuarioId: Long,
+    fun existsByDispositivoIdAndUbsIdAndMedicamentoId(
+        dispositivoId: UUID,
         ubsId: Long,
         medicamentoId: Long,
     ): Boolean
 
-    /**
-     * Dispositivos sem login que acompanham a UBS e o medicamento.
-     * Consulta nativa para compatibilidade com a migração do PR #33,
-     * inclusive antes de o mapeamento do dispositivo ser integrado ao JPA.
-     */
+    /** Dispositivos que desejam receber avisos de disponibilidade. */
     @Query(
-        value = """
-            SELECT DISTINCT i.dispositivo_id
-            FROM item_lista_desejo i
-            WHERE i.ubs_id = :ubsId
-              AND i.medicamento_id = :medicamentoId
-              AND i.notificar = TRUE
-              AND i.dispositivo_id IS NOT NULL
+        """
+        select distinct i.dispositivoId
+        from ItemListaDesejo i
+        where i.ubs.id = :ubsId
+          and i.medicamento.id = :medicamentoId
+          and i.notificar = true
         """,
-        nativeQuery = true,
     )
     fun buscarDispositivosParaDisponibilidade(
         @Param("ubsId") ubsId: Long,
         @Param("medicamentoId") medicamentoId: Long,
     ): List<UUID>
-
-
 }

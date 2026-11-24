@@ -8,6 +8,15 @@ import { Ubs, UbsProxima } from '../../core/models/ubs.model';
 import { Timeline } from '../../shared/components/timeline';
 import { MedicamentoSearchPage } from './medicamento-search.page';
 
+/** Resposta paginada da API (primeira página com todos os itens). */
+const pagina = <T>(itens: T[]) => ({
+  itens,
+  pagina: 0,
+  tamanho: 20,
+  totalItens: itens.length,
+  totalPaginas: itens.length ? 1 : 0,
+});
+
 const metformina: Medicamento = {
   id: 1,
   catmat: 'BR0267691',
@@ -76,7 +85,7 @@ describe('MedicamentoSearchPage', () => {
     tick(250);
     http
       .expectOne('/api/medicamentos')
-      .flush([metformina, { ...metformina, id: 2, nome: 'Glibenclamida' }]);
+      .flush(pagina([metformina, { ...metformina, id: 2, nome: 'Glibenclamida' }]));
     http.expectOne('/api/medicamentos/1/disponibilidade').flush([
       { ubs: ubs(1, 'Perto', 1), status: 'DISPONIVEL', quantidade: 9, atualizadoEm: '' },
       { ubs: ubs(2, 'Meio', 3), status: 'EM_FALTA', quantidade: 0, atualizadoEm: '' },
@@ -110,7 +119,7 @@ describe('MedicamentoSearchPage', () => {
     http.expectOne('/api/medicamentos/categorias').flush([]);
     http.expectOne('/api/ubs?lat=0&lng=0&raioKm=5').flush([ubs(1, 'Perto', 1)]);
     tick(250);
-    http.expectOne('/api/medicamentos').flush([metformina]);
+    http.expectOne('/api/medicamentos').flush(pagina([metformina]));
     http.expectOne('/api/medicamentos/1/disponibilidade').flush([
       { ubs: ubs(1, 'Perto', 1), status: 'DISPONIVEL', quantidade: 9, atualizadoEm: '' },
       { ubs: ubs(3, 'Longe', 9), status: 'DISPONIVEL', quantidade: 9, atualizadoEm: '' },
@@ -137,7 +146,7 @@ describe('MedicamentoSearchPage', () => {
     http.expectOne('/api/medicamentos/categorias').flush(['Diabetes']);
     http.expectOne('/api/ubs?lat=0&lng=0&raioKm=5').flush([]);
     tick(250);
-    http.expectOne('/api/medicamentos').flush([]);
+    http.expectOne('/api/medicamentos').flush(pagina([]));
     fixture.detectChanges();
 
     const chip = Array.from(
@@ -181,8 +190,9 @@ describe('MedicamentoSearchPage', () => {
     http
       .expectOne('/api/ubs?lat=0&lng=0&medicamentoId=1')
       .flush([ubs(1, 'UBS Benedito Bentes I', 0.26), ubs(3, 'UBS Clima Bom', 2.4)]);
+    http.expectOne('/api/lista-desejos').flush([]);
     tick(250);
-    http.expectOne('/api/medicamentos').flush([]);
+    http.expectOne('/api/medicamentos').flush(pagina([]));
     fixture.detectChanges();
 
     const el = fixture.nativeElement as HTMLElement;
@@ -218,8 +228,9 @@ describe('MedicamentoSearchPage', () => {
     http
       .expectOne('/api/ubs?lat=0&lng=0&medicamentoId=1')
       .flush([ubs(1, 'UBS Benedito Bentes I', 0.26), ubs(3, 'UBS Clima Bom', 2.4)]);
+    http.expectOne('/api/lista-desejos').flush([]);
     tick(250);
-    http.expectOne('/api/medicamentos').flush([]);
+    http.expectOne('/api/medicamentos').flush(pagina([]));
     fixture.detectChanges();
 
     const etapas = (fixture.nativeElement as HTMLElement).querySelectorAll('app-timeline li');

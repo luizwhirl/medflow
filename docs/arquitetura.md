@@ -59,7 +59,7 @@ Regras:
 | Dados de exemplo só no perfil `dev` (`db/seed`) | Produção nunca recebe dados fictícios. |
 | Testcontainers nos testes de integração | Testa contra PostgreSQL real, não H2. |
 | API sem sessão, com JWT (HS256) no cabeçalho `Authorization` | O front é um SPA; sem cookie não há CSRF. Segredo em `JWT_SECRET` (obrigatório fora do dev), validade de 8 h. |
-| Não guardamos o CNS do cidadão | Dado sensível (LGPD). A conta é só nome, e-mail e senha (hash BCrypt); a lista de desejos passa a ser do usuário autenticado. |
+| Não guardamos o CNS do cidadão | Dado sensível (LGPD). A conta é só nome, e-mail e senha (hash BCrypt); a lista de desejos é identificada só pelo aparelho (UUID no navegador), sem login. |
 | Todo cadastro é `CIDADAO`; `GESTOR` só é criado direto no banco | Ninguém ganha acesso de gestão pela API. |
 
 ## Próximos passos sugeridos
