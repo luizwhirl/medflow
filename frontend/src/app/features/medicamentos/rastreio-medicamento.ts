@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, inject, input, linkedSignal, signal } from '@angular/core';
+import { Component, computed, inject, input, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import {
@@ -105,8 +105,13 @@ const ORDEM = { DISPONIVEL: 0, RESERVADO: 1, EM_FALTA: 2 } as const;
             type="button"
             variante="secundario"
             [attr.aria-pressed]="usoContinuo()"
-            title="Remédios de uso contínuo aparecem na Início e no Mapa"
-            (click)="preferencias.alternarRemedioContinuo(id())"
+            title="Remédios de uso contínuo ficam na Minha lista e aparecem na Início e no Mapa"
+            [disabled]="
+              (!usoContinuo() && !preferencias.ubsReferenciaId()) ||
+              desejos() === undefined ||
+              salvandoAviso()
+            "
+            (click)="alternarUsoContinuo()"
           >
             <svg
               class="size-5"
@@ -151,7 +156,7 @@ const ORDEM = { DISPONIVEL: 0, RESERVADO: 1, EM_FALTA: 2 } as const;
               <span class="font-semibold text-status-falta">{{ erro }}</span>
             } @else if (!preferencias.ubsReferenciaId()) {
               <a routerLink="/mapa" class="font-semibold text-brand-600">Escolha sua UBS</a>
-              para receber avisos.
+              para montar sua lista e receber avisos.
             } @else if (avisoLigado()) {
               Acompanhe em
               <a routerLink="/lista" class="font-semibold text-brand-600">Minha lista</a>.
@@ -295,10 +300,7 @@ export class RastreioMedicamento {
   protected readonly rota = linkRota;
   private readonly posicao = signal<Coordenadas | null>(null);
 
-  /**
-   * Remédio de uso contínuo (guardado no navegador, usado pela Início e pelo Mapa). Não é a
-   * "Minha lista": essa é a lista de desejos da API, alimentada pelo "Avisar quando chegar".
-   */
+  /** Remédio de uso contínuo: está na lista de desejos (Minha lista), em qualquer UBS. */
   protected readonly usoContinuo = computed(() =>
     this.preferencias.remediosContinuos().includes(this.id()),
   );
@@ -307,11 +309,7 @@ export class RastreioMedicamento {
   protected readonly iconeMarcado = 'M5 12.5 9.5 17 19 7';
 
   /** Lista de desejos deste aparelho; `undefined` enquanto carrega, `null` se falhou. */
-  protected readonly desejos = linkedSignal(
-    toSignal(this.listaDesejos.listar().pipe(catchError(() => of(null))), {
-      initialValue: undefined,
-    }),
-  );
+  protected readonly desejos = this.listaDesejos.itens;
   protected readonly salvandoAviso = signal(false);
   protected readonly erroAviso = signal<string | null>(null);
 
@@ -450,6 +448,11 @@ export class RastreioMedicamento {
     posicaoAtual().then((p) => this.posicao.set(p));
   }
 
+  /** Adiciona à Minha lista (na UBS de referência) ou tira dela. */
+  protected alternarUsoContinuo(): void {
+    this.salvar(this.preferencias.alternarRemedioContinuo(this.id()), 'a sua lista');
+  }
+
   /**
    * Liga o aviso na UBS de referência: cria o item na lista de desejos ou, se ele já existe,
    * liga/desliga o aviso dele.
@@ -463,15 +466,17 @@ export class RastreioMedicamento {
       : this.listaDesejos
           .adicionar(ref, this.id(), true)
           .pipe(catchError((erro) => this.ligarAvisoExistente(erro, ref)));
+    this.salvar(chamada, 'o aviso');
+  }
+
+  /** A lista de desejos do serviço já reflete a alteração; aqui só o estado dos botões. */
+  private salvar(chamada: Observable<unknown>, oQue: string): void {
     this.erroAviso.set(null);
     this.salvandoAviso.set(true);
     chamada.subscribe({
-      next: (item: ItemListaDesejo) => {
-        this.desejos.update((lista) => [item, ...(lista ?? []).filter((d) => d.id !== item.id)]);
-        this.salvandoAviso.set(false);
-      },
+      next: () => this.salvandoAviso.set(false),
       error: () => {
-        this.erroAviso.set('Não foi possível salvar o aviso agora. Tente de novo.');
+        this.erroAviso.set(`Não foi possível salvar ${oQue} agora. Tente de novo.`);
         this.salvandoAviso.set(false);
       },
     });
@@ -485,7 +490,6 @@ export class RastreioMedicamento {
     if (!(erro instanceof HttpErrorResponse && erro.status === 409)) return throwError(() => erro);
     return this.listaDesejos.listar().pipe(
       switchMap((lista) => {
-        this.desejos.set(lista);
         const existente = lista.find((d) => d.medicamentoId === this.id() && d.ubsId === ubsId);
         if (!existente) return throwError(() => erro);
         return existente.notificar

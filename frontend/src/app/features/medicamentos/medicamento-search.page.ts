@@ -93,6 +93,12 @@ interface Resultado {
                 <span class="block text-lg font-semibold">
                   {{ r.medicamento.nome }} {{ r.medicamento.concentracao }}
                 </span>
+                @if (preferencias.remediosContinuos().includes(r.medicamento.id)) {
+                  <span
+                    class="mt-1 inline-block rounded-full bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-600"
+                    >Na minha lista</span
+                  >
+                }
                 <span class="block capitalize text-content-muted">{{
                   r.medicamento.formaFarmaceutica
                 }}</span>

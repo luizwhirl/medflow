@@ -54,10 +54,22 @@ const med = (id: number, nome: string) => ({ id, nome, concentracao: '' }) as Me
 describe('UbsMapPage', () => {
   let http: HttpTestingController;
 
+  let meus: number[] = [];
+
+  /** Os remédios de uso contínuo são os da lista de desejos do aparelho. */
+  function responderLista() {
+    http
+      .expectOne('/api/lista-desejos')
+      .flush(
+        meus.map((medicamentoId, i) => ({ id: 10 + i, ubsId: 2, medicamentoId, notificar: false })),
+      );
+  }
+
   function preparar(remediosContinuos: number[], localizacao = true) {
+    meus = remediosContinuos;
     localStorage.setItem(
       'medflow.preferencias',
-      JSON.stringify({ ubsReferenciaId: 2, remediosContinuos, buscasRecentes: [] }),
+      JSON.stringify({ ubsReferenciaId: 2, buscasRecentes: [] }),
     );
     spyOn(navigator.geolocation, 'getCurrentPosition').and.callFake((ok, erro) =>
       localizacao
@@ -90,6 +102,8 @@ describe('UbsMapPage', () => {
     fixture.detectChanges();
     flushMicrotasks();
     fixture.detectChanges();
+    responderLista();
+    fixture.detectChanges();
     http.expectOne(proximas(6)).flush([ubs(2, 'Perto', 0.5), ubs(3, 'Meio', 2.46)]);
     http.expectOne('/api/medicamentos?tamanho=100').flush(pagina([]));
     fixture.detectChanges();
@@ -114,6 +128,8 @@ describe('UbsMapPage', () => {
     fixture.detectChanges();
     flushMicrotasks();
     fixture.detectChanges();
+    responderLista();
+    fixture.detectChanges();
     http.expectOne(proximas(6)).flush([ubs(2, 'Perto', 0.5)]);
     http.expectOne('/api/medicamentos?tamanho=100').flush(pagina([]));
     fixture.detectChanges();
@@ -135,6 +151,8 @@ describe('UbsMapPage', () => {
     const fixture = TestBed.createComponent(UbsMapPage);
     fixture.detectChanges();
     flushMicrotasks();
+    fixture.detectChanges();
+    responderLista();
     fixture.detectChanges();
     http.expectOne(proximas(6)).flush([
       // aberta, fechada (fora do horário ou fim de semana) e sem horário cadastrado
@@ -180,6 +198,8 @@ describe('UbsMapPage', () => {
     fixture.detectChanges();
     const { distanciaKm: _a, ...centro } = ubs(1, 'Centro', 0);
     const { distanciaKm: _b, ...perto } = ubs(2, 'Perto', 0);
+    responderLista();
+    fixture.detectChanges();
     http.expectOne('/api/ubs').flush([centro, perto]);
     http.expectOne('/api/medicamentos?tamanho=100').flush(pagina([]));
     fixture.detectChanges();
@@ -193,6 +213,8 @@ describe('UbsMapPage', () => {
     const fixture = TestBed.createComponent(UbsMapPage);
     fixture.detectChanges();
     flushMicrotasks();
+    fixture.detectChanges();
+    responderLista();
     fixture.detectChanges();
     http.expectOne(proximas(6)).flush([ubs(2, 'Perto', 0.5), ubs(3, 'Meio', 2.5)]);
     http.expectOne('/api/medicamentos?tamanho=100').flush(pagina([]));
@@ -228,6 +250,8 @@ describe('UbsMapPage', () => {
     fixture.detectChanges();
     flushMicrotasks();
     fixture.detectChanges();
+    responderLista();
+    fixture.detectChanges();
     http.expectOne(proximas(6)).flush([ubs(2, 'Perto', 0.5), ubs(3, 'Meio', 2.5)]);
     http.expectOne('/api/medicamentos?tamanho=100').flush(pagina([]));
     http.expectOne('/api/medicamentos/1').flush(med(1, 'Metformina'));
@@ -257,6 +281,8 @@ describe('UbsMapPage', () => {
     const fixture = TestBed.createComponent(UbsMapPage);
     fixture.detectChanges();
     flushMicrotasks();
+    fixture.detectChanges();
+    responderLista();
     fixture.detectChanges();
     http.expectOne(proximas(6)).flush([ubs(2, 'Perto', 0.5)]);
     http.expectOne('/api/medicamentos?tamanho=100').flush(pagina([med(1, 'Metformina')]));
@@ -301,6 +327,8 @@ describe('UbsMapPage', () => {
     const fixture = TestBed.createComponent(UbsMapPage);
     fixture.detectChanges();
     flushMicrotasks();
+    fixture.detectChanges();
+    responderLista();
     fixture.detectChanges();
     http.expectOne(proximas(6)).flush([ubs(2, 'Perto', 0.5), ubs(3, 'Meio', 2.5)]);
     http.expectOne('/api/medicamentos?tamanho=100').flush(pagina([]));

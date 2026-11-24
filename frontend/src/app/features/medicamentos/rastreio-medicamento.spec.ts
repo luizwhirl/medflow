@@ -24,7 +24,7 @@ describe('RastreioMedicamento · Avisar quando chegar', () => {
   function abrir(ubsReferenciaId: number | null, lista: ItemListaDesejo[]) {
     localStorage.setItem(
       'medflow.preferencias',
-      JSON.stringify({ ubsReferenciaId, remediosContinuos: [], buscasRecentes: [] }),
+      JSON.stringify({ ubsReferenciaId, buscasRecentes: [] }),
     );
     spyOn(navigator.geolocation, 'getCurrentPosition').and.callFake((_ok, erro) =>
       erro!({ code: 1 } as GeolocationPositionError),
@@ -105,7 +105,7 @@ describe('RastreioMedicamento · Avisar quando chegar', () => {
   it('sem UBS de referência, desativa o botão e pede para escolher uma', fakeAsync(() => {
     const { el } = abrir(null, []);
     expect(botao(el).disabled).toBeTrue();
-    expect(ajuda(el)).toBe('Escolha sua UBS para receber avisos.');
+    expect(ajuda(el)).toBe('Escolha sua UBS para montar sua lista e receber avisos.');
     expect(el.querySelector('#aviso-ajuda a')!.getAttribute('href')).toBe('/mapa');
   }));
 
@@ -122,7 +122,7 @@ describe('RastreioMedicamento · Avisar quando chegar', () => {
     // A lista não carregou: o botão segue habilitado e o clique tenta criar o item.
     localStorage.setItem(
       'medflow.preferencias',
-      JSON.stringify({ ubsReferenciaId: 1, remediosContinuos: [], buscasRecentes: [] }),
+      JSON.stringify({ ubsReferenciaId: 1, buscasRecentes: [] }),
     );
     spyOn(navigator.geolocation, 'getCurrentPosition').and.callFake((_ok, erro) =>
       erro!({ code: 1 } as GeolocationPositionError),
@@ -160,19 +160,39 @@ describe('RastreioMedicamento · Avisar quando chegar', () => {
     expect(ajuda(el)).toBe('Acompanhe em Minha lista.');
   }));
 
-  it('o botão de uso contínuo não se confunde com a Minha lista', fakeAsync(() => {
-    const { fixture, el } = abrir(1, []);
-    const usoContinuo = Array.from(el.querySelectorAll('button')).find((b) =>
-      b.textContent!.includes('uso contínuo'),
-    )!;
-    expect(usoContinuo.textContent!.trim()).toBe('Marcar uso contínuo');
-    expect(el.textContent).not.toContain('Adicionar à lista');
+  const usoContinuo = (el: HTMLElement) =>
+    Array.from(el.querySelectorAll('button')).find((b) => /uso contínuo/i.test(b.textContent!))!;
 
-    usoContinuo.click();
+  it('marcar uso contínuo põe o remédio na Minha lista, sem ligar o aviso', fakeAsync(() => {
+    const { fixture, el } = abrir(1, []);
+    expect(usoContinuo(el).textContent!.trim()).toBe('Marcar uso contínuo');
+
+    usoContinuo(el).click();
+    const req = http.expectOne({ method: 'POST', url: '/api/lista-desejos' });
+    expect(req.request.body).toEqual({ ubsId: 1, medicamentoId: 7, notificar: false });
+    req.flush(desejo(1, false));
     fixture.detectChanges();
-    expect(usoContinuo.textContent!.trim()).toBe('Uso contínuo');
-    expect(usoContinuo.getAttribute('aria-pressed')).toBe('true');
-    // Grava só no navegador: nenhuma chamada à lista de desejos.
-    http.expectNone({ method: 'POST', url: '/api/lista-desejos' });
+
+    expect(usoContinuo(el).textContent!.trim()).toBe('Uso contínuo');
+    expect(usoContinuo(el).getAttribute('aria-pressed')).toBe('true');
+    expect(botao(el).textContent).toContain('Avisar quando chegar');
+  }));
+
+  it('desmarcar uso contínuo tira o remédio da lista em todas as UBS', fakeAsync(() => {
+    const { fixture, el } = abrir(1, [desejo(1, true), { ...desejo(2, false), id: 41 }]);
+    expect(usoContinuo(el).getAttribute('aria-pressed')).toBe('true');
+
+    usoContinuo(el).click();
+    http.expectOne({ method: 'DELETE', url: '/api/lista-desejos/40' }).flush(null);
+    http.expectOne({ method: 'DELETE', url: '/api/lista-desejos/41' }).flush(null);
+    fixture.detectChanges();
+
+    expect(usoContinuo(el).textContent!.trim()).toBe('Marcar uso contínuo');
+    expect(botao(el).textContent).toContain('Avisar quando chegar');
+  }));
+
+  it('sem UBS de referência, só desmarca o que já está na lista', fakeAsync(() => {
+    const { el } = abrir(null, []);
+    expect(usoContinuo(el).disabled).toBeTrue();
   }));
 });
