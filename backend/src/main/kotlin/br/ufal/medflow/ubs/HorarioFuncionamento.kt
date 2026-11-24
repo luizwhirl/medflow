@@ -10,6 +10,9 @@ import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Table
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Modifying
+import org.springframework.data.jpa.repository.Query
+import org.springframework.data.repository.query.Param
 import java.time.DayOfWeek
 import java.time.LocalTime
 
@@ -60,4 +63,9 @@ class HorarioFuncionamento(
 
 interface HorarioFuncionamentoRepository : JpaRepository<HorarioFuncionamento, Long> {
     fun findByUbsIdInOrderByDiaSemanaAscAbreAsc(ubsIds: Collection<Long>): List<HorarioFuncionamento>
+
+    /** Apaga todos os turnos da UBS de uma vez (antes de gravar os novos, por causa da unicidade). */
+    @Modifying
+    @Query("delete from HorarioFuncionamento h where h.ubsId = :ubsId")
+    fun apagarDaUbs(@Param("ubsId") ubsId: Long): Int
 }

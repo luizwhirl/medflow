@@ -1,6 +1,5 @@
 package br.ufal.medflow.listadesejo
 
-import br.ufal.medflow.auth.Usuario
 import br.ufal.medflow.medicamento.Medicamento
 import br.ufal.medflow.ubs.Ubs
 import jakarta.persistence.Column
@@ -13,14 +12,15 @@ import jakarta.persistence.JoinColumn
 import jakarta.persistence.ManyToOne
 import jakarta.persistence.Table
 import java.time.Instant
+import java.util.UUID
 
-/** Medicamento que um cidadão deseja acompanhar em uma UBS. */
+/** Medicamento que um aparelho (sem login) deseja acompanhar em uma UBS. */
 @Entity
 @Table(name = "item_lista_desejo")
 class ItemListaDesejo(
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "usuario_id", nullable = false)
-    var usuario: Usuario,
+    /** UUID gerado no navegador e enviado no cabeçalho X-Dispositivo-Id. */
+    @Column(name = "dispositivo_id", nullable = false)
+    var dispositivoId: UUID,
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "ubs_id", nullable = false)

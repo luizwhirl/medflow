@@ -1,7 +1,5 @@
 package br.ufal.medflow.listadesejo
 
-import br.ufal.medflow.auth.CredenciaisInvalidasException
-import br.ufal.medflow.auth.UsuarioRepository
 import br.ufal.medflow.common.RecursoNaoEncontradoException
 import br.ufal.medflow.medicamento.MedicamentoRepository
 import br.ufal.medflow.ubs.UbsRepository
@@ -10,37 +8,31 @@ import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.sql.SQLException
+import java.util.UUID
 
 /** Indica que o medicamento já foi adicionado à lista para a mesma UBS. */
 class ItemListaDesejoDuplicadoException :
     RuntimeException("Medicamento já cadastrado na lista de desejos para esta UBS")
 
-/** Regras de negócio da lista de desejos do usuário autenticado. */
+/** Regras de negócio da lista de desejos de um aparelho (sem login). */
 @Service
 @Transactional(readOnly = true)
 class ItemListaDesejoService(
     private val itemListaDesejoRepository: ItemListaDesejoRepository,
-    private val usuarioRepository: UsuarioRepository,
     private val ubsRepository: UbsRepository,
     private val medicamentoRepository: MedicamentoRepository,
 ) {
 
-    fun listar(usuarioId: Long): List<ItemListaDesejoResponse> {
-        validarUsuario(usuarioId)
-
-        return itemListaDesejoRepository
-            .findAllByUsuarioIdOrderByCriadoEmDescIdDesc(usuarioId)
+    fun listar(dispositivoId: UUID): List<ItemListaDesejoResponse> =
+        itemListaDesejoRepository
+            .findAllByDispositivoIdOrderByCriadoEmDescIdDesc(dispositivoId)
             .map { it.toResponse() }
-    }
 
     @Transactional
     fun criar(
-        usuarioId: Long,
+        dispositivoId: UUID,
         request: CriarItemListaDesejoRequest,
     ): ItemListaDesejoResponse {
-        val usuario = usuarioRepository.findByIdOrNull(usuarioId)
-            ?: throw CredenciaisInvalidasException()
-
         val ubs = ubsRepository.findByIdOrNull(request.ubsId)
             ?: throw RecursoNaoEncontradoException("UBS", request.ubsId)
 
@@ -48,8 +40,8 @@ class ItemListaDesejoService(
             ?: throw RecursoNaoEncontradoException("Medicamento", request.medicamentoId)
 
         if (
-            itemListaDesejoRepository.existsByUsuarioIdAndUbsIdAndMedicamentoId(
-                usuarioId,
+            itemListaDesejoRepository.existsByDispositivoIdAndUbsIdAndMedicamentoId(
+                dispositivoId,
                 request.ubsId,
                 request.medicamentoId,
             )
@@ -58,7 +50,7 @@ class ItemListaDesejoService(
         }
 
         val item = ItemListaDesejo(
-            usuario = usuario,
+            dispositivoId = dispositivoId,
             ubs = ubs,
             medicamento = medicamento,
             notificar = request.notificar,
@@ -78,39 +70,27 @@ class ItemListaDesejoService(
 
     @Transactional
     fun atualizarNotificacao(
-        usuarioId: Long,
+        dispositivoId: UUID,
         itemId: Long,
         notificar: Boolean,
     ): ItemListaDesejoResponse {
-        validarUsuario(usuarioId)
-
-        val item = itemListaDesejoRepository.findByIdAndUsuarioId(itemId, usuarioId)
-            ?: throw RecursoNaoEncontradoException("Item da lista de desejos", itemId)
-
+        val item = buscarDoAparelho(dispositivoId, itemId)
         item.notificar = notificar
-
         return item.toResponse()
     }
 
     @Transactional
     fun remover(
-        usuarioId: Long,
+        dispositivoId: UUID,
         itemId: Long,
     ) {
-        validarUsuario(usuarioId)
+        itemListaDesejoRepository.delete(buscarDoAparelho(dispositivoId, itemId))
+    }
 
-        val item = itemListaDesejoRepository.findByIdAndUsuarioId(itemId, usuarioId)
+    /** Item de outro aparelho responde como inexistente (404), para não revelar que ele existe. */
+    private fun buscarDoAparelho(dispositivoId: UUID, itemId: Long): ItemListaDesejo =
+        itemListaDesejoRepository.findByIdAndDispositivoId(itemId, dispositivoId)
             ?: throw RecursoNaoEncontradoException("Item da lista de desejos", itemId)
-
-        itemListaDesejoRepository.delete(item)
-    }
-
-    /** Um token de uma conta excluída não deve continuar autorizando operações. */
-    private fun validarUsuario(usuarioId: Long) {
-        if (!usuarioRepository.existsById(usuarioId)) {
-            throw CredenciaisInvalidasException()
-        }
-    }
 
     /** SQLState 23505 indica violação de unicidade no PostgreSQL. */
     private fun Throwable.violaUnicidade(): Boolean =
