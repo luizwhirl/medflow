@@ -80,8 +80,7 @@ export const routes: Routes = [
       {
         path: 'avisos',
         title: 'Avisos · UBS Conecta',
-        data: { titulo: 'Avisos' },
-        loadComponent: () => import('./features/em-breve/em-breve.page').then((m) => m.EmBrevePage),
+        loadComponent: () => import('./features/avisos/avisos.page').then((m) => m.AvisosPage),
       },
       {
         path: 'perfil',

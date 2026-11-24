@@ -11,10 +11,12 @@ import {
   linkRota,
   posicaoAtual,
 } from '../../core/geo';
+import { quandoAconteceu, textoDoAviso, TomAviso } from '../../core/models/aviso.model';
 import { Disponibilidade, statusExibido, temEstoque } from '../../core/models/estoque.model';
 import { Medicamento } from '../../core/models/medicamento.model';
 import { StatusEstoque } from '../../core/models/status-estoque';
 import { Ubs, UbsProxima } from '../../core/models/ubs.model';
+import { AvisosService } from '../../core/services/avisos.service';
 import { MedicamentoService } from '../../core/services/medicamento.service';
 import { PreferenciasService } from '../../core/services/preferencias.service';
 import { UbsService } from '../../core/services/ubs.service';
@@ -361,9 +363,43 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
               >Ver todos</a
             >
           </div>
-          <p class="mt-4 text-content-muted">
-            Você ainda não tem avisos. Quando um remédio da sua lista chegar, ele aparece aqui.
-          </p>
+          @if (avisosRecentes(); as recentes) {
+            @if (recentes.length) {
+              <ul class="divide-y divide-outline" aria-label="Avisos recentes">
+                @for (a of recentes; track a.id) {
+                  <li>
+                    <a
+                      [routerLink]="a.texto.link"
+                      (click)="avisos.marcarComoLido(a.id)"
+                      class="flex gap-3 py-3 hover:text-brand-700"
+                    >
+                      <span
+                        class="mt-1.5 size-2 shrink-0 rounded-full"
+                        [class]="corAviso[a.texto.tom]"
+                        aria-hidden="true"
+                      ></span>
+                      <span class="min-w-0">
+                        <span class="block" [class.font-semibold]="!a.lido">{{
+                          a.texto.titulo
+                        }}</span>
+                        <span class="block text-sm text-content-muted">{{ a.quando }}</span>
+                      </span>
+                    </a>
+                  </li>
+                }
+              </ul>
+              <a
+                routerLink="/avisos"
+                class="mt-2 inline-block font-semibold text-brand-600 xl:hidden"
+                >Ver todos</a
+              >
+            } @else {
+              <p class="mt-4 text-content-muted">
+                Você ainda não tem avisos. Quando um remédio seu chegar na sua UBS, ele aparece
+                aqui.
+              </p>
+            }
+          }
         </section>
       </aside>
     </div>
@@ -374,6 +410,26 @@ export class HomePage {
   private readonly ubsService = inject(UbsService);
   private readonly medicamentoService = inject(MedicamentoService);
   private readonly preferencias = inject(PreferenciasService);
+  protected readonly avisos = inject(AvisosService);
+
+  protected readonly corAviso: Record<TomAviso, string> = {
+    disponivel: 'bg-status-disponivel',
+    info: 'bg-status-info',
+    alerta: 'bg-status-alerta',
+  };
+
+  /** Os três avisos mais recentes (mesma chamada do contador do menu e da tela de Avisos). */
+  protected readonly avisosRecentes = computed(() =>
+    this.avisos
+      .avisos()
+      .slice(0, 3)
+      .map((a) => ({
+        id: a.id,
+        lido: a.lido,
+        texto: textoDoAviso(a),
+        quando: quandoAconteceu(a.ocorridoEm),
+      })),
+  );
 
   protected readonly iconePilula = ICONE_PILULA;
   protected readonly iconePino =

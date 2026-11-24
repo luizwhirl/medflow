@@ -18,6 +18,7 @@ Base: `http://localhost:8080/api`. A documentação interativa fica em `/swagger
 | GET | `/medicamentos/{id}/disponibilidade` | Unidades com o medicamento (disponíveis primeiro) |
 | GET | `/medicamentos/{id}/rastreamento?ubsId=` | Remessa do medicamento para a UBS: etapa atual, previsão de chegada e linha do tempo |
 | GET | `/medicamentos/{id}/disponibilidade/resumo` | Total de unidades e unidades com estoque disponível, com filtro opcional por município |
+| GET | `/avisos?ubsId=&medicamentoIds=` | Avisos da UBS para os medicamentos acompanhados (veja abaixo) |
 | GET | `/lista-desejos` | Lista os medicamentos desejados pelo aparelho (sem login, cabeçalho `X-Dispositivo-Id`) |
 | POST | `/lista-desejos` | Adiciona um medicamento à lista de desejos |
 | PATCH | `/lista-desejos/{id}` | Ativa ou desativa a notificação de um item |
@@ -634,6 +635,41 @@ A `quantidade` tem sinal: `ENTRADA` é positiva, `DISPENSACAO` é negativa e `AJ
 
 - `404` se a UBS ou o `medicamentoId` informado não existir. Um medicamento que existe mas não tem movimentação na UBS responde `200` com `[]`.
 - É uma lista simples com as últimas `limite` movimentações, e não uma página como as listagens de estoque e medicamentos (`pagina` e `tamanho`): a tela só mostra as mais recentes. Se virar histórico completo, passa a usar `PaginaResponse`.
+
+## Avisos
+
+`GET /api/avisos?ubsId=1&medicamentoIds=3,5` é público (sem login): o cidadão informa a UBS de referência e os medicamentos que acompanha (até 50, separados por vírgula; `medicamentoIds` é opcional). A resposta vem do mais recente para o mais antigo, e um aviso sem data (UBS que nunca sincronizou) vai para o fim.
+
+| `tipo` | Quando aparece | Campos além de `id`, `tipo`, `ubsId` e `ubsNome` |
+| --- | --- | --- |
+| `DISPONIVEL` | O medicamento está com status `DISPONIVEL` e quantidade maior que zero na UBS | `medicamentoId`, `medicamentoNome`, `medicamentoConcentracao`, `quantidade`, `ocorridoEm` (atualização do estoque) |
+| `REMESSA` | Há remessa do medicamento para a UBS que ainda não chegou à etapa `DISPONIVEL` | os do medicamento, `quantidade`, `etapa` (a mais avançada registrada; `PEDIDO` se não houver eventos), `previsaoChegada` (`AAAA-MM-DD`), `ocorridoEm` (momento da etapa) |
+| `SINCRONIZACAO_ATRASADA` | A UBS está há mais de 24 h sem sincronizar, ou nunca sincronizou | `ocorridoEm` (última sincronização; ausente se nunca sincronizou) |
+
+```json
+[
+  {
+    "id": "remessa-7-EM_TRANSPORTE",
+    "tipo": "REMESSA",
+    "ubsId": 1,
+    "ubsNome": "UBS Benedito Bentes I",
+    "medicamentoId": 3,
+    "medicamentoNome": "Metformina",
+    "medicamentoConcentracao": "850 mg",
+    "quantidade": 300,
+    "etapa": "EM_TRANSPORTE",
+    "previsaoChegada": "2026-11-25",
+    "ocorridoEm": "2026-11-23T09:00:00Z"
+  }
+]
+```
+
+O `id` é estável para o mesmo acontecimento, para o frontend guardar o que já foi lido: `disponivel-{ubs}-{medicamento}`, `remessa-{remessa}-{etapa}` (muda quando a remessa avança) e `sincronizacao-{ubs}-{segundos da última sincronização}` (muda a cada novo atraso). Campos sem valor não aparecem no JSON.
+
+| Situação | Resposta |
+| --- | --- |
+| Sem `ubsId`, `ubsId` não positivo, id de medicamento não numérico ou não positivo, ou mais de 50 medicamentos | `400` |
+| UBS inexistente | `404` com `title: "Recurso não encontrado"` |
 
 ## Exemplos
 
