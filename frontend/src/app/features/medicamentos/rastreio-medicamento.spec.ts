@@ -45,7 +45,19 @@ describe('RastreioMedicamento · Avisar quando chegar', () => {
     http.expectOne('/api/medicamentos/7/disponibilidade').flush([]);
     http.expectOne('/api/ubs').flush([]);
     fixture.detectChanges();
+    semRemessa();
     return { fixture, el: fixture.nativeElement as HTMLElement };
+  }
+
+  /** Responde que não há remessa (o rastreamento só é pedido com UBS de referência). */
+  function semRemessa() {
+    for (const req of http.match((r) => r.url.endsWith('/rastreamento'))) {
+      req.flush({
+        medicamentoId: 7,
+        ubsId: Number(req.request.params.get('ubsId')),
+        remessa: null,
+      });
+    }
   }
 
   afterEach(() => http.verify());
@@ -130,6 +142,7 @@ describe('RastreioMedicamento · Avisar quando chegar', () => {
     http.expectOne('/api/medicamentos/7/disponibilidade').flush([]);
     http.expectOne('/api/ubs').flush([]);
     fixture.detectChanges();
+    semRemessa();
     const el = fixture.nativeElement as HTMLElement;
     expect(botao(el).disabled).toBeFalse();
 
