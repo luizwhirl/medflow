@@ -237,7 +237,7 @@ Avisos de atraso têm chave derivada da UBS e da última referência de dados. A
 
 ### Migrations e dados de exemplo
 
-A migration `V8__avisos.sql` cria avisos identificados por `dispositivo_id UUID`, sem vínculo com contas de usuários. A lista de desejos utiliza o modelo exclusivamente por dispositivo estabelecido pela migration `V14__lista_desejos_dispositivo.sql`.
+A migration `V16__avisos.sql` cria avisos identificados por `dispositivo_id UUID`, sem vínculo com contas de usuários. A lista de desejos utiliza o modelo exclusivamente por dispositivo estabelecido pela migration `V14__lista_desejos_dispositivo.sql`.
 
 No perfil `dev`, `AvisosDeExemplo` insere idempotentemente **três avisos fictícios** (dois não lidos, um lido) para o UUID de demonstração `15da7427-97f6-4bf1-9d99-004af964e951`. Para testá-los no frontend, use esse UUID no `localStorage` de desenvolvimento e no cabeçalho `X-Dispositivo-Id`; não o utilize como UUID de um dispositivo real.
 
