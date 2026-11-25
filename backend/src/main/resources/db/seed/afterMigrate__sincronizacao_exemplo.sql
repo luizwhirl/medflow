@@ -1,10 +1,11 @@
--- Callback do Flyway: roda a cada subida no perfil "dev", depois das migrações.
+-- Callback do Flyway: roda a cada subida no perfil "demo" (dev,demo), depois das migrações.
 -- Mantém a "última sincronização" das UBS fictícias relativa a agora (as datas do V1000 envelhecem):
 -- verde até 1 h, amarelo até 24 h e só a USF Riacho Doce atrasada (vermelho).
 -- Só toca os CNES fictícios do seed; unidades vindas da BNAFAR não são alteradas.
 
 UPDATE ubs u
-SET ultima_sincronizacao = NOW() - s.atraso
+SET ultima_sincronizacao = NOW() - s.atraso,
+    localizacao_origem = 'FONTE' -- o perfil dev (sem demo) as esconde; no demo elas voltam
 FROM (VALUES
     ('9000101', INTERVAL '12 minutes'),
     ('9000102', INTERVAL '35 minutes'),

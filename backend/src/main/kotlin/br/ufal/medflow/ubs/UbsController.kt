@@ -13,7 +13,6 @@ import jakarta.validation.constraints.DecimalMax
 import jakarta.validation.constraints.DecimalMin
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
-import org.springframework.data.repository.findByIdOrNull
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -55,7 +54,7 @@ class UbsController(
             if (raioKm != null || medicamentoId != null) {
                 throw ParametroInvalidoException("lat/lng", "raioKm e medicamentoId exigem lat e lng")
             }
-            ubsRepository.findAllByOrderByNomeAsc().map { it.toProximaResponse() }
+            ubsRepository.findVisiveis().map { it.toProximaResponse() }
         } else {
             if (lat == null || lng == null) throw ParametroInvalidoException("lat/lng", "Informe lat e lng juntos")
             ubsProximidadeService.buscar(lat, lng, raioKm, medicamentoId)
@@ -68,7 +67,7 @@ class UbsController(
 
     @GetMapping("/{id}")
     fun buscar(@PathVariable id: Long): UbsResponse {
-        val ubs = (ubsRepository.findByIdOrNull(id) ?: throw RecursoNaoEncontradoException("UBS", id)).toResponse()
+        val ubs = (ubsRepository.findVisivel(id) ?: throw RecursoNaoEncontradoException("UBS", id)).toResponse()
         return ubs.com(horarioFuncionamentoService.buscar(listOf(id))[id])
     }
 

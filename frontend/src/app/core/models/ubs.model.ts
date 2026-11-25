@@ -20,6 +20,11 @@ export interface Ubs {
   horario: string | null;
   latitude: number;
   longitude: number;
+  /**
+   * `true` quando o pino é o centro do bairro: a coordenada do CNES estava errada e a unidade não foi achada no mapa.
+   * A gestão da UBS pode corrigir.
+   */
+  localizacaoAproximada?: boolean;
   /** Momento da última sincronização com a BNAFAR / e-SUS AF (ISO-8601). */
   ultimaSincronizacao: string | null;
   /** Turnos por dia da semana; vazio quando a UBS não tem horário cadastrado. */

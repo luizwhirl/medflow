@@ -19,7 +19,7 @@ import org.testcontainers.junit.jupiter.Testcontainers
 /** Testes do estoque da UBS com PostgreSQL e dados próprios. */
 @SpringBootTest
 @AutoConfigureMockMvc
-@ActiveProfiles("dev")
+@ActiveProfiles("dev", "demo")
 @Import(TestcontainersConfiguration::class)
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional

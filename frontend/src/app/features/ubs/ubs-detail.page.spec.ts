@@ -57,13 +57,15 @@ const ESTOQUE = [
 ];
 
 describe('sincronizacao', () => {
-  it('fica em dia até 1 h, atrasada até 24 h e crítica depois ou se nunca sincronizou', () => {
+  it('fica em dia até 48 h, atrasada até 4 dias e crítica depois ou se nunca sincronizou', () => {
     const agora = Date.parse('2026-11-18T12:00:00Z');
     const min = (iso: string) => minutosDesde(iso, agora);
+    // posição diária da BNAFAR: a de ontem ainda vale hoje (até 48 h); atrasada até 4 dias
     expect(nivelSincronizacao(min('2026-11-18T11:00:00Z'))).toBe('em-dia');
-    expect(nivelSincronizacao(min('2026-11-18T10:59:00Z'))).toBe('atrasada');
-    expect(nivelSincronizacao(min('2026-11-17T12:00:00Z'))).toBe('atrasada');
-    expect(nivelSincronizacao(min('2026-11-17T11:59:00Z'))).toBe('critica');
+    expect(nivelSincronizacao(min('2026-11-16T12:00:00Z'))).toBe('em-dia');
+    expect(nivelSincronizacao(min('2026-11-16T11:59:00Z'))).toBe('atrasada');
+    expect(nivelSincronizacao(min('2026-11-14T12:00:00Z'))).toBe('atrasada');
+    expect(nivelSincronizacao(min('2026-11-14T11:59:00Z'))).toBe('critica');
     expect(nivelSincronizacao(minutosDesde(null))).toBe('critica');
   });
 
@@ -152,7 +154,7 @@ describe('UbsDetailPage', () => {
   });
 
   it('sem telefone, desativa Ligar e pede para confirmar na unidade', () => {
-    const { el } = abrir(ubs({ telefone: null, ultimaSincronizacao: haHoras(30) }));
+    const { el } = abrir(ubs({ telefone: null, ultimaSincronizacao: haHoras(120) }));
     expect((botao(el, 'Ligar') as HTMLButtonElement).disabled).toBeTrue();
     expect(texto(el)).toContain('Telefone não informado');
     expect(texto(el.querySelector('[data-aviso="sincronizacao"]'))).toContain(
@@ -161,15 +163,33 @@ describe('UbsDetailPage', () => {
   });
 
   it('avisa quando a sincronização está atrasada ou crítica', () => {
-    const atrasada = abrir(ubs({ ultimaSincronizacao: haHoras(5) })).el;
+    // posição de ontem ainda vale: sem aviso
+    expect(
+      abrir(ubs({ ultimaSincronizacao: haHoras(30) })).el.querySelector(
+        '[data-aviso="sincronizacao"]',
+      ),
+    ).toBeNull();
+
+    reiniciar();
+    const atrasada = abrir(ubs({ ultimaSincronizacao: haHoras(54) })).el;
     expect(texto(atrasada.querySelector('[data-aviso="sincronizacao"]'))).toBe(
-      'Última sincronização há 5 h. O estoque pode ter mudado desde então.',
+      'Última sincronização há 2 dias. O estoque pode ter mudado desde então.',
     );
 
     reiniciar();
-    const critica = abrir(ubs({ ultimaSincronizacao: haHoras(72) })).el;
+    const critica = abrir(ubs({ ultimaSincronizacao: haHoras(120) })).el;
     expect(texto(critica.querySelector('[data-aviso="sincronizacao"]'))).toBe(
-      'Última sincronização há 3 dias. O estoque abaixo pode estar desatualizado. Ligue antes de ir.',
+      'Última sincronização há 5 dias. O estoque abaixo pode estar desatualizado. Ligue antes de ir.',
+    );
+  });
+
+  it('avisa quando o pino no mapa é só o centro do bairro', () => {
+    expect(abrir(ubs()).el.querySelector('[data-teste="local-aproximado"]')).toBeNull();
+
+    reiniciar();
+    const { el } = abrir(ubs({ localizacaoAproximada: true }));
+    expect(texto(el.querySelector('[data-teste="local-aproximado"]'))).toBe(
+      'Localização no mapa aproximada (centro do bairro). Confira o endereço.',
     );
   });
 

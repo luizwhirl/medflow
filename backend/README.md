@@ -4,7 +4,7 @@ Backend em Kotlin + Spring Boot 4, com PostgreSQL e Flyway.
 
 ```bash
 docker compose up -d   # na raiz do repositório: sobe o PostgreSQL
-./gradlew bootRun      # http://localhost:8080 (perfil dev, com dados de exemplo)
+./gradlew bootRun      # http://localhost:8080 (perfil dev: sincroniza Maceió com a BNAFAR ao subir)
 ./gradlew test         # testes (integração usa Testcontainers -> precisa de Docker)
 ./gradlew build        # jar em build/libs
 ```

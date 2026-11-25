@@ -56,7 +56,7 @@ Regras:
 | Identificadores oficiais (CNES, CATMAT) como chaves únicas | Integração futura com BNAFAR / e-SUS AF sem tabelas de-para. |
 | Status do estoque derivado da quantidade (`RegraStatusEstoque`) | A BNAFAR só informa quantidade. "Reservado" é regra nossa: saldo até o limite do medicamento (`medicamento.limite_reservado`) ou, se ele não tiver um, até `app.estoque.limite-reservado`, ou saldo igual ou menor que a demanda da lista de desejos (já comprometido com quem espera). |
 | `ultima_sincronizacao` por UBS exposta na API | Transparência: o cidadão vê quão atual é o dado (unidades rurais sincronizam com atraso). |
-| Dados de exemplo só no perfil `dev` (`db/seed`) | Produção nunca recebe dados fictícios. |
+| Dados de exemplo só no perfil `demo` (`db/seed`) | Produção e o dev do dia a dia usam os dados reais da BNAFAR; fictício só quando pedido. |
 | Testcontainers nos testes de integração | Testa contra PostgreSQL real, não H2. |
 | API sem sessão, com JWT (HS256) no cabeçalho `Authorization` | O front é um SPA; sem cookie não há CSRF. Segredo em `JWT_SECRET` (obrigatório fora do dev), validade de 8 h. |
 | Não guardamos o CNS do cidadão | Dado sensível (LGPD). A conta é só nome, e-mail e senha (hash BCrypt); a lista de desejos é identificada só pelo aparelho (UUID no navegador), sem login. |
@@ -94,20 +94,43 @@ Os testes usam respostas reais gravadas em `backend/src/test/resources/bnafar` e
 itens de estoque e lotes. Idempotente: com os mesmos dados da fonte, uma nova execução não muda nada.
 A leitura da fonte fica fora da transação; se ela falhar, nada é gravado.
 
-Ligar o job (desligado por padrão), em `app.sync` ou por variável de ambiente:
+O job fica em `app.sync` (ou nas variáveis de ambiente). Nos perfis `dev` e `prod` ele vem ligado para Maceió e roda
+também ao subir; no perfil `demo` (dados fictícios) e nos testes, desligado:
 
-| Propriedade | Variável | Padrão |
-| --- | --- | --- |
-| `ativo` | `SYNC_ATIVO` | `false` |
-| `municipios` | `SYNC_MUNICIPIOS` | vazio (IBGE de 6 ou 7 dígitos, separados por vírgula) |
-| `cron` | `SYNC_CRON` | `0 0 */6 * * *` (a cada 6 horas, fuso de Maceió) |
-| `executar-ao-iniciar` | `SYNC_AO_INICIAR` | `false` |
+| Propriedade | Variável | Padrão (dev/prod) | Padrão (sem perfil) |
+| --- | --- | --- | --- |
+| `ativo` | `SYNC_ATIVO` | `true` | `false` |
+| `municipios` | `SYNC_MUNICIPIOS` | `2704302` (Maceió) | vazio (IBGE de 6 ou 7 dígitos, separados por vírgula) |
+| `cron` | `SYNC_CRON` | `0 0 * * * *` (de hora em hora, fuso de Maceió) | igual |
+| `executar-ao-iniciar` | `SYNC_AO_INICIAR` | `true` | `false` |
+| `tolerancia-limite-km` | | `3.5` | igual |
 
-Exemplo para desenvolvimento: `SYNC_ATIVO=true SYNC_MUNICIPIOS=270240 SYNC_AO_INICIAR=true ./gradlew bootRun`.
+A BNAFAR publica uma posição por dia (em 25/11/2026 a mais recente era a de 23/11). Rodar de hora em hora só garante
+que a posição nova entra logo que sai; o "tempo real" do app é o da fonte. As telas abertas (detalhe da UBS e painel
+da gestão) buscam os dados de novo a cada 5 minutos.
+
+#### Localização das UBS
+
+A coordenada da BNAFAR é a do CNES, e ela erra: em Maceió, 10 das 86 unidades vêm a 4 km ou mais fora do município
+(a US Aliomar Almeida Lins, no Benedito Bentes II, cai no mar, a 77 km). Para nenhum pino ficar no lugar errado:
+
+1. Cada coordenada é conferida com o contorno do município na API de malhas do IBGE (`IbgeLimitesMunicipais`, em
+   memória depois da primeira busca). A malha é simplificada e corta o litoral (Ipioca, Riacho Doce, Pontal ficam até
+   3,3 km "fora"), por isso a tolerância de 3,5 km da borda. Sem o contorno (IBGE fora do ar), a sincronização falha e
+   nada é gravado.
+2. Coordenada fora: a unidade é procurada pelo nome no OpenStreetMap (Nominatim, 1 requisição por segundo, só lugares de
+   saúde, dentro do município) → origem `LUGAR`. Sem ela, o centro do bairro → `BAIRRO` (o app mostra "localização
+   aproximada"). Sem nada → `INVALIDA`: a unidade fica no banco (o painel conta o estoque), mas sai da lista, do mapa,
+   da busca por raio e do detalhe.
+3. O gestor corrige o pino no painel (`PUT /api/gestao/ubs/{id}/localizacao`) → `MANUAL`, que a sincronização não
+   sobrescreve. `LUGAR` e `BAIRRO` também não são procurados de novo; se a fonte passar a mandar uma coordenada boa, ela
+   volta a valer (`FONTE`).
+
+A busca por raio (`GET /api/ubs?lat&lng&raioKm`) devolve todas as UBS visíveis dentro do raio, sem limite de quantidade.
 
 Regras de conversão (a BNAFAR é uma base de gestão, não pensada para o cidadão):
 
-- **Unidades:** só entram UBS, USF/ESF e farmácias da rede. Secretaria, CAF (almoxarifado), CAPS, UPA e hospital ficam de fora. Unidade sem coordenadas também fica de fora (não dá para mostrar no mapa).
+- **Unidades:** só entram UBS, USF/ESF e farmácias da rede. Secretaria, CAF (almoxarifado), CAPS, UPA e hospital ficam de fora. Unidade sem coordenadas também fica de fora (não dá para mostrar no mapa); coordenada fora do município segue a regra de localização acima.
 - **Medicamentos:** a base mistura medicamentos com materiais (agulha, curativo...). Só entra o que tem dose e forma farmacêutica na descrição. Nome, concentração e forma são extraídos do texto (`DescricaoProduto`); a categoria vem do princípio ativo (`CategoriaMedicamento`, heurística do MVP; o resto é "Outros").
 - **CATMAT:** o código vem com a unidade de fornecimento (`BR0267691U0042`, às vezes com `INAT` no fim). O medicamento é só `BR` + 7 dígitos.
 - **Medicamento que já existe não é sobrescrito**, inclusive o do seed.

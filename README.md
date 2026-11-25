@@ -43,9 +43,9 @@ cd frontend && npm install && npm start   # Web em http://localhost:4200
 - Swagger UI: http://localhost:8080/swagger-ui.html
 - Health check: http://localhost:8080/actuator/health
 
-O perfil `dev` (padrão) já carrega dados fictícios de exemplo. Guia completo em [docs/setup.md](docs/setup.md).
+O perfil `dev` (padrão) traz os dados reais: ao subir, sincroniza Maceió com a BNAFAR (UBS que existem, no lugar certo do mapa). Para os dados fictícios de demonstração, use `SPRING_PROFILES_ACTIVE=dev,demo`. Guia completo em [docs/setup.md](docs/setup.md).
 
-Sem JDK nem Node, só com Docker (banco, API e web com os dados de exemplo em http://localhost:4200):
+Sem JDK nem Node, só com Docker (banco, API e web com os dados reais de Maceió em http://localhost:4200; `API_PROFILE=dev,demo` para os fictícios):
 
 ```bash
 docker compose --profile full up -d --build

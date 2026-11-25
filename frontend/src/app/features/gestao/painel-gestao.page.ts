@@ -1,15 +1,21 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { catchError, map, of } from 'rxjs';
+import { catchError, interval, map, of, scan, startWith, switchMap } from 'rxjs';
 
 import { ItemAtencao, PainelGestao, SituacaoItem } from '../../core/models/gestao.model';
 import { GestaoService } from '../../core/services/gestao.service';
+import { ATUALIZAR_DADOS_A_CADA_MS } from '../../core/sincronizacao';
 import { Button } from '../../shared/components/button';
 import { Card } from '../../shared/components/card';
 import { Chip } from '../../shared/components/chip';
+import { LocalizacaoUbsCard } from './localizacao-ubs';
 
 type Estado = { carregando: true } | { carregando: false; painel: PainelGestao | null };
+type Resposta = { ok: true; painel: PainelGestao } | { ok: false };
+
+/** O painel se atualiza sozinho: a sincronização com a BNAFAR roda de hora em hora e as remessas mudam a qualquer momento. */
+export const ATUALIZAR_A_CADA_MS = ATUALIZAR_DADOS_A_CADA_MS;
 type Filtro = 'TODOS' | 'EM_FALTA' | 'ABAIXO_MINIMO';
 
 const FILTROS: readonly { valor: Filtro; rotulo: string }[] = [
@@ -27,7 +33,7 @@ const SITUACAO_CLASSES: Record<SituacaoItem, string> = {
 /** Painel da gestão da farmácia (frame "Desktop · Painel da gestão"). */
 @Component({
   selector: 'app-painel-gestao-page',
-  imports: [RouterLink, Button, Card, Chip],
+  imports: [RouterLink, Button, Card, Chip, LocalizacaoUbsCard],
   template: `
     @let e = estado();
     @if (e.carregando) {
@@ -41,7 +47,9 @@ const SITUACAO_CLASSES: Record<SituacaoItem, string> = {
       <div class="flex flex-col gap-6 leading-[normal]">
         <header class="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
           <div class="flex flex-col gap-1">
-            <p class="text-sm text-content-muted">{{ p.ubs.nome }} · CNES {{ p.ubs.cnes }}</p>
+            <p class="text-sm text-content-muted">
+              {{ p.ubs ? p.ubs.nome + ' · CNES ' + p.ubs.cnes : 'Rede municipal · todas as UBS' }}
+            </p>
             <h1 class="text-[1.75rem] font-bold text-content">Visão geral do estoque</h1>
           </div>
           <div class="flex flex-wrap items-center gap-2.5">
@@ -68,15 +76,14 @@ const SITUACAO_CLASSES: Record<SituacaoItem, string> = {
           <app-card pad="none" class="flex flex-col gap-1.5 px-5 py-[1.125rem]">
             <h2 class="kpi-rotulo">Abaixo do mínimo</h2>
             <p class="kpi-valor text-status-alerta">{{ k.abaixoDoMinimo }}</p>
-            <p class="kpi-detalhe">Repor nos próximos {{ k.prazoReposicaoDias }} dias</p>
+            <p class="kpi-detalhe">Saldo até o mínimo do remédio</p>
           </app-card>
           <app-card pad="none" class="flex flex-col gap-1.5 px-5 py-[1.125rem]">
             <h2 class="kpi-rotulo">Remessas a caminho</h2>
             <p class="kpi-valor text-status-info">{{ k.remessasACaminho }}</p>
             <p class="kpi-detalhe">
-              {{
-                k.proximaRemessa ? 'Próxima: ' + dataCurta(k.proximaRemessa) : 'Nenhuma prevista'
-              }}
+              {{ k.proximaRemessa ? 'Próxima: ' + dataCurta(k.proximaRemessa) : 'Nenhuma prevista'
+              }}{{ k.remessasAtrasadas ? ' · ' + k.remessasAtrasadas + ' atrasada(s)' : '' }}
             </p>
           </app-card>
           <app-card pad="none" class="flex flex-col gap-1.5 px-5 py-[1.125rem]">
@@ -124,10 +131,15 @@ const SITUACAO_CLASSES: Record<SituacaoItem, string> = {
                   </tr>
                 </thead>
                 <tbody>
-                  @for (item of itensFiltrados(); track item.medicamentoId) {
+                  @for (item of itensFiltrados(); track item.ubsId + '-' + item.medicamentoId) {
                     <tr class="border-t border-canvas">
                       <th scope="row" class="py-3.5 pl-5 font-semibold text-content">
                         {{ item.medicamento }}
+                        @if (!p.ubs) {
+                          <span class="block text-xs font-normal text-content-muted">{{
+                            item.ubs
+                          }}</span>
+                        }
                       </th>
                       <td class="py-3.5 pl-3 text-right font-medium text-content">
                         {{ item.estoque }}
@@ -158,11 +170,11 @@ const SITUACAO_CLASSES: Record<SituacaoItem, string> = {
             <div class="flex flex-col gap-0.5">
               <h2 class="text-[1.0625rem] font-bold text-content">Mais procurados no app</h2>
               <p class="text-[0.8125rem] text-content-muted">
-                Buscas feitas perto desta UBS, últimos 7 dias
+                {{ p.ubs ? 'Buscas feitas perto desta UBS' : 'Buscas no app' }}, últimos 7 dias
               </p>
             </div>
             <ul class="flex flex-col gap-4">
-              @for (m of p.maisProcurados; track m.medicamento) {
+              @for (m of p.maisProcurados; track m.medicamentoId) {
                 <li class="flex flex-col gap-1.5">
                   <div class="flex justify-between gap-3 text-sm text-content">
                     <span>{{ m.medicamento }}</span>
@@ -175,13 +187,16 @@ const SITUACAO_CLASSES: Record<SituacaoItem, string> = {
                     ></div>
                   </div>
                 </li>
+              } @empty {
+                <li class="body-muted">Nenhuma busca registrada nos últimos 7 dias.</li>
               }
             </ul>
-            @if (p.ficticio) {
-              <p class="text-xs text-content-muted">Dados fictícios para demonstração.</p>
-            }
           </app-card>
         </div>
+
+        @if (p.ubs) {
+          <app-localizacao-ubs [ubsId]="p.ubs.id" />
+        }
       </div>
     }
   `,
@@ -209,10 +224,28 @@ export class PainelGestaoPage {
   protected readonly situacaoClasses = SITUACAO_CLASSES;
   protected readonly filtro = signal<Filtro>('TODOS');
 
+  /**
+   * Busca na hora e de novo a cada [ATUALIZAR_A_CADA_MS]. Se uma atualização falhar, continua mostrando os últimos
+   * números (o erro só aparece quando nunca carregou).
+   */
   protected readonly estado = toSignal(
-    this.gestao.painel().pipe(
-      map((painel): Estado => ({ carregando: false, painel })),
-      catchError(() => of<Estado>({ carregando: false, painel: null })),
+    interval(ATUALIZAR_A_CADA_MS).pipe(
+      startWith(0),
+      switchMap(() =>
+        this.gestao.painel().pipe(
+          map((painel): Resposta => ({ ok: true, painel })),
+          catchError(() => of<Resposta>({ ok: false })),
+        ),
+      ),
+      scan(
+        (anterior: Estado, r: Resposta): Estado =>
+          r.ok
+            ? { carregando: false, painel: r.painel }
+            : anterior.carregando
+              ? { carregando: false, painel: null }
+              : anterior,
+        { carregando: true } as Estado,
+      ),
     ),
     { initialValue: { carregando: true } as Estado },
   );
@@ -270,8 +303,9 @@ export class PainelGestaoPage {
   /** Baixa em CSV os itens que pedem atenção visíveis na tabela, com o filtro aplicado (abre no Excel/Planilhas). */
   protected exportar(p: PainelGestao): void {
     const linhas = [
-      ['Medicamento', 'Estoque', 'Mínimo', 'Aguardando aviso', 'Situação'],
+      ['UBS', 'Medicamento', 'Estoque', 'Mínimo', 'Aguardando aviso', 'Situação'],
       ...this.itensFiltrados().map((i) => [
+        i.ubs,
         i.medicamento,
         String(i.estoque),
         String(i.minimo),
@@ -286,7 +320,7 @@ export class PainelGestaoPage {
     const url = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }));
     const a = document.createElement('a');
     a.href = url;
-    a.download = `itens-atencao-cnes-${p.ubs.cnes}.csv`;
+    a.download = p.ubs ? `itens-atencao-cnes-${p.ubs.cnes}.csv` : 'itens-atencao-rede.csv';
     a.click();
     // Libera o link só depois que o download começou (revogar na hora pode cancelar em alguns navegadores).
     setTimeout(() => URL.revokeObjectURL(url));

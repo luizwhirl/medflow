@@ -18,7 +18,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import java.time.LocalTime
-import java.util.Optional
 
 /** Testes da API de UBS, sem banco de dados. */
 @WebMvcTest(UbsController::class)
@@ -75,7 +74,7 @@ class UbsControllerTest(@Autowired private val mockMvc: MockMvc) {
 
     @Test
     fun `lista sem parametros continua por nome e sem os campos novos`() {
-        given(ubsRepository.findAllByOrderByNomeAsc()).willReturn(emptyList())
+        given(ubsRepository.findVisiveis()).willReturn(emptyList())
 
         mockMvc.get("/api/ubs").andExpect {
             status { isOk() }
@@ -188,7 +187,7 @@ class UbsControllerTest(@Autowired private val mockMvc: MockMvc) {
             id = 1L,
         )
 
-        given(ubsRepository.findById(1L)).willReturn(Optional.of(ubs))
+        given(ubsRepository.findVisivel(1L)).willReturn(ubs)
 
         mockMvc.get("/api/ubs/1").andExpect {
             status { isOk() }
@@ -202,7 +201,7 @@ class UbsControllerTest(@Autowired private val mockMvc: MockMvc) {
             jsonPath("$.longitude") { value(-35.7) }
         }
 
-        verify(ubsRepository).findById(1L)
+        verify(ubsRepository).findVisivel(1L)
     }
 
     @Test
@@ -244,7 +243,7 @@ class UbsControllerTest(@Autowired private val mockMvc: MockMvc) {
             cnes = "9000101", nome = "UBS Teste", tipo = TipoUnidade.UBS, bairro = "Centro", endereco = "Rua A, 1",
             codigoIbgeMunicipio = "2704302", latitude = -9.5, longitude = -35.7, id = 1L,
         )
-        given(ubsRepository.findById(1L)).willReturn(Optional.of(ubs))
+        given(ubsRepository.findVisivel(1L)).willReturn(ubs)
         given(horarioFuncionamentoService.buscar(listOf(1L))).willReturn(mapOf(1L to funcionamento(aberta = true)))
 
         mockMvc.get("/api/ubs/1").andExpect {
@@ -257,7 +256,7 @@ class UbsControllerTest(@Autowired private val mockMvc: MockMvc) {
 
     @Test
     fun `busca UBS inexistente retorna 404`() {
-        given(ubsRepository.findById(999L)).willReturn(Optional.empty())
+        given(ubsRepository.findVisivel(999L)).willReturn(null)
 
         mockMvc.get("/api/ubs/999").andExpect {
             status { isNotFound() }
@@ -266,7 +265,7 @@ class UbsControllerTest(@Autowired private val mockMvc: MockMvc) {
             jsonPath("$.title") { value("Recurso não encontrado") }
         }
 
-        verify(ubsRepository).findById(999L)
+        verify(ubsRepository).findVisivel(999L)
     }
 
     @Test

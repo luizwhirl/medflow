@@ -17,7 +17,7 @@ import org.testcontainers.junit.jupiter.Testcontainers
 /** Testes do resumo de disponibilidade com PostgreSQL e dados próprios. */
 @SpringBootTest
 @AutoConfigureMockMvc
-@ActiveProfiles("dev")
+@ActiveProfiles("dev", "demo")
 @Import(TestcontainersConfiguration::class)
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional

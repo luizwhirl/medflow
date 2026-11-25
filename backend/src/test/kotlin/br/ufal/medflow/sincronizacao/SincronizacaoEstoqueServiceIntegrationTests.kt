@@ -4,12 +4,24 @@ import br.ufal.medflow.TestcontainersConfiguration
 import br.ufal.medflow.estoque.StatusEstoque
 import br.ufal.medflow.integracao.FonteEstoque
 import br.ufal.medflow.integracao.FonteEstoqueIndisponivelException
+import br.ufal.medflow.integracao.Geocodificador
+import br.ufal.medflow.integracao.LimitesMunicipais
 import br.ufal.medflow.integracao.PosicaoEstoque
+import br.ufal.medflow.integracao.QUALQUER_LUGAR
 import br.ufal.medflow.medicamento.Medicamento
 import br.ufal.medflow.medicamento.MedicamentoRepository
 import br.ufal.medflow.ubs.TipoUnidade
 import jakarta.persistence.EntityManager
+import java.math.BigDecimal
+import java.time.Instant
+import java.time.LocalDate
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentMatchers.anyString
 import org.mockito.BDDMockito.given
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
@@ -20,13 +32,6 @@ import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.transaction.annotation.Transactional
 import org.testcontainers.junit.jupiter.Testcontainers
-import java.math.BigDecimal
-import java.time.Instant
-import java.time.LocalDate
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
 
 /** Sem o perfil "dev", então o banco começa vazio. Cada teste desfaz o que gravou. */
 @SpringBootTest
@@ -42,6 +47,19 @@ class SincronizacaoEstoqueServiceIntegrationTests(
 ) {
     @MockitoBean
     private lateinit var fonte: FonteEstoque
+
+    /** Sem chamar o IBGE: aceita qualquer coordenada, a não ser que o teste troque. */
+    @MockitoBean
+    private lateinit var limites: LimitesMunicipais
+
+    /** Sem chamar o OpenStreetMap: sem bairro achado, vale só o contorno do município. */
+    @MockitoBean
+    private lateinit var geocodificador: Geocodificador
+
+    @BeforeEach
+    fun contornoQueAceitaTudo() {
+        given(limites.limite(anyString())).willReturn(QUALQUER_LUGAR)
+    }
 
     private val ibge = "2702405"
     private val dia = LocalDate.of(2026, 11, 3)

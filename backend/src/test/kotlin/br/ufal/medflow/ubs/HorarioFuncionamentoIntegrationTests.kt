@@ -29,7 +29,7 @@ import java.time.ZoneOffset
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-@ActiveProfiles("dev")
+@ActiveProfiles("dev", "demo")
 @Import(TestcontainersConfiguration::class, HorarioFuncionamentoIntegrationTests.RelogioDeSexta::class)
 @Testcontainers(disabledWithoutDocker = true)
 class HorarioFuncionamentoIntegrationTests(

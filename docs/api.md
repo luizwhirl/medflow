@@ -58,7 +58,7 @@ Todos os erros seguem o padrão `application/problem+json`. O CORS libera os cab
 
 Com o suporte nativo a RFC 9457 habilitado, erros gerados automaticamente pelo Spring MVC podem apresentar o campo `title` em inglês, como `"Bad Request"` (400), `"Method Not Allowed"` (405) e `"Unsupported Media Type"` (415). Já os erros tratados pelos handlers de domínio utilizam títulos em português, como `"Parâmetro inválido"` e `"Recurso não encontrado"`. Para identificar erros programaticamente, utilize o código HTTP (`status`), em vez de depender do texto de `title`.
 
-No perfil `dev` existem três contas de exemplo, com a senha `medflow-dev-123`: `rita@medflow.local` (cidadã), `carlos@medflow.local` (gestor da UBS Benedito Bentes I) e `marta@medflow.local` (gestora sem vínculo, vê a rede toda). Elas nunca são criadas em produção.
+No perfil `dev` existem três contas de exemplo, com a senha `medflow-dev-123`: `rita@medflow.local` (cidadã), `carlos@medflow.local` (gestor da UBS Benedito Bentes I, que só existe no perfil `demo`; sem ele, vê a rede toda) e `marta@medflow.local` (gestora sem vínculo, vê a rede toda). Elas nunca são criadas em produção.
 
 ## Lista de desejos
 
@@ -656,6 +656,24 @@ Cada lote traz `numeroLote`, `validade`, `quantidade`, `diasParaVencer` (negativ
 
 **Como o atraso é medido:** a `ultimaSincronizacao` das UBS que vêm da BNAFAR é a data da posição gravada à meia-noite (fuso de Maceió), e não a hora em que a sincronização rodou. Por isso o critério é em **dias de calendário**, e não em horas: com `dias = 1`, a posição de ontem continua valendo o dia todo de hoje, e só a de anteontem (ou mais antiga) é atrasada. O limite é o início do dia `hoje - dias`. É a mesma regra do aviso de dados atrasados (`app.avisos.atraso-dias`), e vale também para `ubsComSincronizacaoAtrasada` nos indicadores.
 
+
+### Localização da UBS no mapa
+
+`GET /api/gestao/ubs/{ubsId}/localizacao` e `PUT /api/gestao/ubs/{ubsId}/localizacao` (papel GESTOR; com vínculo, só a
+própria UBS, senão 403).
+
+```json
+{ "ubsId": 12, "nome": "US Aliomar Almeida Lins", "endereco": "Lot Bela Vista II, S/N", "bairro": "Benedito Bentes II",
+  "latitude": -9.5503, "longitude": -35.7205, "origem": "BAIRRO", "aproximada": true }
+```
+
+`origem`: `FONTE` (CNES conferido com o contorno do município no IBGE), `LUGAR` (achada pelo nome no OpenStreetMap),
+`BAIRRO` (centro do bairro, aproximada), `MANUAL` (corrigida pela gestão) ou `INVALIDA` (fora da lista e do mapa até
+alguém corrigir). O `PUT` recebe `{ "latitude": ..., "longitude": ... }`, grava como `MANUAL` (a sincronização não
+sobrescreve) e responde 400 se o ponto ficar fora do município da UBS; 503 se o IBGE estiver fora do ar.
+
+Para o cidadão, `GET /api/ubs` e `GET /api/ubs/{id}` trazem `localizacaoAproximada: true` quando a origem é `BAIRRO`.
+UBS `INVALIDA` não aparecem na lista, na busca por raio, na disponibilidade do medicamento nem no detalhe (404).
 
 ## Rastreamento da remessa
 

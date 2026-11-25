@@ -33,11 +33,11 @@ class UsuariosDeExemplo(
             log.info("Usuários de exemplo criados (só dev, senha \"{}\"): {}", SENHA, novos.joinToString { it.email })
         }
         // Seu Carlos gerencia só a UBS Benedito Bentes I; Dona Marta não tem vínculo e vê a rede toda.
-        // Só vincula quem ainda não tem vínculo. Se o CNES sair do seed, o Carlos passaria a ver a rede: avisa.
+        // Só vincula quem ainda não tem vínculo. A UBS dele é fictícia (perfil demo); sem o demo, o Carlos vê a rede.
         usuarios.vincularGestor("carlos@medflow.local", CNES_DO_CARLOS)
         val carlos = usuarios.findByEmail("carlos@medflow.local")?.id
         if (carlos != null && usuarios.findUbsGestaoId(carlos) == null) {
-            log.warn("O gestor de exemplo carlos@medflow.local está sem vínculo (UBS {} não existe no seed): ele vê a rede toda", CNES_DO_CARLOS)
+            log.info("O gestor de exemplo carlos@medflow.local está sem vínculo (a UBS {} só existe no perfil demo): ele vê a rede toda", CNES_DO_CARLOS)
         }
     }
 

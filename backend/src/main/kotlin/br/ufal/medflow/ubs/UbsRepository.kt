@@ -7,7 +7,18 @@ import java.time.Instant
 
 interface UbsRepository : JpaRepository<Ubs, Long> {
 
-    fun findAllByOrderByNomeAsc(): List<Ubs>
+    /** As que aparecem para o cidadão: todas, menos as sem localização confiável ([OrigemLocalizacao.INVALIDA]). */
+    @Query("select u from Ubs u where u.localizacaoOrigem <> br.ufal.medflow.ubs.OrigemLocalizacao.INVALIDA order by u.nome")
+    fun findVisiveis(): List<Ubs>
+
+    @Query("select u from Ubs u where u.id = :id and u.localizacaoOrigem <> br.ufal.medflow.ubs.OrigemLocalizacao.INVALIDA")
+    fun findVisivel(@Param("id") id: Long): Ubs?
+
+    @Query("select count(u) from Ubs u where u.localizacaoOrigem <> br.ufal.medflow.ubs.OrigemLocalizacao.INVALIDA")
+    fun contarVisiveis(): Long
+
+    @Query("select count(u) from Ubs u where u.codigoIbgeMunicipio = :ibge and u.localizacaoOrigem <> br.ufal.medflow.ubs.OrigemLocalizacao.INVALIDA")
+    fun contarVisiveisDoMunicipio(@Param("ibge") ibge: String): Long
 
     fun findByCnesIn(cnes: Collection<String>): List<Ubs>
 
@@ -53,7 +64,8 @@ interface UbsRepository : JpaRepository<Ubs, Long> {
         """
         select u, $DISTANCIA_KM as distanciaKm, i.status, i.quantidade
         from Ubs u left join ItemEstoque i on i.ubs = u and i.medicamento.id = :medicamentoId
-        where u.latitude between :latMin and :latMax
+        where u.localizacaoOrigem <> br.ufal.medflow.ubs.OrigemLocalizacao.INVALIDA
+          and u.latitude between :latMin and :latMax
           and u.longitude between :lngMin and :lngMax
           and $DISTANCIA_KM <= :raioKm
         order by distanciaKm, u.nome

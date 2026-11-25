@@ -1,5 +1,7 @@
 package br.ufal.medflow.sincronizacao
 
+import br.ufal.medflow.ubs.OrigemLocalizacao
+
 data class Contagem(val criados: Int = 0, val atualizados: Int = 0, val removidos: Int = 0) {
     val houveMudanca get() = criados + atualizados + removidos > 0
 }
@@ -15,6 +17,8 @@ data class ResultadoSincronizacao(
     val medicamentos: Contagem,
     val itens: Contagem,
     val lotes: Contagem,
+    /** Quantas unidades desta sincronização ficaram com cada origem de localização (FONTE, LUGAR, BAIRRO, MANUAL, INVALIDA). */
+    val localizacoes: Map<OrigemLocalizacao, Int> = emptyMap(),
 ) {
     val houveMudanca get() = listOf(unidades, medicamentos, itens, lotes).any { it.houveMudanca }
 }

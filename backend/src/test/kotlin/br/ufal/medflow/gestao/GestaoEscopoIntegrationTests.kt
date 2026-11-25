@@ -25,7 +25,7 @@ import kotlin.test.assertFailsWith
 /** Perfil "dev": Seu Carlos é gestor da UBS 9000101 e Dona Marta é gestora sem vínculo. */
 @SpringBootTest
 @AutoConfigureMockMvc
-@ActiveProfiles("dev")
+@ActiveProfiles("dev", "demo")
 @Import(TestcontainersConfiguration::class)
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional

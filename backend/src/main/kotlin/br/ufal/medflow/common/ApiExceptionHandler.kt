@@ -3,6 +3,7 @@ package br.ufal.medflow.common
 import br.ufal.medflow.auth.CredenciaisInvalidasException
 import br.ufal.medflow.auth.EmailJaCadastradoException
 import br.ufal.medflow.gestao.AcessoNegadoGestaoException
+import br.ufal.medflow.integracao.LimiteMunicipioIndisponivelException
 import br.ufal.medflow.listadesejo.ItemListaDesejoDuplicadoException
 import org.springframework.http.HttpStatus
 import org.springframework.http.ProblemDetail
@@ -42,6 +43,13 @@ class ApiExceptionHandler {
         ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.message ?: "E-mail já cadastrado").apply {
             title = "E-mail já cadastrado"
         }
+
+    @ExceptionHandler(LimiteMunicipioIndisponivelException::class)
+    fun limiteMunicipioIndisponivel(ex: LimiteMunicipioIndisponivelException): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(
+            HttpStatus.SERVICE_UNAVAILABLE,
+            "Não foi possível conferir a localização com o contorno do município (IBGE). Tente de novo em instantes.",
+        ).apply { title = "Serviço do IBGE indisponível" }
 
     @ExceptionHandler(ItemListaDesejoDuplicadoException::class)
     fun itemListaDesejoDuplicado(ex: ItemListaDesejoDuplicadoException): ProblemDetail =

@@ -4,7 +4,7 @@ PostgreSQL 17, versionado com Flyway em `backend/src/main/resources/db/`.
 
 ```text
 db/migration/   schema (todos os ambientes)       V1__schema_inicial.sql, V2__..., ...
-db/seed/        dados fictícios (só perfil dev)   V1000__dados_exemplo.sql, V1001__lotes_exemplo.sql, V1006__remessas_exemplo.sql,
+db/seed/        dados fictícios (só perfil demo)   V1000__dados_exemplo.sql, V1001__lotes_exemplo.sql, V1006__remessas_exemplo.sql,
                                                   V1007__movimentacoes_exemplo.sql, V1008__limites_reservado_exemplo.sql,
                                                   V1100__estoque_completo.sql, V1101__medicamentos_extras.sql,
                                                   V1102__remessa_recebida_exemplo.sql
@@ -72,7 +72,7 @@ A V5 original não é modificada, preservando o histórico e o checksum do Flywa
 
 **Execução no perfil de desenvolvimento**
 
-No perfil `dev`, o Flyway utiliza `db/migration` e `db/seed`, com `out-of-order: true`, permitindo aplicar novas migrations de schema em bancos onde as migrations de seed V1000 e V1001 já foram executadas.
+No perfil `dev`, o Flyway utiliza `db/migration` e `db/dev` (só o callback que esconde as UBS fictícias de bancos antigos), com `out-of-order: true` e `ignore-migration-patterns: *:missing`, para bancos criados quando o seed ainda era do dev continuarem subindo. Com o perfil `demo` (`dev,demo`), usa `db/migration` e `db/seed`. Para trocar de um para o outro sem sobras, recrie o banco com `scripts/db-reset` (`--demo` para o seed).
 
 No perfil `prod`, apenas `db/migration` é utilizado e `out-of-order` não é habilitado.
 
@@ -136,7 +136,7 @@ tudo dentro dos containers do `docker-compose`, então não precisam de `psql`, 
 
 | Comando | O que faz |
 | --- | --- |
-| `scripts/db-reset.sh` | Apaga o banco, aplica as migrations (`db/migration`) e o seed (`db/seed`) |
+| `scripts/db-reset.sh` | Apaga o banco e aplica as migrations (`db/migration`); com `--demo` (`-Demo` no PowerShell), também o seed (`db/seed`) |
 | `scripts/db-dump.sh [arquivo]` | Salva o banco com `pg_dump` (padrão: `backups/medflow-AAAAMMDD-HHMMSS.dump`) |
 | `scripts/db-restore.sh <arquivo>` | Substitui o banco pelo conteúdo de um dump |
 
@@ -147,7 +147,7 @@ Windows bloquear scripts, rode uma vez `Set-ExecutionPolicy -Scope CurrentUser R
 - O banco é apagado com `DROP DATABASE ... WITH (FORCE)`, que derruba as conexões abertas. A API pode ficar rodando:
   ela reconecta sozinha. Os dados de exemplo ficam como se a API tivesse subido num banco vazio.
 - O `db-reset` usa o serviço `flyway` do `docker-compose` (perfil `migracao`, não sobe com o `up`), na mesma versão do
-  Flyway do Spring Boot e com a configuração do perfil `dev` (`db/migration` + `db/seed`, `out-of-order`). Ao trocar
+  Flyway do Spring Boot e com a configuração dos perfis `dev`/`demo` (`db/migration`, mais `db/seed` com `--demo`, `out-of-order`). Ao trocar
   de branch, ele resolve o `Flyway validation failed` causado por migrations que só existem em outra branch.
 - Os dumps ficam em `backups/`, que não vai para o git. Um dump traz também o `flyway_schema_history`: restaure-o
   numa branch com as mesmas migrations em que ele foi gerado.

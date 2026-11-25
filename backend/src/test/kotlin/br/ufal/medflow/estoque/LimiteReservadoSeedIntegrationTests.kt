@@ -11,7 +11,7 @@ import org.testcontainers.junit.jupiter.Testcontainers
 import kotlin.test.assertEquals
 
 @SpringBootTest
-@ActiveProfiles("dev")
+@ActiveProfiles("dev", "demo")
 @Import(TestcontainersConfiguration::class)
 @Testcontainers(disabledWithoutDocker = true)
 class LimiteReservadoSeedIntegrationTests(

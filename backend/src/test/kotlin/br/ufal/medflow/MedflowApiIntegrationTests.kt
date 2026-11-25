@@ -12,11 +12,11 @@ import org.testcontainers.junit.jupiter.Testcontainers
 
 /**
  * Sobe a aplicação inteira contra um PostgreSQL real (Testcontainers), com as migrations
- * e os dados de exemplo do perfil "dev". É ignorado automaticamente se o Docker não estiver rodando.
+ * e os dados de exemplo do perfil "demo". É ignorado automaticamente se o Docker não estiver rodando.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-@ActiveProfiles("dev")
+@ActiveProfiles("dev", "demo")
 @Import(TestcontainersConfiguration::class)
 @Testcontainers(disabledWithoutDocker = true)
 class MedflowApiIntegrationTests(@Autowired private val mockMvc: MockMvc) {

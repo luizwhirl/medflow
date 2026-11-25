@@ -29,7 +29,7 @@ class MedicamentoDisponibilidadeServiceTest {
     @Test
     fun `resumo retorna apenas unidades com estoque disponivel`() {
         given(medicamentoRepository.existsById(1L)).willReturn(true)
-        given(ubsRepository.count()).willReturn(7L)
+        given(ubsRepository.contarVisiveis()).willReturn(7L)
         given(
             itemEstoqueRepository.contarUnidadesDisponiveis(
                 1L,
@@ -42,7 +42,7 @@ class MedicamentoDisponibilidadeServiceTest {
         assertEquals(7L, resumo.totalUnidades)
         assertEquals(3L, resumo.unidadesDisponiveis)
 
-        verify(ubsRepository).count()
+        verify(ubsRepository).contarVisiveis()
         verify(itemEstoqueRepository).contarUnidadesDisponiveis(
             1L,
             StatusEstoque.DISPONIVEL,
@@ -52,7 +52,7 @@ class MedicamentoDisponibilidadeServiceTest {
     @Test
     fun `resumo filtra unidades pelo municipio`() {
         given(medicamentoRepository.existsById(1L)).willReturn(true)
-        given(ubsRepository.countByCodigoIbgeMunicipio("2704302"))
+        given(ubsRepository.contarVisiveisDoMunicipio("2704302"))
             .willReturn(5L)
         given(
             itemEstoqueRepository.contarUnidadesDisponiveisPorMunicipio(
@@ -67,7 +67,7 @@ class MedicamentoDisponibilidadeServiceTest {
         assertEquals(5L, resumo.totalUnidades)
         assertEquals(2L, resumo.unidadesDisponiveis)
 
-        verify(ubsRepository).countByCodigoIbgeMunicipio("2704302")
+        verify(ubsRepository).contarVisiveisDoMunicipio("2704302")
         verify(itemEstoqueRepository).contarUnidadesDisponiveisPorMunicipio(
             1L,
             "2704302",
@@ -78,7 +78,7 @@ class MedicamentoDisponibilidadeServiceTest {
     @Test
     fun `resumo normaliza codigo IBGE de seis digitos`() {
         given(medicamentoRepository.existsById(1L)).willReturn(true)
-        given(ubsRepository.countByCodigoIbgeMunicipio("2704302"))
+        given(ubsRepository.contarVisiveisDoMunicipio("2704302"))
             .willReturn(7L)
         given(
             itemEstoqueRepository.contarUnidadesDisponiveisPorMunicipio(
@@ -93,7 +93,7 @@ class MedicamentoDisponibilidadeServiceTest {
         assertEquals(7L, resumo.totalUnidades)
         assertEquals(3L, resumo.unidadesDisponiveis)
 
-        verify(ubsRepository).countByCodigoIbgeMunicipio("2704302")
+        verify(ubsRepository).contarVisiveisDoMunicipio("2704302")
         verify(itemEstoqueRepository).contarUnidadesDisponiveisPorMunicipio(
             1L,
             "2704302",
@@ -119,7 +119,7 @@ class MedicamentoDisponibilidadeServiceTest {
     @Test
     fun `erro interno nao e convertido em parametro invalido`() {
         given(medicamentoRepository.existsById(1L)).willReturn(true)
-        given(ubsRepository.count())
+        given(ubsRepository.contarVisiveis())
             .willThrow(IllegalArgumentException("Falha interna"))
 
         val excecao = assertThrows<IllegalArgumentException> {
@@ -132,7 +132,7 @@ class MedicamentoDisponibilidadeServiceTest {
     @Test
     fun `medicamento sem estoque disponivel retorna zero`() {
         given(medicamentoRepository.existsById(2L)).willReturn(true)
-        given(ubsRepository.count()).willReturn(7L)
+        given(ubsRepository.contarVisiveis()).willReturn(7L)
         given(
             itemEstoqueRepository.contarUnidadesDisponiveis(
                 2L,

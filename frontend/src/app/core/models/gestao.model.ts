@@ -1,9 +1,54 @@
 /** Situação de um item no painel da gestão (ordem = prioridade na tabela). */
 export type SituacaoItem = 'EM_FALTA' | 'ABAIXO_MINIMO' | 'PEDIDO_ENVIADO';
 
+export interface UbsResumo {
+  id: number;
+  nome: string;
+}
+
+export interface UbsEscopo extends UbsResumo {
+  cnes: string;
+}
+
+/** `GET /api/gestao/indicadores`. */
+export interface IndicadoresResponse {
+  /** `null` quando o escopo é a rede toda (gestor sem vínculo). */
+  ubs: UbsEscopo | null;
+  restrito: boolean;
+  ultimaSincronizacao: string | null;
+  itensEmFalta: number;
+  emFaltaComRemessa: number;
+  abaixoDoMinimo: number;
+  remessasACaminho: number;
+  remessasAtrasadas: number;
+  proximaRemessa: string | null;
+  pacientesAguardando: number;
+  medicamentosAguardados: number;
+  lotesVencendo: number;
+  ubsComSincronizacaoAtrasada: number;
+}
+
+/** Item de `GET /api/gestao/itens-atencao`. */
+export interface ItemAtencaoResponse {
+  ubs: UbsResumo;
+  medicamento: UbsResumo;
+  estoque: number;
+  minimo: number;
+  aguardandoAviso: number;
+  situacao: SituacaoItem;
+  remessaPrevista: string | null;
+}
+
+/** `GET /api/gestao/demanda-reprimida` (só o que o painel usa). */
+export interface DemandaReprimidaResponse {
+  maisProcurados: { medicamento: UbsResumo; buscas: number }[];
+}
+
 export interface ItemAtencao {
+  ubsId: number;
+  /** Nome da UBS: aparece na tabela quando o painel mostra a rede toda. */
+  ubs: string;
   medicamentoId: number;
-  /** Nome com concentração, ex.: "Metformina 850 mg". */
   medicamento: string;
   estoque: number;
   minimo: number;
@@ -14,27 +59,31 @@ export interface ItemAtencao {
 }
 
 export interface MaisProcurado {
+  medicamentoId: number;
   medicamento: string;
   buscas: number;
 }
 
-/** Resposta de `GET /api/gestao/painel` (PDS-21). */
+/** O painel montado a partir dos três endpoints da gestão. */
 export interface PainelGestao {
-  ubs: { id: number; nome: string; cnes: string };
+  ubs: UbsEscopo | null;
+  restrito: boolean;
   ultimaSincronizacao: string | null;
-  indicadores: {
-    itensEmFalta: number;
-    emFaltaComRemessa: number;
-    abaixoDoMinimo: number;
-    /** Prazo sugerido para repor os itens abaixo do mínimo. */
-    prazoReposicaoDias: number;
-    remessasACaminho: number;
-    proximaRemessa: string | null;
-    pacientesAguardando: number;
-    medicamentosAguardados: number;
-  };
+  indicadores: Omit<IndicadoresResponse, 'ubs' | 'restrito' | 'ultimaSincronizacao'>;
   itensAtencao: ItemAtencao[];
   maisProcurados: MaisProcurado[];
-  /** `true` enquanto os números vêm de demonstração e não da API. */
-  ficticio: boolean;
+}
+
+/** De onde vem o pino da UBS no mapa (`GET /api/gestao/ubs/{id}/localizacao`). */
+export type OrigemLocalizacao = 'FONTE' | 'LUGAR' | 'BAIRRO' | 'MANUAL' | 'INVALIDA';
+
+export interface LocalizacaoUbs {
+  ubsId: number;
+  nome: string;
+  endereco: string;
+  bairro: string;
+  latitude: number;
+  longitude: number;
+  origem: OrigemLocalizacao;
+  aproximada: boolean;
 }

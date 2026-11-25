@@ -271,7 +271,7 @@ class BuscaToleranteIntegrationTests(
 /** Medição da busca com os dados de desenvolvimento do projeto. */
 @SpringBootTest
 @AutoConfigureMockMvc
-@ActiveProfiles("dev")
+@ActiveProfiles("dev", "demo")
 @Import(TestcontainersConfiguration::class)
 @Testcontainers(disabledWithoutDocker = true)
 class BuscaToleranteSeedIntegrationTests(
