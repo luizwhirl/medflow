@@ -124,7 +124,6 @@ describe('PreferenciasService', () => {
     expect(JSON.parse(localStorage.getItem('medflow.preferencias')!)).toEqual({
       ubsReferenciaId: 7,
       buscasRecentes: ['Insulina'],
-      boasVindasConcluidas: false,
       remediosAMigrar: [],
     });
   });
@@ -159,11 +158,6 @@ describe('HomePage', () => {
 
   afterEach(() => localStorage.removeItem('medflow.preferencias'));
 
-  function responderAvisos(avisos: object[] = [], naoLidos = 0): void {
-    http.expectOne({ method: 'GET', url: '/api/avisos' }).flush(avisos);
-    http.expectOne('/api/avisos/nao-lidos/total').flush({ naoLidos });
-  }
-
   it('mostra UBS de referência, remédio contínuo com status na referência e atalhos', () => {
     const fixture = TestBed.createComponent(HomePage);
     fixture.detectChanges();
@@ -189,7 +183,6 @@ describe('HomePage', () => {
     expect(texto('titulo-continuos')).toContain('Metformina 850 mg');
     expect(texto('titulo-continuos')).toContain('Em falta');
     expect(texto('titulo-atalhos')).toContain('Hipertensão');
-    responderAvisos();
     http.verify();
   });
 
@@ -218,7 +211,6 @@ describe('HomePage', () => {
     expect(continuos).toContain('Sem registro na sua UBS');
     expect(continuos).not.toContain('Disponível');
     expect(continuos).toContain('Nenhuma UBS com estoque');
-    responderAvisos();
     http.verify();
   });
 
@@ -265,47 +257,8 @@ describe('HomePage', () => {
       'UBS Centro',
     ]);
     expect(cartoes[0].textContent).toContain('800 m');
-    responderAvisos();
     http.verify();
   }));
-
-  it('o cartão "Avisos recentes" mostra os três mais recentes, com os não lidos em destaque', () => {
-    const fixture = TestBed.createComponent(HomePage);
-    fixture.detectChanges();
-    http.expectOne('/api/lista-desejos').flush([]);
-    http.expectOne('/api/ubs').flush([ubs(2, 'UBS Clima Bom')]);
-    http.expectOne('/api/medicamentos/categorias').flush([]);
-    const aviso = (id: number, titulo: string, lido: boolean) => ({
-      id,
-      tipo: 'MEDICAMENTO_DISPONIVEL',
-      titulo,
-      texto: 'Exemplo',
-      lido,
-      criadoEm: '2026-11-24T10:00:00Z',
-    });
-    responderAvisos(
-      [
-        aviso(4, 'Medicamento disponível', false),
-        aviso(3, 'Dados da UBS desatualizados', true),
-        aviso(2, 'Outro aviso', false),
-        aviso(1, 'Aviso antigo', false),
-      ],
-      3,
-    );
-    fixture.detectChanges();
-
-    const itens = Array.from(
-      (fixture.nativeElement as HTMLElement).querySelectorAll('[aria-label="Avisos recentes"] li'),
-    );
-    expect(itens.map((li) => li.querySelector('span span')!.textContent!.trim())).toEqual([
-      'Medicamento disponível',
-      'Dados da UBS desatualizados',
-      'Outro aviso',
-    ]);
-    expect(itens[0].querySelector('.font-semibold')).not.toBeNull();
-    expect(itens[1].querySelector('.font-semibold')).toBeNull();
-    http.verify();
-  });
 
   it('mostra quando chega a remessa a caminho da UBS de referência', () => {
     const fixture = TestBed.createComponent(HomePage);
@@ -347,7 +300,6 @@ describe('HomePage', () => {
     )!.textContent!;
     expect(continuos).toContain('Chega qui, 22/10');
     expect(continuos).not.toContain('Sem previsão de remessa');
-    responderAvisos();
     http.verify();
   });
 
