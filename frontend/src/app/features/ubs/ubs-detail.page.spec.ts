@@ -83,7 +83,7 @@ describe('UbsDetailPage', () => {
     TestBed.resetTestingModule();
     localStorage.setItem(
       'medflow.preferencias',
-      JSON.stringify({ ubsReferenciaId: null, remediosContinuos: [], buscasRecentes: [] }),
+      JSON.stringify({ ubsReferenciaId: null, buscasRecentes: [] }),
     );
     TestBed.configureTestingModule({
       providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
@@ -99,6 +99,7 @@ describe('UbsDetailPage', () => {
     const fixture = TestBed.createComponent(UbsDetailPage);
     fixture.componentRef.setInput('id', '7');
     fixture.detectChanges();
+    http.expectOne('/api/lista-desejos').flush([]);
     const reqUbs = http.expectOne('/api/ubs/7');
     // O estoque vem paginado (100 itens por página); com até 100 itens, uma página só.
     const reqEstoque = http.expectOne((r) => r.url === '/api/ubs/7/estoque');
@@ -255,6 +256,7 @@ describe('UbsDetailPage', () => {
     expect(el.querySelector('app-esqueleto')?.getAttribute('aria-label')).toBe(
       'Carregando a unidade',
     );
+    http.expectOne('/api/lista-desejos').flush([]);
     http.expectOne('/api/ubs/7').flush(ubs());
     http
       .expectOne((r) => r.url === '/api/ubs/7/estoque')

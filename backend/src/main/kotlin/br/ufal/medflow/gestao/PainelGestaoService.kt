@@ -4,17 +4,16 @@ import br.ufal.medflow.estoque.EstoqueProperties
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
-import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 
-/** Prazos padrão do painel: lotes que vencem em 60 dias e dados com mais de 24 horas. */
+/** Prazos padrão do painel: lotes que vencem em 60 dias e dados de antes de ontem (1 dia de calendário). */
 const val DIAS_VENCIMENTO_PADRAO = 60
-const val HORAS_ATRASO_PADRAO = 24
+const val DIAS_ATRASO_PADRAO = 1
 
-/** Dia de hoje para o vencimento dos lotes: o fuso de Maceió, como no resto do projeto. */
-private val FUSO_PAINEL: ZoneId = ZoneId.of("America/Maceio")
+/** Fuso do "hoje" do painel (vencimento dos lotes e atraso da sincronização): o de Maceió, como no resto do projeto. */
+internal val FUSO_PAINEL: ZoneId = ZoneId.of("America/Maceio")
 
 @Service
 @Transactional(readOnly = true)
@@ -44,7 +43,7 @@ class PainelGestaoService(
             pacientesAguardando = demanda.pacientes,
             medicamentosAguardados = demanda.medicamentos,
             lotesVencendo = repositorio.contarLotesVencendo(ubsId, hoje().plusDays(DIAS_VENCIMENTO_PADRAO.toLong())),
-            ubsComSincronizacaoAtrasada = repositorio.contarSincronizacaoAtrasada(ubsId, limiteDeAtraso(HORAS_ATRASO_PADRAO)),
+            ubsComSincronizacaoAtrasada = repositorio.contarSincronizacaoAtrasada(ubsId, limiteDeAtraso(DIAS_ATRASO_PADRAO)),
         )
     }
 
@@ -72,12 +71,17 @@ class PainelGestaoService(
         return repositorio.lotesVencendo(ubsId, hoje.plusDays(dias.toLong()), hoje, limite)
     }
 
-    fun sincronizacaoAtrasada(usuarioId: Long, ubsIdPedida: Long?, horas: Int): List<SincronizacaoAtrasadaResponse> {
+    fun sincronizacaoAtrasada(usuarioId: Long, ubsIdPedida: Long?, dias: Int): List<SincronizacaoAtrasadaResponse> {
         val ubsId = escopoService.resolver(usuarioId, ubsIdPedida).ubsId
-        return repositorio.ubsComSincronizacaoAtrasada(ubsId, limiteDeAtraso(horas), Instant.now(relogio))
+        return repositorio.ubsComSincronizacaoAtrasada(ubsId, limiteDeAtraso(dias), hoje())
     }
 
     private fun hoje(): LocalDate = LocalDate.now(relogio.withZone(FUSO_PAINEL))
 
-    private fun limiteDeAtraso(horas: Int): Instant = Instant.now(relogio).minus(Duration.ofHours(horas.toLong()))
+    /**
+     * A `ultimaSincronizacao` das UBS que vêm da BNAFAR é a data da posição gravada à meia-noite, e não a hora em que
+     * sincronizou. Por isso o atraso é em dias de calendário: com `dias = 1`, a posição de ontem continua valendo o
+     * dia todo de hoje e só a de anteontem (ou mais antiga) é atrasada. O limite é o início do dia `hoje - dias`.
+     */
+    private fun limiteDeAtraso(dias: Int): Instant = hoje().minusDays(dias.toLong()).atStartOfDay(FUSO_PAINEL).toInstant()
 }

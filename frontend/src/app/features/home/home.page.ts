@@ -2,7 +2,7 @@ import { NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
-import { catchError, forkJoin, map, of, switchMap } from 'rxjs';
+import { catchError, distinctUntilChanged, forkJoin, map, of, switchMap } from 'rxjs';
 
 import {
   compararDistancia,
@@ -16,6 +16,8 @@ import { Medicamento } from '../../core/models/medicamento.model';
 import { StatusEstoque } from '../../core/models/status-estoque';
 import { Ubs, UbsProxima } from '../../core/models/ubs.model';
 import { CARREGANDO, carregar, dadosOu, Recurso } from '../../core/recurso';
+import { textoChegada } from '../../core/remessa';
+import { ListaDesejosService } from '../../core/services/lista-desejos.service';
 import { MedicamentoService } from '../../core/services/medicamento.service';
 import { PreferenciasService } from '../../core/services/preferencias.service';
 import { UbsService } from '../../core/services/ubs.service';
@@ -23,6 +25,7 @@ import { Button } from '../../shared/components/button';
 import { Chip } from '../../shared/components/chip';
 import { Esqueleto } from '../../shared/components/esqueleto';
 import { EstadoVazio, ICONES_VAZIO } from '../../shared/components/estado-vazio';
+import { Funcionamento } from '../../shared/components/funcionamento';
 import { MapaIlustrado } from '../../shared/components/mapa-ilustrado';
 import { MensagemErro } from '../../shared/components/mensagem-erro';
 import { SearchField } from '../../shared/components/search-field';
@@ -62,6 +65,7 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
     Esqueleto,
     EstadoVazio,
     MensagemErro,
+    Funcionamento,
   ],
   template: `
     <ng-template #pilula>
@@ -200,6 +204,11 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
               rotulo="Carregando seus remédios"
               class="grid gap-4 sm:grid-cols-2"
             />
+          } @else if (cargaRemedios.estado === 'erro') {
+            <app-mensagem-erro
+              titulo="Não foi possível carregar seus remédios"
+              (tentarDeNovo)="recarregar()"
+            />
           } @else {
             @if (falhasRemedios(); as falhas) {
               <app-mensagem-erro
@@ -332,6 +341,7 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
                     <p class="text-sm text-content-muted">{{ distancia(p.distancia) }}</p>
                   }
                   <h3 class="mt-1 truncate text-lg font-bold">{{ p.ubs.nome }}</h3>
+                  <app-funcionamento class="mt-1 block text-sm" [ubs]="p.ubs" />
                   @if (remedios().length) {
                     <div
                       class="mt-3 h-2 overflow-hidden rounded-full bg-outline"
@@ -403,6 +413,7 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
                 }
                 {{ u.bairro }}
               </p>
+              <app-funcionamento class="mt-2 block" [ubs]="u" />
               <div class="mt-5 flex gap-3">
                 <a appButton class="flex-1" [routerLink]="['/ubs', u.id]">Ver estoque</a>
                 <a
@@ -442,6 +453,7 @@ export class HomePage {
   private readonly ubsService = inject(UbsService);
   private readonly medicamentoService = inject(MedicamentoService);
   private readonly preferencias = inject(PreferenciasService);
+  private readonly listaDesejos = inject(ListaDesejosService);
 
   protected readonly iconePilula = ICONE_PILULA;
   protected readonly iconesVazio = ICONES_VAZIO;
@@ -504,31 +516,40 @@ export class HomePage {
   });
 
   /**
-   * Remédios de uso contínuo com a disponibilidade. Um remédio que falha não derruba os outros:
-   * fica de fora e entra na contagem de `falhas`, mostrada com "Tentar de novo".
+   * Remédios de uso contínuo com a disponibilidade. Eles vêm da lista de desejos: enquanto ela não
+   * chega, é carregamento (e não "nenhum remédio"); se ela falha, é erro. Um remédio que falha não
+   * derruba os outros: fica de fora e entra na contagem de `falhas`, mostrada com "Tentar de novo".
    */
   protected readonly carregados = toSignal(
     toObservable(
-      computed(() => ({ ids: this.preferencias.remediosContinuos(), tentativa: this.tentativa() })),
+      computed(() => ({
+        lista: this.listaDesejos.itens(),
+        ids: this.preferencias.remediosContinuos(),
+        tentativa: this.tentativa(),
+      })),
     ).pipe(
-      switchMap(({ ids }) =>
-        ids.length === 0
-          ? of<Recurso<Carregados>>({ estado: 'pronto', dados: { itens: [], falhas: 0 } })
-          : carregar(
-              forkJoin(
-                ids.map((id) =>
-                  forkJoin({
-                    medicamento: this.medicamentoService.buscarPorId(id),
-                    disponibilidade: this.medicamentoService.disponibilidade(id),
-                  }).pipe(catchError(() => of(null))),
+      switchMap(({ lista, ids }) =>
+        lista === undefined
+          ? of(CARREGANDO as Recurso<Carregados>)
+          : lista === null
+            ? of<Recurso<Carregados>>({ estado: 'erro', naoEncontrado: false })
+            : ids.length === 0
+              ? of<Recurso<Carregados>>({ estado: 'pronto', dados: { itens: [], falhas: 0 } })
+              : carregar(
+                  forkJoin(
+                    ids.map((id) =>
+                      forkJoin({
+                        medicamento: this.medicamentoService.buscarPorId(id),
+                        disponibilidade: this.medicamentoService.disponibilidade(id),
+                      }).pipe(catchError(() => of(null))),
+                    ),
+                  ).pipe(
+                    map((r) => ({
+                      itens: r.filter((x) => x !== null),
+                      falhas: r.filter((x) => x === null).length,
+                    })),
+                  ),
                 ),
-              ).pipe(
-                map((r) => ({
-                  itens: r.filter((x) => x !== null),
-                  falhas: r.filter((x) => x === null).length,
-                })),
-              ),
-            ),
       ),
     ),
     { initialValue: CARREGANDO as Recurso<Carregados> },
@@ -541,6 +562,35 @@ export class HomePage {
   /** Um cartão de esqueleto por remédio (até 4), para a área não mudar de tamanho ao carregar. */
   protected readonly qtdEsqueletoRemedios = computed(() =>
     Math.min(4, Math.max(1, this.preferencias.remediosContinuos().length)),
+  );
+
+  /**
+   * "Chega qui, 22/10" por id de remédio, da remessa a caminho da UBS de referência.
+   * Uma chamada por remédio; sem UBS de referência, nenhuma.
+   */
+  private readonly chegadas = toSignal(
+    toObservable(
+      computed(() => ({
+        ids: this.preferencias.remediosContinuos(),
+        ubsId: this.preferencias.ubsReferenciaId(),
+      })),
+    ).pipe(
+      // só refaz as chamadas quando a lista ou a UBS mudam, não a cada preferência salva
+      distinctUntilChanged((a, b) => a.ubsId === b.ubsId && a.ids.join() === b.ids.join()),
+      switchMap(({ ids, ubsId }) =>
+        ubsId === null || ids.length === 0
+          ? of(new Map<number, string | null>())
+          : forkJoin(
+              ids.map((id) =>
+                this.medicamentoService.rastreamento(id, ubsId).pipe(
+                  map((r) => [id, textoChegada(r.remessa)] as const),
+                  catchError(() => of([id, null] as const)),
+                ),
+              ),
+            ).pipe(map((pares) => new Map<number, string | null>(pares))),
+      ),
+    ),
+    { initialValue: new Map<number, string | null>() },
   );
 
   protected readonly remedios = computed((): Remedio[] => {
@@ -581,12 +631,16 @@ export class HomePage {
   }
 
   protected recarregar(): void {
+    if (this.listaDesejos.itens() === null)
+      this.listaDesejos.listar().subscribe({ error: () => undefined });
     this.tentativa.update((n) => n + 1);
   }
 
   protected previsao(r: Remedio): string {
     if (r.naReferencia && temEstoque(r.naReferencia))
       return `~${r.naReferencia.quantidade} un. em estoque`;
+    const chegada = this.chegadas().get(r.medicamento.id);
+    if (chegada) return chegada;
     if (r.naReferencia?.status === 'RESERVADO')
       return `${r.naReferencia.quantidade} un. reservadas`;
     return 'Sem previsão de remessa';

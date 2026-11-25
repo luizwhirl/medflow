@@ -27,6 +27,7 @@ import { Button } from '../../shared/components/button';
 import { Chip } from '../../shared/components/chip';
 import { Esqueleto } from '../../shared/components/esqueleto';
 import { EstadoVazio, ICONES_VAZIO } from '../../shared/components/estado-vazio';
+import { Funcionamento } from '../../shared/components/funcionamento';
 import { Mapa, PinoMapa } from '../../shared/components/mapa';
 import { MensagemErro } from '../../shared/components/mensagem-erro';
 
@@ -68,7 +69,7 @@ interface LinhaUbs {
 
 @Component({
   selector: 'app-ubs-map-page',
-  imports: [RouterLink, Mapa, Chip, Button, Esqueleto, EstadoVazio, MensagemErro],
+  imports: [RouterLink, Mapa, Chip, Button, Esqueleto, EstadoVazio, Funcionamento, MensagemErro],
   template: `
     <div class="flex flex-col md:-mx-8 md:-my-8 md:h-dvh md:flex-row xl:-mx-14">
       <!-- Painel lateral -->
@@ -129,6 +130,7 @@ interface LinhaUbs {
               escolha() === 'meus' ? 'Com meus remédios' : 'Com o remédio'
             }}</app-chip>
           }
+          <app-chip [(selecionado)]="soAbertas">Abertas agora</app-chip>
           @if (posicao()) {
             @for (r of raios; track r) {
               <app-chip
@@ -188,6 +190,7 @@ interface LinhaUbs {
                       }
                       {{ l.referencia ? 'Sua UBS' : l.ubs.bairro }}
                     </span>
+                    <app-funcionamento class="mt-0.5 block text-sm" [ubs]="l.ubs" />
                     @if (l.resumo) {
                       <span class="mt-1 block font-semibold" [class]="texto[l.tom]">{{
                         l.resumo
@@ -201,18 +204,8 @@ interface LinhaUbs {
                 <app-estado-vazio
                   [compacto]="true"
                   [icone]="iconesVazio.local"
-                  [titulo]="
-                    soComRemedios() && escolhidos().length
-                      ? 'Nenhuma unidade com estoque'
-                      : 'Nenhuma unidade neste raio'
-                  "
-                  [texto]="
-                    soComRemedios() && escolhidos().length
-                      ? 'Desligue o filtro para ver todas as unidades.'
-                      : posicao()
-                        ? 'Aumente o raio para ver unidades mais distantes.'
-                        : ''
-                  "
+                  [titulo]="vazio().titulo"
+                  [texto]="vazio().texto"
                 />
               </li>
             }
@@ -257,10 +250,11 @@ interface LinhaUbs {
                 {{ distancia(a.distancia) }} ·
               }
               {{ a.ubs.bairro }}
-              @if (a.ubs.horario) {
+              @if (a.ubs.abertaAgora == null && a.ubs.horario) {
                 · {{ a.ubs.horario }}
               }
             </p>
+            <app-funcionamento class="mt-1 block" [ubs]="a.ubs" />
             @if (a.itens.length) {
               <ul class="mt-4 flex flex-wrap gap-2">
                 @for (i of a.itens; track i.medicamento.id) {
@@ -307,6 +301,28 @@ export class UbsMapPage {
 
   protected readonly raioKm = signal<number | null>(6);
   protected readonly soComRemedios = signal(false);
+  /** Chip "Abertas agora": só as UBS abertas segundo a API (`abertaAgora`). */
+  protected readonly soAbertas = signal(false);
+
+  /** Título e texto da lista vazia, conforme o filtro que esvaziou a lista. */
+  protected readonly vazio = computed(() => {
+    if (this.soComRemedios() && this.escolhidos().length) {
+      return {
+        titulo: 'Nenhuma unidade com estoque',
+        texto: 'Desligue o filtro para ver todas as unidades.',
+      };
+    }
+    if (this.soAbertas()) {
+      return {
+        titulo: 'Nenhuma unidade aberta agora',
+        texto: 'Desligue “Abertas agora” para ver todas as unidades.',
+      };
+    }
+    return {
+      titulo: 'Nenhuma unidade neste raio',
+      texto: this.posicao() ? 'Aumente o raio para ver unidades mais distantes.' : '',
+    };
+  });
   /** `undefined` enquanto o navegador não respondeu; `null` se a localização foi negada. */
   private readonly localizacao = signal<Coordenadas | null | undefined>(undefined);
   protected readonly posicao = computed(() => this.localizacao() ?? null);
@@ -399,24 +415,28 @@ export class UbsMapPage {
   protected readonly linhas = computed((): LinhaUbs[] => {
     const escolhidos = this.escolhidos();
     const refId = this.preferencias.ubsReferenciaId();
-    return this.unidades()
-      .map((ubs) => {
-        const itens = escolhidos.flatMap(({ medicamento, disponibilidade }) => {
-          const d = disponibilidade.find((x) => x.ubs.id === ubs.id);
-          return d ? [{ medicamento, d }] : [];
-        });
-        const disponiveis = itens.filter((i) => temEstoque(i.d)).length;
-        return {
-          ubs,
-          distancia: 'distanciaKm' in ubs ? ubs.distanciaKm : null,
-          referencia: ubs.id === refId,
-          itens,
-          disponiveis,
-          ...this.classificar(escolhidos.length, itens, disponiveis),
-        };
-      })
-      .filter((l) => !this.soComRemedios() || escolhidos.length === 0 || l.disponiveis > 0)
-      .map((l, i) => ({ ...l, numero: i + 1 }));
+    return (
+      this.unidades()
+        .map((ubs) => {
+          const itens = escolhidos.flatMap(({ medicamento, disponibilidade }) => {
+            const d = disponibilidade.find((x) => x.ubs.id === ubs.id);
+            return d ? [{ medicamento, d }] : [];
+          });
+          const disponiveis = itens.filter((i) => temEstoque(i.d)).length;
+          return {
+            ubs,
+            distancia: 'distanciaKm' in ubs ? ubs.distanciaKm : null,
+            referencia: ubs.id === refId,
+            itens,
+            disponiveis,
+            ...this.classificar(escolhidos.length, itens, disponiveis),
+          };
+        })
+        .filter((l) => !this.soComRemedios() || escolhidos.length === 0 || l.disponiveis > 0)
+        // sem horário cadastrado, a situação é desconhecida: fica de fora, como no `abertas=true` da API
+        .filter((l) => !this.soAbertas() || l.ubs.abertaAgora === true)
+        .map((l, i) => ({ ...l, numero: i + 1 }))
+    );
   });
 
   protected readonly selecionado = linkedSignal<LinhaUbs[], number | null>({

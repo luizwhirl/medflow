@@ -92,5 +92,6 @@ data class SincronizacaoAtrasadaResponse(
     val ubs: UbsEscopoResponse,
     /** `null` quando a UBS nunca sincronizou. */
     val ultimaSincronizacao: Instant?,
-    val atrasoHoras: Long?,
+    /** Dias de calendário (fuso de Maceió) entre a data da posição e hoje: 1 é a posição de ontem. `null` se nunca sincronizou. */
+    val atrasoDias: Long?,
 )

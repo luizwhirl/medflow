@@ -16,6 +16,7 @@ import { Button } from '../../shared/components/button';
 import { Chip } from '../../shared/components/chip';
 import { Esqueleto } from '../../shared/components/esqueleto';
 import { EstadoVazio, ICONES_VAZIO } from '../../shared/components/estado-vazio';
+import { Funcionamento } from '../../shared/components/funcionamento';
 import { MapaIlustrado } from '../../shared/components/mapa-ilustrado';
 import { MensagemErro } from '../../shared/components/mensagem-erro';
 import { StatusBadge } from '../../shared/components/status-badge';
@@ -51,6 +52,7 @@ const ICONE = {
     Chip,
     Esqueleto,
     EstadoVazio,
+    Funcionamento,
     MapaIlustrado,
     MensagemErro,
     StatusBadge,
@@ -132,7 +134,10 @@ const ICONE = {
                       *ngTemplateOutlet="icone; context: { $implicit: icones.relogio }"
                     />
                   </dt>
-                  <dd>{{ u.horario ?? 'Horário não informado' }}</dd>
+                  <dd>
+                    {{ u.horario ?? 'Horário não informado' }}
+                    <app-funcionamento class="block" [ubs]="u" />
+                  </dd>
                 </div>
                 <div class="flex gap-3">
                   <dt class="text-content-muted">
