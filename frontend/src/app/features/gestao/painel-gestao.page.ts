@@ -1,15 +1,18 @@
 import { Component, computed, inject, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { catchError, map, of } from 'rxjs';
+import { switchMap } from 'rxjs';
 
 import { ItemAtencao, PainelGestao, SituacaoItem } from '../../core/models/gestao.model';
+import { CARREGANDO, carregar, dadosOu, Recurso } from '../../core/recurso';
 import { GestaoService } from '../../core/services/gestao.service';
 import { Button } from '../../shared/components/button';
 import { Card } from '../../shared/components/card';
 import { Chip } from '../../shared/components/chip';
+import { Esqueleto } from '../../shared/components/esqueleto';
+import { EstadoVazio, ICONES_VAZIO } from '../../shared/components/estado-vazio';
+import { MensagemErro } from '../../shared/components/mensagem-erro';
 
-type Estado = { carregando: true } | { carregando: false; painel: PainelGestao | null };
 type Filtro = 'TODOS' | 'EM_FALTA' | 'ABAIXO_MINIMO';
 
 const FILTROS: readonly { valor: Filtro; rotulo: string }[] = [
@@ -27,15 +30,24 @@ const SITUACAO_CLASSES: Record<SituacaoItem, string> = {
 /** Painel da gestão da farmácia (frame "Desktop · Painel da gestão"). */
 @Component({
   selector: 'app-painel-gestao-page',
-  imports: [RouterLink, Button, Card, Chip],
+  imports: [RouterLink, Button, Card, Chip, Esqueleto, EstadoVazio, MensagemErro],
   template: `
     @let e = estado();
-    @if (e.carregando) {
-      <p class="body-muted">Carregando…</p>
-    } @else if (!e.painel) {
-      <p class="feedback-error">Não foi possível carregar os indicadores da farmácia.</p>
+    @if (e.estado === 'carregando') {
+      <app-esqueleto
+        formato="linha"
+        [quantidade]="4"
+        rotulo="Carregando os indicadores da farmácia"
+        class="grid grid-cols-2 gap-4 md:grid-cols-4"
+      />
+      <app-esqueleto formato="detalhe" [quantidade]="2" rotulo="" class="mt-6 block" />
+    } @else if (e.estado === 'erro') {
+      <app-mensagem-erro
+        titulo="Não foi possível carregar os indicadores da farmácia"
+        (tentarDeNovo)="recarregar()"
+      />
     } @else {
-      @let p = e.painel;
+      @let p = e.dados;
       @let k = p.indicadores;
       <!-- leading-[normal]: o Figma usa altura de linha "normal" em todo o frame. -->
       <div class="flex flex-col gap-6 leading-[normal]">
@@ -146,7 +158,17 @@ const SITUACAO_CLASSES: Record<SituacaoItem, string> = {
                     </tr>
                   } @empty {
                     <tr class="border-t border-canvas">
-                      <td colspan="5" class="body-muted px-5 py-4">Nenhum item nesta situação.</td>
+                      <td colspan="5">
+                        <app-estado-vazio
+                          [compacto]="true"
+                          [icone]="iconesVazio.caixa"
+                          [titulo]="
+                            filtro() === 'TODOS'
+                              ? 'Nenhum item pede atenção agora'
+                              : 'Nenhum item nesta situação'
+                          "
+                        />
+                      </td>
                     </tr>
                   }
                 </tbody>
@@ -174,6 +196,14 @@ const SITUACAO_CLASSES: Record<SituacaoItem, string> = {
                       [style.width.%]="(m.buscas / maxBuscas()) * 100"
                     ></div>
                   </div>
+                </li>
+              } @empty {
+                <li>
+                  <app-estado-vazio
+                    [compacto]="true"
+                    titulo="Nenhuma busca registrada"
+                    texto="As buscas feitas perto desta UBS aparecem aqui."
+                  />
                 </li>
               }
             </ul>
@@ -207,20 +237,17 @@ export class PainelGestaoPage {
 
   protected readonly filtros = FILTROS;
   protected readonly situacaoClasses = SITUACAO_CLASSES;
+  protected readonly iconesVazio = ICONES_VAZIO;
   protected readonly filtro = signal<Filtro>('TODOS');
 
+  private readonly tentativa = signal(0);
+
   protected readonly estado = toSignal(
-    this.gestao.painel().pipe(
-      map((painel): Estado => ({ carregando: false, painel })),
-      catchError(() => of<Estado>({ carregando: false, painel: null })),
-    ),
-    { initialValue: { carregando: true } as Estado },
+    toObservable(this.tentativa).pipe(switchMap(() => carregar(this.gestao.painel()))),
+    { initialValue: CARREGANDO as Recurso<PainelGestao> },
   );
 
-  private readonly painel = computed(() => {
-    const e = this.estado();
-    return e.carregando ? null : e.painel;
-  });
+  private readonly painel = computed(() => dadosOu(this.estado(), null));
 
   protected readonly itensFiltrados = computed(() => {
     const itens = this.painel()?.itensAtencao ?? [];
@@ -240,6 +267,10 @@ export class PainelGestaoPage {
     if (min < 1440) return `Sincronizado com e-SUS AF há ${Math.round(min / 60)} h`;
     return `Sincronizado com e-SUS AF há ${Math.round(min / 1440)} dias`;
   });
+
+  protected recarregar(): void {
+    this.tentativa.update((n) => n + 1);
+  }
 
   /** Filtros são exclusivos; desmarcar um volta para "Todos" (que não se desmarca). */
   protected filtrar(valor: Filtro, ligado: boolean): void {

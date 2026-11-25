@@ -10,6 +10,8 @@ const MAX_BUSCAS = 3;
 interface Preferencias {
   ubsReferenciaId: number | null;
   buscasRecentes: string[];
+  /** Se o cidadão já passou pela boas-vindas (escolheu a localização, o bairro ou pulou). */
+  boasVindasConcluidas: boolean;
   /** Remédios marcados antes da lista de desejos; vão para a API no primeiro acesso. */
   remediosAMigrar: number[];
 }
@@ -28,6 +30,14 @@ export class PreferenciasService {
 
   readonly ubsReferenciaId = () => this.estado().ubsReferenciaId;
   readonly buscasRecentes = () => this.estado().buscasRecentes;
+  /** Quem já tem UBS de referência (de antes da boas-vindas existir) também não precisa dela. */
+  readonly boasVindasConcluidas = computed(
+    () => this.estado().boasVindasConcluidas || this.estado().ubsReferenciaId !== null,
+  );
+
+  concluirBoasVindas(): void {
+    this.atualizar({ boasVindasConcluidas: true });
+  }
 
   /** Medicamentos da lista de desejos, sem repetir (um remédio pode estar em mais de uma UBS). */
   readonly remediosContinuos = computed(
@@ -118,6 +128,7 @@ export class PreferenciasService {
       return {
         ubsReferenciaId: typeof salvo?.ubsReferenciaId === 'number' ? salvo.ubsReferenciaId : null,
         buscasRecentes: lista<string>(salvo?.buscasRecentes, 'string').slice(0, MAX_BUSCAS),
+        boasVindasConcluidas: salvo?.boasVindasConcluidas === true,
         // `remediosContinuos` é o formato anterior à lista de desejos.
         remediosAMigrar: [
           ...lista<number>(salvo?.remediosAMigrar, 'number'),
@@ -125,7 +136,12 @@ export class PreferenciasService {
         ],
       };
     } catch {
-      return { ubsReferenciaId: null, buscasRecentes: [], remediosAMigrar: [] };
+      return {
+        ubsReferenciaId: null,
+        buscasRecentes: [],
+        boasVindasConcluidas: false,
+        remediosAMigrar: [],
+      };
     }
   }
 }

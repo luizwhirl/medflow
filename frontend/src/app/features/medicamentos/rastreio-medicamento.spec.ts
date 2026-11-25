@@ -43,6 +43,7 @@ describe('RastreioMedicamento · Avisar quando chegar', () => {
       .expectOne('/api/medicamentos/7')
       .flush({ id: 7, nome: 'Metformina', concentracao: '850 mg' } as Medicamento);
     http.expectOne('/api/medicamentos/7/disponibilidade').flush([]);
+    http.expectOne({ method: 'POST', url: '/api/medicamentos/7/buscas' }).flush(null);
     http.expectOne('/api/ubs').flush([]);
     fixture.detectChanges();
     semRemessa();
@@ -60,12 +61,37 @@ describe('RastreioMedicamento · Avisar quando chegar', () => {
     }
   }
 
+  beforeEach(() => localStorage.removeItem('medflow.buscas-contadas'));
   afterEach(() => http.verify());
 
   const botao = (el: HTMLElement) =>
     el.querySelector<HTMLButtonElement>('button[aria-describedby="aviso-ajuda"]')!;
   const ajuda = (el: HTMLElement) =>
     el.querySelector('#aviso-ajuda')!.textContent!.replace(/\s+/g, ' ').trim();
+
+  it('conta a procura do medicamento com a UBS de referência, sem dado da pessoa', fakeAsync(() => {
+    localStorage.setItem(
+      'medflow.preferencias',
+      JSON.stringify({ ubsReferenciaId: 3, buscasRecentes: [] }),
+    );
+    spyOn(navigator.geolocation, 'getCurrentPosition').and.callFake((_ok, erro) =>
+      erro!({ code: 1 } as GeolocationPositionError),
+    );
+    TestBed.configureTestingModule({
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
+    });
+    http = TestBed.inject(HttpTestingController);
+    const fixture = TestBed.createComponent(RastreioMedicamento);
+    fixture.componentRef.setInput('id', 7);
+    fixture.detectChanges();
+    flushMicrotasks();
+
+    const busca = http.expectOne({ method: 'POST', url: '/api/medicamentos/7/buscas' });
+    expect(busca.request.body).toEqual({ ubsId: 3 });
+    // falhar o registro não aparece para a pessoa
+    busca.flush(null, { status: 500, statusText: 'Erro' });
+    http.match(() => true).forEach((r) => r.flush([]));
+  }));
 
   it('cria o item na UBS de referência e passa a mostrar o aviso ligado', fakeAsync(() => {
     const { fixture, el } = abrir(1, []);
@@ -140,6 +166,7 @@ describe('RastreioMedicamento · Avisar quando chegar', () => {
       .expectOne('/api/medicamentos/7')
       .flush({ id: 7, nome: 'Metformina', concentracao: '850 mg' } as Medicamento);
     http.expectOne('/api/medicamentos/7/disponibilidade').flush([]);
+    http.expectOne({ method: 'POST', url: '/api/medicamentos/7/buscas' }).flush(null);
     http.expectOne('/api/ubs').flush([]);
     fixture.detectChanges();
     semRemessa();
