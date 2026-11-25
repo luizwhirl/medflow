@@ -12,10 +12,14 @@ import { ConexaoService } from './conexao.service';
 import { DadosSalvosService } from './dados-salvos.service';
 
 /**
- * Coordenadas variam um pouco a cada leitura do GPS; sem elas na chave, "UBS perto de mim" salvo
- * continua valendo sem internet mesmo que a posição tenha mudado alguns metros.
+ * Coordenadas variam um pouco a cada leitura do GPS: na chave entram arredondadas para duas casas
+ * (~1 km). Assim "UBS perto de mim" salvo vale para alguns metros de diferença, mas não para quem
+ * está em outro bairro ou cidade.
  */
-const PARAMETROS_IGNORADOS = new Set(['lat', 'lng']);
+const COORDENADAS = new Set(['lat', 'lng']);
+
+/** Cabeçalho do aparelho (lista de desejos, avisos): entra na chave para não misturar aparelhos. */
+const CABECALHO_DISPOSITIVO = 'X-Dispositivo-Id';
 
 /** Sem rede (0) ou com o servidor/proxy fora do ar (502–504): vale mostrar o que está salvo. */
 const STATUS_SEM_CONEXAO = new Set([0, 502, 503, 504]);
@@ -36,6 +40,8 @@ const ROTAS_NAO_SALVAS = ['gestao', 'auth'].map((r) => `${environment.apiUrl}/${
  */
 export const dadosSalvosInterceptor: HttpInterceptorFn = (req, next) => {
   if (!req.url.startsWith(environment.apiUrl) || naoSalva(req.url)) return next(req);
+  // Só respostas JSON: um blob ou texto viraria `{}` ao ser salvo e voltaria no formato errado.
+  if (req.method === 'GET' && req.responseType !== 'json') return next(req);
   const salvos = inject(DadosSalvosService);
 
   if (req.method !== 'GET') {
@@ -50,7 +56,9 @@ export const dadosSalvosInterceptor: HttpInterceptorFn = (req, next) => {
   const chave = chaveDe(req);
   return next(req).pipe(
     tap((evento) => {
-      if (evento instanceof HttpResponse && evento.ok) salvos.salvar(chave, evento.body);
+      if (!(evento instanceof HttpResponse && evento.ok)) return;
+      salvos.salvar(chave, evento.body);
+      conexao.registrarAtualizado(chave);
     }),
     catchError((erro: unknown) => {
       const salvo =
@@ -58,13 +66,16 @@ export const dadosSalvosInterceptor: HttpInterceptorFn = (req, next) => {
           ? salvos.ler(chave)
           : null;
       if (!salvo) return throwError(() => erro);
-      conexao.registrarDadosSalvos(salvo.em);
+      conexao.registrarDadosSalvos(salvo.em, chave);
       return of(new HttpResponse({ body: salvo.corpo, status: 200, url: req.urlWithParams }));
     }),
   );
 };
 
-/** Caminho + parâmetros em ordem alfabética (sem as coordenadas). */
+/**
+ * Caminho + parâmetros em ordem alfabética (coordenadas arredondadas) + o aparelho, quando a
+ * consulta é de um aparelho.
+ */
 export function chaveDe(req: HttpRequest<unknown>): string {
   const [caminho, busca = ''] = req.url.split('?');
   const params = new URLSearchParams(busca);
@@ -72,10 +83,15 @@ export function chaveDe(req: HttpRequest<unknown>): string {
     for (const valor of req.params.getAll(nome) ?? []) params.append(nome, valor);
   }
   const pares = [...params.entries()]
-    .filter(([nome]) => !PARAMETROS_IGNORADOS.has(nome))
+    .map(([nome, valor]): [string, string] => [
+      nome,
+      COORDENADAS.has(nome) && Number.isFinite(Number(valor)) ? Number(valor).toFixed(2) : valor,
+    ])
     .sort(([a, va], [b, vb]) => a.localeCompare(b) || va.localeCompare(vb))
     .map(([nome, valor]) => `${nome}=${valor}`);
-  return pares.length ? `${caminho}?${pares.join('&')}` : caminho;
+  const chave = pares.length ? `${caminho}?${pares.join('&')}` : caminho;
+  const aparelho = req.headers.get(CABECALHO_DISPOSITIVO);
+  return aparelho ? `${chave}#${aparelho}` : chave;
 }
 
 function naoSalva(url: string): boolean {

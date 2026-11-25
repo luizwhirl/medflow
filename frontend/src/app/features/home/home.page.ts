@@ -583,16 +583,24 @@ export class HomePage {
    */
   protected readonly carregados = toSignal(
     toObservable(
-      computed(() => ({
-        lista: this.listaDesejos.itens(),
-        ids: this.preferencias.remediosContinuos(),
-        tentativa: this.tentativa(),
-      })),
+      computed(() => {
+        const lista = this.listaDesejos.itens();
+        return {
+          // Só o estado da lista importa aqui: ligar um aviso ou mudar outro item não recarrega tudo.
+          lista: lista === undefined ? 'carregando' : lista === null ? 'erro' : 'ok',
+          ids: this.preferencias.remediosContinuos(),
+          tentativa: this.tentativa(),
+        };
+      }),
     ).pipe(
+      distinctUntilChanged(
+        (a, b) =>
+          a.lista === b.lista && a.tentativa === b.tentativa && a.ids.join() === b.ids.join(),
+      ),
       switchMap(({ lista, ids }) =>
-        lista === undefined
+        lista === 'carregando'
           ? of(CARREGANDO as Recurso<Carregados>)
-          : lista === null
+          : lista === 'erro'
             ? of<Recurso<Carregados>>({ estado: 'erro', naoEncontrado: false })
             : ids.length === 0
               ? of<Recurso<Carregados>>({ estado: 'pronto', dados: { itens: [], falhas: 0 } })

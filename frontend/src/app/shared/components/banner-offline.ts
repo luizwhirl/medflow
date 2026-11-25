@@ -31,14 +31,18 @@ import { ConexaoService } from '../../core/offline/conexao.service';
           </svg>
           <p class="min-w-0 flex-1 text-sm">
             <b>{{ m.titulo }}</b> {{ m.texto }}
+            @if (conexao.semResposta()) {
+              A API ainda não respondeu; tente de novo em instantes.
+            }
           </p>
           @if (conexao.online()) {
             <button
               type="button"
-              class="text-sm font-semibold underline"
+              class="text-sm font-semibold underline disabled:opacity-60"
+              [disabled]="conexao.verificando()"
               (click)="conexao.tentarDeNovo()"
             >
-              Atualizar
+              {{ conexao.verificando() ? 'Conferindo…' : 'Atualizar' }}
             </button>
           }
         </div>

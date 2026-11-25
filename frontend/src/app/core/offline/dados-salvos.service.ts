@@ -9,6 +9,16 @@ export const PREFIXO_DADOS_SALVOS = 'medflow.dados.v1:';
  */
 export const MAX_BUSCAS_SALVAS = 50;
 
+/**
+ * Limite de respostas salvas no total (detalhes de medicamento, disponibilidade, UBS…). Acima
+ * dele, saem as mais antigas: assim o armazenamento não chega à cota, e as preferências e o
+ * identificador do aparelho continuam conseguindo ser gravados.
+ */
+export const MAX_RESPOSTAS_SALVAS = 200;
+
+/** Dados com mais de 7 dias não são mostrados: estoque e remessas mudam muito nesse tempo. */
+export const IDADE_MAXIMA_MS = 7 * 24 * 60 * 60 * 1000;
+
 const ehBusca = (chave: string) => /[?&]busca=/.test(chave);
 
 export interface DadoSalvo {
@@ -23,17 +33,14 @@ export interface DadoSalvo {
  */
 @Injectable({ providedIn: 'root' })
 export class DadosSalvosService {
-  ler(chave: string): DadoSalvo | null {
-    try {
-      const bruto = localStorage.getItem(PREFIXO_DADOS_SALVOS + chave);
-      if (!bruto) return null;
-      const dado = JSON.parse(bruto) as Partial<DadoSalvo>;
-      return typeof dado.em === 'number' && 'corpo' in dado
-        ? { em: dado.em, corpo: dado.corpo }
-        : null;
-    } catch {
+  /** A resposta salva, ou `null` se não houver, estiver corrompida ou passar de 7 dias. */
+  ler(chave: string, agora = Date.now()): DadoSalvo | null {
+    const dado = this.lerBruto(chave);
+    if (dado && agora - dado.em > IDADE_MAXIMA_MS) {
+      this.remover([chave]);
       return null;
     }
+    return dado;
   }
 
   salvar(chave: string, corpo: unknown, em = Date.now()): void {
@@ -49,7 +56,8 @@ export class DadosSalvosService {
         // Sem armazenamento (aba privada ou cota esgotada): segue sem salvar.
       }
     }
-    if (ehBusca(chave)) this.limitarBuscas();
+    if (ehBusca(chave)) this.limitar(this.chaves().filter(ehBusca), MAX_BUSCAS_SALVAS);
+    this.limitar(this.chaves(), MAX_RESPOSTAS_SALVAS);
   }
 
   /** Remove as respostas de `recurso` e de tudo abaixo dele (`/api/x`, `/api/x?…`, `/api/x/1`). */
@@ -61,28 +69,39 @@ export class DadosSalvosService {
     );
   }
 
-  /** Mantém só as {@link MAX_BUSCAS_SALVAS} buscas salvas mais recentes. */
-  private limitarBuscas(): void {
-    const buscas = this.chaves().filter(ehBusca);
-    if (buscas.length <= MAX_BUSCAS_SALVAS) return;
+  /** Mantém só as `maximo` mais recentes entre `chaves`. */
+  private limitar(chaves: string[], maximo: number): void {
+    if (chaves.length <= maximo) return;
     this.remover(
-      buscas
-        .map((chave) => ({ chave, em: this.ler(chave)?.em ?? 0 }))
-        .sort((a, b) => b.em - a.em)
-        .slice(MAX_BUSCAS_SALVAS)
+      this.maisRecentesPrimeiro(chaves)
+        .slice(maximo)
         .map(({ chave }) => chave),
     );
   }
 
   /** Remove a metade mais antiga das respostas salvas. */
   private liberarEspaco(): void {
-    const salvas = this.chaves().map((chave) => ({ chave, em: this.ler(chave)?.em ?? 0 }));
-    this.remover(
-      salvas
-        .sort((a, b) => a.em - b.em)
-        .slice(0, Math.ceil(salvas.length / 2))
-        .map(({ chave }) => chave),
-    );
+    const salvas = this.maisRecentesPrimeiro(this.chaves());
+    this.remover(salvas.slice(Math.floor(salvas.length / 2)).map(({ chave }) => chave));
+  }
+
+  private maisRecentesPrimeiro(chaves: string[]): { chave: string; em: number }[] {
+    return chaves
+      .map((chave) => ({ chave, em: this.lerBruto(chave)?.em ?? 0 }))
+      .sort((a, b) => b.em - a.em);
+  }
+
+  private lerBruto(chave: string): DadoSalvo | null {
+    try {
+      const bruto = localStorage.getItem(PREFIXO_DADOS_SALVOS + chave);
+      if (!bruto) return null;
+      const dado = JSON.parse(bruto) as Partial<DadoSalvo>;
+      return typeof dado.em === 'number' && 'corpo' in dado
+        ? { em: dado.em, corpo: dado.corpo }
+        : null;
+    } catch {
+      return null;
+    }
   }
 
   /** Chaves salvas, sem o prefixo. */

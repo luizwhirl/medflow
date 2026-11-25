@@ -6,7 +6,7 @@ import { catchError, debounceTime, distinctUntilChanged, forkJoin, map, of, swit
 import { Coordenadas, posicaoAtual } from '../../core/geo';
 import { Disponibilidade, temEstoque } from '../../core/models/estoque.model';
 import { Medicamento } from '../../core/models/medicamento.model';
-import { CARREGANDO, carregar, dadosOu, Recurso } from '../../core/recurso';
+import { CARREGANDO, carregar, dadosOu, manterAnterior, Recurso } from '../../core/recurso';
 import { MedicamentoService } from '../../core/services/medicamento.service';
 import { PreferenciasService } from '../../core/services/preferencias.service';
 import { ResultadoVoz } from '../../core/services/reconhecimento-voz.service';
@@ -85,6 +85,8 @@ interface Resultado {
           }
         </div>
 
+        <!-- Região viva fixa: recriá-la a cada busca faria o leitor de tela não anunciar a contagem. -->
+        <p class="sr-only" aria-live="polite">{{ anuncioResultados() }}</p>
         @let busca = resultado();
         @if (busca.estado === 'carregando') {
           <app-esqueleto
@@ -100,7 +102,7 @@ interface Resultado {
             (tentarDeNovo)="recarregar()"
           />
         } @else {
-          <p class="mt-4 text-sm text-content-muted" aria-live="polite">
+          <p class="mt-4 text-sm text-content-muted" aria-hidden="true">
             {{ visiveis().length }} {{ visiveis().length === 1 ? 'resultado' : 'resultados' }}
             @if (busca.dados.total > busca.dados.itens.length) {
               · mostrando os {{ busca.dados.itens.length }} primeiros de {{ busca.dados.total }};
@@ -318,9 +320,16 @@ export class MedicamentoSearchPage {
           ),
         ),
       ),
+      manterAnterior(),
     ),
     { initialValue: CARREGANDO as Recurso<{ itens: Encontrado[]; total: number }> },
   );
+
+  protected readonly anuncioResultados = computed(() => {
+    if (this.resultado().estado !== 'pronto') return '';
+    const n = this.visiveis().length;
+    return `${n} ${n === 1 ? 'resultado' : 'resultados'}`;
+  });
 
   protected readonly visiveis = computed((): Resultado[] => {
     const noRaio = this.idsNoRaio();
