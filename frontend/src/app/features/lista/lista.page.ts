@@ -13,6 +13,10 @@ import { ListaDesejosService } from '../../core/services/lista-desejos.service';
 import { MedicamentoService } from '../../core/services/medicamento.service';
 import { PreferenciasService } from '../../core/services/preferencias.service';
 import { UbsService } from '../../core/services/ubs.service';
+import { Button } from '../../shared/components/button';
+import { Esqueleto } from '../../shared/components/esqueleto';
+import { EstadoVazio } from '../../shared/components/estado-vazio';
+import { MensagemErro } from '../../shared/components/mensagem-erro';
 import { StatusBadge } from '../../shared/components/status-badge';
 
 type Carga =
@@ -39,7 +43,15 @@ const ICONE = {
 
 @Component({
   selector: 'app-lista-page',
-  imports: [NgTemplateOutlet, RouterLink, StatusBadge],
+  imports: [
+    NgTemplateOutlet,
+    RouterLink,
+    Button,
+    Esqueleto,
+    EstadoVazio,
+    MensagemErro,
+    StatusBadge,
+  ],
   template: `
     <ng-template #icone let-d let-tam="tam">
       <svg
@@ -142,34 +154,30 @@ const ICONE = {
     @let c = carga();
     @switch (c.tipo) {
       @case ('carregando') {
-        <p class="body-muted mt-6">Carregando sua lista…</p>
+        <app-esqueleto
+          formato="cartao"
+          [quantidade]="3"
+          rotulo="Carregando sua lista"
+          class="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
+        />
       }
       @case ('erro') {
-        <div class="feedback-error mt-6 flex flex-wrap items-center justify-between gap-3">
-          <span>Não foi possível carregar sua lista agora. Verifique a conexão.</span>
-          <button type="button" class="font-semibold underline" (click)="recarregar()">
-            Tentar de novo
-          </button>
-        </div>
+        <app-mensagem-erro
+          class="mt-6"
+          titulo="Não foi possível carregar sua lista agora"
+          (tentarDeNovo)="recarregar()"
+        />
       }
       @case ('ok') {
         @if (linhas().length === 0) {
-          <div class="surface-card mt-6 flex flex-col items-center p-10 text-center">
-            <span class="grid size-14 place-items-center rounded-full bg-brand-50 text-brand-600">
-              <ng-container
-                *ngTemplateOutlet="icone; context: { $implicit: icones.marcador, tam: 'size-7' }"
-              />
-            </span>
-            <h2 class="mt-4 text-lg font-bold">Sua lista está vazia</h2>
-            <p class="mt-1 max-w-sm text-content-muted">
-              Busque um medicamento e toque em “Avisar quando chegar” para acompanhá-lo aqui.
-            </p>
-            <a
-              routerLink="/medicamentos"
-              class="mt-5 inline-flex h-12 items-center rounded-control bg-brand-600 px-5 font-bold text-white hover:bg-brand-700"
-              >Buscar medicamento</a
-            >
-          </div>
+          <app-estado-vazio
+            class="mt-6"
+            titulo="Sua lista está vazia"
+            texto="Busque um medicamento e toque em “Avisar quando chegar” para acompanhá-lo aqui."
+            [icone]="icones.marcador"
+          >
+            <a appButton routerLink="/medicamentos">Buscar medicamento</a>
+          </app-estado-vazio>
         } @else {
           <!-- Desktop: tabela, como "Meus remédios de uso contínuo" da Início -->
           <div class="surface-card mt-6 hidden overflow-hidden xl:block">

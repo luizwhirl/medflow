@@ -96,6 +96,37 @@ describe('UbsMapPage', () => {
     );
   }
 
+  it('mostra o esqueleto, o erro com "Tentar de novo" e o vazio do raio', fakeAsync(() => {
+    preparar([]);
+    const fixture = TestBed.createComponent(UbsMapPage);
+    fixture.detectChanges();
+    flushMicrotasks();
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('app-esqueleto')?.getAttribute('aria-label')).toBe(
+      'Carregando as unidades',
+    );
+    expect(el.textContent).toContain('Buscando unidades…');
+
+    responderLista();
+    http.expectOne(proximas(6)).error(new ProgressEvent('error'));
+    http.expectOne('/api/medicamentos?tamanho=100').flush(pagina([]));
+    fixture.detectChanges();
+    expect(el.querySelector('[role="alert"]')!.textContent).toContain(
+      'Não foi possível carregar as unidades',
+    );
+    expect(el.textContent).not.toContain('resultado');
+
+    el.querySelector<HTMLButtonElement>('[role="alert"] button')!.click();
+    fixture.detectChanges();
+    http.expectOne(proximas(6)).flush([]);
+    fixture.detectChanges();
+    const vazio = el.querySelector('[aria-label="Unidades no mapa"] app-estado-vazio')!;
+    expect(vazio.textContent).toContain('Nenhuma unidade neste raio');
+    expect(vazio.textContent).toContain('Aumente o raio');
+    http.verify();
+  }));
+
   it('pede à API as UBS do raio e numera na ordem e com a distância que ela devolve', fakeAsync(() => {
     preparar([]);
     const fixture = TestBed.createComponent(UbsMapPage);

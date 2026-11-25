@@ -215,6 +215,124 @@ describe('HomePage', () => {
     http.verify();
   });
 
+  it('mostra esqueletos enquanto carrega, e não "nenhuma unidade"', () => {
+    const fixture = TestBed.createComponent(HomePage);
+    fixture.detectChanges();
+    http.expectOne('/api/avisos').flush([]);
+    const el = fixture.nativeElement as HTMLElement;
+    const rotulos = Array.from(el.querySelectorAll('app-esqueleto')).map((e) =>
+      e.getAttribute('aria-label'),
+    );
+    expect(rotulos).toEqual([
+      'Carregando seus remédios',
+      'Carregando as unidades de saúde',
+      'Carregando sua UBS',
+    ]);
+    expect(el.textContent).not.toContain('Nenhuma unidade');
+    expect(el.textContent).not.toContain('Você ainda não escolheu sua UBS');
+
+    http.expectOne('/api/lista-desejos').flush([desejo(10, 1, 2)]);
+    fixture.detectChanges();
+    http.expectOne('/api/ubs').flush([ubs(2, 'UBS Clima Bom')]);
+    http.expectOne('/api/medicamentos/categorias').flush([]);
+    http.expectOne('/api/medicamentos/1').flush(metformina);
+    http.expectOne('/api/medicamentos/1/disponibilidade').flush([]);
+    http
+      .expectOne('/api/medicamentos/1/rastreamento?ubsId=2')
+      .flush({ medicamentoId: 1, ubsId: 2, remessa: null });
+    fixture.detectChanges();
+    expect(el.querySelector('app-esqueleto')).toBeNull();
+    http.verify();
+  });
+
+  it('com erro nas unidades e em um remédio, mostra os erros e tenta de novo', () => {
+    const fixture = TestBed.createComponent(HomePage);
+    fixture.detectChanges();
+    http.expectOne('/api/avisos').flush([]);
+    const el = fixture.nativeElement as HTMLElement;
+    const semRede = new ProgressEvent('error');
+
+    http.expectOne('/api/lista-desejos').flush([desejo(10, 1, 2)]);
+    fixture.detectChanges();
+    http
+      .expectOne('/api/medicamentos/1/rastreamento?ubsId=2')
+      .flush({ medicamentoId: 1, ubsId: 2, remessa: null });
+    http.expectOne('/api/ubs').error(semRede);
+    http.expectOne('/api/medicamentos/categorias').flush([]);
+    http.expectOne('/api/medicamentos/1').error(semRede);
+    fixture.detectChanges();
+    // A disponibilidade foi pedida junto e é cancelada com o erro do medicamento.
+    expect(http.match('/api/medicamentos/1/disponibilidade').every((r) => r.cancelled)).toBeTrue();
+
+    const alertas = Array.from(el.querySelectorAll('[role="alert"]')).map((a) =>
+      a.querySelector('p')!.textContent!.trim(),
+    );
+    expect(alertas).toEqual([
+      'Não foi possível carregar 1 remédio',
+      'Não foi possível carregar as unidades de saúde',
+      'Não foi possível carregar sua UBS',
+    ]);
+
+    el.querySelector<HTMLButtonElement>('[role="alert"] button')!.click();
+    fixture.detectChanges();
+    http.expectOne('/api/ubs').flush([ubs(2, 'UBS Clima Bom')]);
+    http.expectOne('/api/medicamentos/1').flush(metformina);
+    http
+      .match('/api/medicamentos/1/disponibilidade')
+      .filter((r) => !r.cancelled)
+      .forEach((r) => r.flush([]));
+    fixture.detectChanges();
+    expect(el.querySelector('[role="alert"]')).toBeNull();
+    expect(el.textContent).toContain('Metformina 850 mg');
+    http.verify();
+  });
+
+  it('se a lista de desejos falha, mostra o erro dos remédios e tenta de novo', () => {
+    const fixture = TestBed.createComponent(HomePage);
+    fixture.detectChanges();
+    http.expectOne('/api/avisos').flush([]);
+    const el = fixture.nativeElement as HTMLElement;
+    http.expectOne('/api/ubs').flush([ubs(2, 'UBS Clima Bom')]);
+    http.expectOne('/api/medicamentos/categorias').flush([]);
+    http.expectOne('/api/lista-desejos').error(new ProgressEvent('error'));
+    fixture.detectChanges();
+
+    const continuos = el.querySelector('[aria-labelledby="titulo-continuos"]')!;
+    expect(continuos.querySelector('[role="alert"]')!.textContent).toContain(
+      'Não foi possível carregar seus remédios',
+    );
+    expect(continuos.querySelector('app-esqueleto')).toBeNull();
+
+    continuos.querySelector<HTMLButtonElement>('[role="alert"] button')!.click();
+    fixture.detectChanges();
+    http.expectOne('/api/lista-desejos').flush([]);
+    http.expectOne('/api/ubs').flush([ubs(2, 'UBS Clima Bom')]);
+    fixture.detectChanges();
+    expect(continuos.querySelector('[role="alert"]')).toBeNull();
+    http.verify();
+  });
+
+  it('sem unidades, mostra o estado vazio com o caminho para o mapa', () => {
+    localStorage.setItem(
+      'medflow.preferencias',
+      JSON.stringify({ ubsReferenciaId: null, buscasRecentes: [] }),
+    );
+    const fixture = TestBed.createComponent(HomePage);
+    fixture.detectChanges();
+    http.expectOne('/api/avisos').flush([]);
+    http.expectOne('/api/lista-desejos').flush([]);
+    http.expectOne('/api/ubs').flush([]);
+    http.expectOne('/api/medicamentos/categorias').flush([]);
+    fixture.detectChanges();
+
+    const proximas = (fixture.nativeElement as HTMLElement).querySelector(
+      '[aria-labelledby="titulo-proximas"] app-estado-vazio',
+    )!;
+    expect(proximas.textContent).toContain('Nenhuma unidade encontrada');
+    expect(proximas.querySelector('a')!.getAttribute('href')).toBe('/mapa');
+    http.verify();
+  });
+
   it('com localização, usa as distâncias da API na referência, em "Onde tem" e nas UBS próximas', fakeAsync(() => {
     (navigator.geolocation.getCurrentPosition as jasmine.Spy).and.callFake((ok) =>
       ok({ coords: { latitude: -9.6, longitude: -35.7 } } as GeolocationPosition),

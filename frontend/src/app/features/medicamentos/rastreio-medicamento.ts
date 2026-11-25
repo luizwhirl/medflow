@@ -25,6 +25,7 @@ import {
 import { Disponibilidade, statusExibido, temEstoque } from '../../core/models/estoque.model';
 import { ItemListaDesejo } from '../../core/models/lista-desejos.model';
 import { Medicamento } from '../../core/models/medicamento.model';
+import { CARREGANDO, carregar, dadosOu, Recurso } from '../../core/recurso';
 import { RemessaRastreamento } from '../../core/models/rastreamento.model';
 import { primeiraProcuraDoDia } from '../../core/buscas-contadas';
 import { formatarDia, linhaDoTempo, PASSOS_REMESSA } from '../../core/remessa';
@@ -34,13 +35,17 @@ import { MedicamentoService } from '../../core/services/medicamento.service';
 import { PreferenciasService } from '../../core/services/preferencias.service';
 import { UbsService } from '../../core/services/ubs.service';
 import { Button } from '../../shared/components/button';
+import { Esqueleto } from '../../shared/components/esqueleto';
+import { EstadoVazio, ICONES_VAZIO } from '../../shared/components/estado-vazio';
 import { Funcionamento } from '../../shared/components/funcionamento';
 import { MapaIlustrado } from '../../shared/components/mapa-ilustrado';
+import { MensagemErro } from '../../shared/components/mensagem-erro';
 import { EtapaTimeline, Timeline } from '../../shared/components/timeline';
 
-type Estado =
-  | { carregando: true }
-  | { carregando: false; medicamento: Medicamento | null; disponibilidade: Disponibilidade[] };
+interface Detalhe {
+  medicamento: Medicamento;
+  disponibilidade: Disponibilidade[];
+}
 
 /** Passos sem datas, para quando não há remessa a mostrar. */
 export const ETAPAS_REMESSA: readonly EtapaTimeline[] = PASSOS_REMESSA.map((p) => ({
@@ -59,14 +64,35 @@ const ORDEM = { DISPONIVEL: 0, RESERVADO: 1, EM_FALTA: 2 } as const;
 /** Detalhe do medicamento (Figma: "Desktop · Buscar e rastrear", painel da direita). */
 @Component({
   selector: 'app-rastreio-medicamento',
-  imports: [RouterLink, Button, Timeline, MapaIlustrado, Funcionamento],
+  imports: [
+    RouterLink,
+    Button,
+    Esqueleto,
+    EstadoVazio,
+    Funcionamento,
+    MapaIlustrado,
+    MensagemErro,
+    Timeline,
+  ],
   template: `
-    @let e = estado();
-    @if (e.carregando) {
-      <p class="body-muted">Carregando…</p>
-    } @else if (!e.medicamento) {
-      <p class="feedback-error">Medicamento não encontrado.</p>
+    @let r = estado();
+    @if (r.estado === 'carregando') {
+      <app-esqueleto formato="detalhe" [quantidade]="2" rotulo="Carregando o medicamento" />
+    } @else if (r.estado === 'erro' && r.naoEncontrado) {
+      <app-estado-vazio
+        titulo="Medicamento não encontrado"
+        texto="Ele pode ter saído do catálogo. Busque pelo nome para encontrar outro."
+        [icone]="iconesVazio.pilula"
+      >
+        <a appButton routerLink="/medicamentos">Buscar medicamento</a>
+      </app-estado-vazio>
+    } @else if (r.estado === 'erro') {
+      <app-mensagem-erro
+        titulo="Não foi possível carregar o medicamento"
+        (tentarDeNovo)="recarregar()"
+      />
     } @else {
+      @let e = r.dados;
       <nav class="text-sm text-content-muted" aria-label="Trilha">
         <a routerLink="/medicamentos" class="hover:underline">Buscar</a>
         <span aria-hidden="true"> › </span>
@@ -281,7 +307,14 @@ const ORDEM = { DISPONIVEL: 0, RESERVADO: 1, EM_FALTA: 2 } as const;
                   >
                 </li>
               } @empty {
-                <li class="py-3 body-muted">Nenhuma unidade informou estoque deste item.</li>
+                <li>
+                  <app-estado-vazio
+                    [compacto]="true"
+                    titulo="Nenhuma unidade informou estoque"
+                    texto="Ligue o aviso para saber quando ele chegar na sua UBS."
+                    [icone]="iconesVazio.local"
+                  />
+                </li>
               }
             </ul>
           </div>
@@ -298,6 +331,7 @@ export class RastreioMedicamento {
 
   readonly id = input.required<number>();
   protected readonly etapas = ETAPAS_REMESSA;
+  protected readonly iconesVazio = ICONES_VAZIO;
   protected readonly distancia = formatarDistancia;
   protected readonly rota = linkRota;
   private readonly posicao = signal<Coordenadas | null>(null);
@@ -322,26 +356,20 @@ export class RastreioMedicamento {
   });
   protected readonly avisoLigado = computed(() => this.desejo()?.notificar === true);
 
+  private readonly tentativa = signal(0);
+
   protected readonly estado = toSignal(
-    toObservable(this.id).pipe(
-      switchMap((id) =>
-        forkJoin({
-          medicamento: this.medicamentoService.buscarPorId(id),
-          disponibilidade: this.medicamentoService.disponibilidade(id),
-        }).pipe(
-          map(({ medicamento, disponibilidade }): Estado => ({
-            carregando: false,
-            medicamento,
-            disponibilidade,
-          })),
-          catchError(() =>
-            of<Estado>({ carregando: false, medicamento: null, disponibilidade: [] }),
-          ),
-          startWith<Estado>({ carregando: true }),
+    toObservable(computed(() => ({ id: this.id(), tentativa: this.tentativa() }))).pipe(
+      switchMap(({ id }) =>
+        carregar(
+          forkJoin({
+            medicamento: this.medicamentoService.buscarPorId(id),
+            disponibilidade: this.medicamentoService.disponibilidade(id),
+          }),
         ),
       ),
     ),
-    { initialValue: { carregando: true } as Estado },
+    { initialValue: CARREGANDO as Recurso<Detalhe> },
   );
 
   /** Distância (km) da API, por id de UBS, das unidades no raio padrão que têm o item. */
@@ -373,12 +401,11 @@ export class RastreioMedicamento {
 
   /** Unidades com o item: disponíveis primeiro, depois pela distância. */
   protected readonly unidades = computed(() => {
-    const e = this.estado();
-    if (e.carregando) return [];
+    const disponibilidade = dadosOu(this.estado(), null)?.disponibilidade ?? [];
     const distancias = this.distancias();
     const funcionamentos = this.funcionamentos();
     const ref = this.preferencias.ubsReferenciaId();
-    return e.disponibilidade
+    return disponibilidade
       .map((d) => ({
         d,
         status: statusExibido(d),
@@ -462,6 +489,10 @@ export class RastreioMedicamento {
         takeUntilDestroyed(),
       )
       .subscribe();
+  }
+
+  protected recarregar(): void {
+    this.tentativa.update((n) => n + 1);
   }
 
   /** Adiciona à Minha lista (na UBS de referência) ou tira dela. */
