@@ -1,21 +1,21 @@
 import { Component, computed, inject, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { catchError, interval, map, of, scan, startWith, switchMap } from 'rxjs';
+import { interval, scan, startWith, switchMap } from 'rxjs';
 
 import { ItemAtencao, PainelGestao, SituacaoItem } from '../../core/models/gestao.model';
+import { CARREGANDO, carregar, dadosOu, Recurso } from '../../core/recurso';
 import { GestaoService } from '../../core/services/gestao.service';
 import { ATUALIZAR_DADOS_A_CADA_MS } from '../../core/sincronizacao';
 import { Button } from '../../shared/components/button';
 import { Card } from '../../shared/components/card';
 import { Chip } from '../../shared/components/chip';
 import { LocalizacaoUbsCard } from './localizacao-ubs';
-
-type Estado = { carregando: true } | { carregando: false; painel: PainelGestao | null };
-type Resposta = { ok: true; painel: PainelGestao } | { ok: false };
-
 /** O painel se atualiza sozinho: a sincronização com a BNAFAR roda de hora em hora e as remessas mudam a qualquer momento. */
 export const ATUALIZAR_A_CADA_MS = ATUALIZAR_DADOS_A_CADA_MS;
+import { Esqueleto } from '../../shared/components/esqueleto';
+import { EstadoVazio, ICONES_VAZIO } from '../../shared/components/estado-vazio';
+import { MensagemErro } from '../../shared/components/mensagem-erro';
 type Filtro = 'TODOS' | 'EM_FALTA' | 'ABAIXO_MINIMO';
 
 const FILTROS: readonly { valor: Filtro; rotulo: string }[] = [
@@ -33,15 +33,33 @@ const SITUACAO_CLASSES: Record<SituacaoItem, string> = {
 /** Painel da gestão da farmácia (frame "Desktop · Painel da gestão"). */
 @Component({
   selector: 'app-painel-gestao-page',
-  imports: [RouterLink, Button, Card, Chip, LocalizacaoUbsCard],
+  imports: [
+    RouterLink,
+    Button,
+    Card,
+    Chip,
+    LocalizacaoUbsCard,
+    Esqueleto,
+    EstadoVazio,
+    MensagemErro,
+  ],
   template: `
     @let e = estado();
-    @if (e.carregando) {
-      <p class="body-muted">Carregando…</p>
-    } @else if (!e.painel) {
-      <p class="feedback-error">Não foi possível carregar os indicadores da farmácia.</p>
+    @if (e.estado === 'carregando') {
+      <app-esqueleto
+        formato="linha"
+        [quantidade]="4"
+        rotulo="Carregando os indicadores da farmácia"
+        class="grid grid-cols-2 gap-4 md:grid-cols-4"
+      />
+      <app-esqueleto formato="detalhe" [quantidade]="2" rotulo="" class="mt-6 block" />
+    } @else if (e.estado === 'erro') {
+      <app-mensagem-erro
+        titulo="Não foi possível carregar os indicadores da farmácia"
+        (tentarDeNovo)="recarregar()"
+      />
     } @else {
-      @let p = e.painel;
+      @let p = e.dados;
       @let k = p.indicadores;
       <!-- leading-[normal]: o Figma usa altura de linha "normal" em todo o frame. -->
       <div class="flex flex-col gap-6 leading-[normal]">
@@ -158,7 +176,17 @@ const SITUACAO_CLASSES: Record<SituacaoItem, string> = {
                     </tr>
                   } @empty {
                     <tr class="border-t border-canvas">
-                      <td colspan="5" class="body-muted px-5 py-4">Nenhum item nesta situação.</td>
+                      <td colspan="5">
+                        <app-estado-vazio
+                          [compacto]="true"
+                          [icone]="iconesVazio.caixa"
+                          [titulo]="
+                            filtro() === 'TODOS'
+                              ? 'Nenhum item pede atenção agora'
+                              : 'Nenhum item nesta situação'
+                          "
+                        />
+                      </td>
                     </tr>
                   }
                 </tbody>
@@ -188,7 +216,13 @@ const SITUACAO_CLASSES: Record<SituacaoItem, string> = {
                   </div>
                 </li>
               } @empty {
-                <li class="body-muted">Nenhuma busca registrada nos últimos 7 dias.</li>
+                <li>
+                  <app-estado-vazio
+                    [compacto]="true"
+                    titulo="Nenhuma busca registrada"
+                    texto="As buscas feitas perto desta UBS aparecem aqui."
+                  />
+                </li>
               }
             </ul>
           </app-card>
@@ -222,38 +256,32 @@ export class PainelGestaoPage {
 
   protected readonly filtros = FILTROS;
   protected readonly situacaoClasses = SITUACAO_CLASSES;
+  protected readonly iconesVazio = ICONES_VAZIO;
   protected readonly filtro = signal<Filtro>('TODOS');
 
-  /**
-   * Busca na hora e de novo a cada [ATUALIZAR_A_CADA_MS]. Se uma atualização falhar, continua mostrando os últimos
-   * números (o erro só aparece quando nunca carregou).
-   */
+  private readonly tentativa = signal(0);
+
+  /** Mantém o último painel válido se uma atualização periódica falhar. */
   protected readonly estado = toSignal(
-    interval(ATUALIZAR_A_CADA_MS).pipe(
-      startWith(0),
+    toObservable(this.tentativa).pipe(
       switchMap(() =>
-        this.gestao.painel().pipe(
-          map((painel): Resposta => ({ ok: true, painel })),
-          catchError(() => of<Resposta>({ ok: false })),
+        interval(ATUALIZAR_A_CADA_MS).pipe(
+          startWith(0),
+          switchMap(() => carregar(this.gestao.painel())),
         ),
       ),
       scan(
-        (anterior: Estado, r: Resposta): Estado =>
-          r.ok
-            ? { carregando: false, painel: r.painel }
-            : anterior.carregando
-              ? { carregando: false, painel: null }
-              : anterior,
-        { carregando: true } as Estado,
+        (anterior: Recurso<PainelGestao>, atual: Recurso<PainelGestao>) =>
+          (atual.estado === 'carregando' || atual.estado === 'erro') && anterior.estado === 'pronto'
+            ? anterior
+            : atual,
+        CARREGANDO as Recurso<PainelGestao>,
       ),
     ),
-    { initialValue: { carregando: true } as Estado },
+    { initialValue: CARREGANDO as Recurso<PainelGestao> },
   );
 
-  private readonly painel = computed(() => {
-    const e = this.estado();
-    return e.carregando ? null : e.painel;
-  });
+  private readonly painel = computed(() => dadosOu(this.estado(), null));
 
   protected readonly itensFiltrados = computed(() => {
     const itens = this.painel()?.itensAtencao ?? [];
@@ -273,6 +301,10 @@ export class PainelGestaoPage {
     if (min < 1440) return `Sincronizado com e-SUS AF há ${Math.round(min / 60)} h`;
     return `Sincronizado com e-SUS AF há ${Math.round(min / 1440)} dias`;
   });
+
+  protected recarregar(): void {
+    this.tentativa.update((n) => n + 1);
+  }
 
   /** Filtros são exclusivos; desmarcar um volta para "Todos" (que não se desmarca). */
   protected filtrar(valor: Filtro, ligado: boolean): void {

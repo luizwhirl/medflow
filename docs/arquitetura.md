@@ -37,8 +37,8 @@ Regras:
 ## Frontend (`frontend/src/app`)
 
 ```
-core/        modelos (interfaces da API) e services HTTP
-shared/      componentes reutilizáveis (StatusBadge, SyncIndicator)
+core/        modelos (interfaces da API), services HTTP e offline/ (dados salvos e conexão)
+shared/      componentes reutilizáveis (StatusBadge, SyncIndicator, Esqueleto, EstadoVazio...)
 layout/      Shell (cabeçalho, navegação, rodapé)
 features/    uma pasta por área: home, ubs, medicamentos
 ```
@@ -48,6 +48,26 @@ Regras:
 - Componentes **standalone**, estado com **signals**; rotas com `loadComponent` (lazy loading).
 - Parâmetros de rota e query entram como `input()` (`withComponentInputBinding`).
 - Estilo com **Tailwind**; tokens de cor do projeto ficam em `src/styles.css` (`@theme`).
+
+### Carregamento, vazio, erro e sem internet
+
+Nenhuma tela fica em branco. Cada carga da API vira um `Recurso` (`core/recurso.ts`: `carregando`, `erro` ou `pronto`), e a tela mostra um componente padrão para cada estado:
+
+- `app-esqueleto`: blocos no formato do conteúdo (`cartao`, `linha` ou `detalhe`) enquanto carrega;
+- `app-estado-vazio`: ícone, título, explicação e a ação para sair dele;
+- `app-mensagem-erro`: alerta com "Tentar de novo"; sem internet, explica que os dados não estão salvos no aparelho.
+
+Sem internet, o `dadosSalvosInterceptor` (`core/offline`) devolve a última resposta salva de cada `GET /api/...`. Ela fica no `localStorage`, com o horário em que chegou. O `app-banner-offline`, no topo das duas cascas, mostra "Sem internet" e o horário dos dados salvos.
+
+Regras do cache:
+
+- só respostas de `GET` são guardadas, uma por URL (sem `lat`/`lng`, que mudam a cada leitura do GPS);
+- `/api/gestao/**` e `/api/auth/**` nunca são guardadas: dependem de quem está logado, e o `localStorage` não separa contas nem é limpo no logout. Sem internet, o painel da gestão mostra o erro padrão;
+- das buscas de medicamento (`?busca=`), ficam só as 50 mais recentes;
+- uma alteração bem-sucedida descarta as respostas salvas daquele recurso;
+- erros da API (400, 404) nunca são trocados por dados salvos; só falta de rede ou servidor fora do ar (0, 502, 503 e 504).
+
+As telas são pré-carregadas (`PreloadAllModules`), então trocar de tela sem internet também funciona. Abrir o app do zero sem internet ainda depende de um service worker, que fica para outra task.
 
 ## Decisões importantes
 

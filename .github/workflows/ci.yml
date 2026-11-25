@@ -21,6 +21,90 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - run: ./gradlew build --no-daemon # inclui testes de integração com Testcontainers
 
+  migrations:
+    name: Migrations (Flyway)
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: postgres:17-alpine # a mesma do docker-compose.yml e dos testes
+        env:
+          POSTGRES_DB: medflow
+          POSTGRES_USER: medflow
+          POSTGRES_PASSWORD: medflow
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U medflow -d medflow"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      # Segundo banco para a configuração de produção (só db/migration, sem outOfOrder).
+      db_producao:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: medflow
+          POSTGRES_USER: medflow
+          POSTGRES_PASSWORD: medflow
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U medflow -d medflow"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Mesma imagem e mesmas opções do serviço flyway do docker-compose.yml (perfil dev: migrations + seed).
+      FLYWAY_IMAGE: flyway/flyway:12.4.0-alpine
+      FLYWAY_ARGS: >-
+        -url=jdbc:postgresql://localhost:5432/medflow -user=medflow -password=medflow
+        -locations=filesystem:/flyway/db/migration,filesystem:/flyway/db/seed -outOfOrder=true
+      # Como a API sobe em produção (application.yml): só db/migration e sem outOfOrder. Uma migration
+      # nova com versão menor que a última já aplicada passa no perfil dev, mas quebra aqui.
+      FLYWAY_ARGS_PRODUCAO: >-
+        -url=jdbc:postgresql://localhost:5433/medflow -user=medflow -password=medflow
+        -locations=filesystem:/flyway/db/migration -outOfOrder=false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: pr
+      # Num PR, o banco começa como o da branch de destino. Assim o validate pega migration já
+      # aplicada que foi editada (checksum diferente) ou apagada, e não só SQL quebrado.
+      - if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.base_ref }}
+          path: base
+      - name: Aplica as migrations da branch de destino
+        if: github.event_name == 'pull_request'
+        run: >-
+          docker run --rm --network host -v "$PWD/base/backend/src/main/resources/db:/flyway/db:ro"
+          $FLYWAY_IMAGE $FLYWAY_ARGS migrate
+      - name: Confere o que já foi aplicado contra as migrations do PR
+        run: >-
+          docker run --rm --network host -v "$PWD/pr/backend/src/main/resources/db:/flyway/db:ro"
+          $FLYWAY_IMAGE $FLYWAY_ARGS -ignoreMigrationPatterns='*:pending' validate
+      - name: Aplica as migrations novas do PR
+        run: >-
+          docker run --rm --network host -v "$PWD/pr/backend/src/main/resources/db:/flyway/db:ro"
+          $FLYWAY_IMAGE $FLYWAY_ARGS migrate
+      - name: Valida o banco final
+        run: >-
+          docker run --rm --network host -v "$PWD/pr/backend/src/main/resources/db:/flyway/db:ro"
+          $FLYWAY_IMAGE $FLYWAY_ARGS validate
+      - name: Produção — aplica as migrations da branch de destino
+        if: github.event_name == 'pull_request'
+        run: >-
+          docker run --rm --network host -v "$PWD/base/backend/src/main/resources/db:/flyway/db:ro"
+          $FLYWAY_IMAGE $FLYWAY_ARGS_PRODUCAO migrate
+      - name: Produção — aplica as do PR na ordem (falha se alguma versão nova for menor que a última aplicada)
+        run: >-
+          docker run --rm --network host -v "$PWD/pr/backend/src/main/resources/db:/flyway/db:ro"
+          $FLYWAY_IMAGE $FLYWAY_ARGS_PRODUCAO migrate
+      - name: Produção — valida o banco final
+        run: >-
+          docker run --rm --network host -v "$PWD/pr/backend/src/main/resources/db:/flyway/db:ro"
+          $FLYWAY_IMAGE $FLYWAY_ARGS_PRODUCAO validate
+
   frontend:
     name: Frontend (Angular)
     runs-on: ubuntu-latest
@@ -36,5 +120,6 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npm run format:check
+      - run: npm run lint
       - run: npm run build
       - run: npm run test:ci

@@ -8,7 +8,6 @@ import {
   filter,
   forkJoin,
   map,
-  Observable,
   of,
   switchMap,
   timer,
@@ -20,13 +19,17 @@ import { Medicamento } from '../../core/models/medicamento.model';
 import { TAMANHO_MAXIMO_PAGINA } from '../../core/models/pagina.model';
 import { STATUS_LABEL, StatusEstoque } from '../../core/models/status-estoque';
 import { Ubs, UbsProxima } from '../../core/models/ubs.model';
+import { CARREGANDO, carregar, dadosOu, Recurso } from '../../core/recurso';
 import { MedicamentoService } from '../../core/services/medicamento.service';
 import { PreferenciasService } from '../../core/services/preferencias.service';
 import { UbsService } from '../../core/services/ubs.service';
 import { Button } from '../../shared/components/button';
 import { Chip } from '../../shared/components/chip';
+import { Esqueleto } from '../../shared/components/esqueleto';
+import { EstadoVazio, ICONES_VAZIO } from '../../shared/components/estado-vazio';
 import { Funcionamento } from '../../shared/components/funcionamento';
 import { Mapa, PinoMapa } from '../../shared/components/mapa';
+import { MensagemErro } from '../../shared/components/mensagem-erro';
 
 export const RAIOS_KM = [1, 3, 6, 10] as const;
 
@@ -66,7 +69,7 @@ interface LinhaUbs {
 
 @Component({
   selector: 'app-ubs-map-page',
-  imports: [RouterLink, Mapa, Chip, Button, Funcionamento],
+  imports: [RouterLink, Mapa, Chip, Button, Esqueleto, EstadoVazio, Funcionamento, MensagemErro],
   template: `
     <div class="flex flex-col md:-mx-8 md:-my-8 md:h-dvh md:flex-row xl:-mx-14">
       <!-- Painel lateral -->
@@ -81,7 +84,11 @@ interface LinhaUbs {
           @if (referencia(); as r) {
             Perto de {{ r.bairro }} ·
           }
-          {{ linhas().length }} {{ linhas().length === 1 ? 'resultado' : 'resultados' }}
+          @if (unidadesCarga().estado === 'pronto') {
+            {{ linhas().length }} {{ linhas().length === 1 ? 'resultado' : 'resultados' }}
+          } @else if (unidadesCarga().estado === 'carregando') {
+            Buscando unidades…
+          }
         </p>
 
         <label class="mt-4 block">
@@ -140,47 +147,70 @@ interface LinhaUbs {
           </p>
         }
 
-        <ul class="mt-4 flex flex-col gap-3" aria-label="Unidades no mapa">
-          @for (l of linhas(); track l.ubs.id) {
-            @let ativo = selecionado() === l.ubs.id;
-            <li>
-              <button
-                type="button"
-                (click)="selecionado.set(l.ubs.id)"
-                [attr.aria-pressed]="ativo"
-                class="flex w-full items-start gap-4 rounded-card border px-5 py-4 text-left transition-colors"
-                [class]="
-                  ativo
-                    ? 'border-2 border-brand-600 bg-brand-50'
-                    : 'border-outline bg-surface hover:border-brand-500'
-                "
-              >
-                <span
-                  class="grid size-9 shrink-0 place-items-center rounded-full font-bold text-white"
-                  [style.background]="cor[l.tom]"
-                  >{{ l.numero }}</span
+        @let carga = unidadesCarga();
+        @if (carga.estado === 'carregando') {
+          <app-esqueleto
+            formato="linha"
+            [quantidade]="4"
+            rotulo="Carregando as unidades"
+            class="mt-4 flex flex-col gap-3"
+          />
+        } @else if (carga.estado === 'erro') {
+          <app-mensagem-erro
+            class="mt-4"
+            titulo="Não foi possível carregar as unidades"
+            (tentarDeNovo)="recarregar()"
+          />
+        } @else {
+          <ul class="mt-4 flex flex-col gap-3" aria-label="Unidades no mapa">
+            @for (l of linhas(); track l.ubs.id) {
+              @let ativo = selecionado() === l.ubs.id;
+              <li>
+                <button
+                  type="button"
+                  (click)="selecionado.set(l.ubs.id)"
+                  [attr.aria-pressed]="ativo"
+                  class="flex w-full items-start gap-4 rounded-card border px-5 py-4 text-left transition-colors"
+                  [class]="
+                    ativo
+                      ? 'border-2 border-brand-600 bg-brand-50'
+                      : 'border-outline bg-surface hover:border-brand-500'
+                  "
                 >
-                <span class="min-w-0 flex-1">
-                  <span class="block truncate text-lg font-bold">{{ l.ubs.nome }}</span>
-                  <span class="block text-sm text-content-muted">
-                    @if (l.distancia !== null) {
-                      {{ distancia(l.distancia) }} ·
+                  <span
+                    class="grid size-9 shrink-0 place-items-center rounded-full font-bold text-white"
+                    [style.background]="cor[l.tom]"
+                    >{{ l.numero }}</span
+                  >
+                  <span class="min-w-0 flex-1">
+                    <span class="block truncate text-lg font-bold">{{ l.ubs.nome }}</span>
+                    <span class="block text-sm text-content-muted">
+                      @if (l.distancia !== null) {
+                        {{ distancia(l.distancia) }} ·
+                      }
+                      {{ l.referencia ? 'Sua UBS' : l.ubs.bairro }}
+                    </span>
+                    <app-funcionamento class="mt-0.5 block text-sm" [ubs]="l.ubs" />
+                    @if (l.resumo) {
+                      <span class="mt-1 block font-semibold" [class]="texto[l.tom]">{{
+                        l.resumo
+                      }}</span>
                     }
-                    {{ l.referencia ? 'Sua UBS' : l.ubs.bairro }}
                   </span>
-                  <app-funcionamento class="mt-0.5 block text-sm" [ubs]="l.ubs" />
-                  @if (l.resumo) {
-                    <span class="mt-1 block font-semibold" [class]="texto[l.tom]">{{
-                      l.resumo
-                    }}</span>
-                  }
-                </span>
-              </button>
-            </li>
-          } @empty {
-            <li class="body-muted">Nenhuma unidade neste filtro.</li>
-          }
-        </ul>
+                </button>
+              </li>
+            } @empty {
+              <li>
+                <app-estado-vazio
+                  [compacto]="true"
+                  [icone]="iconesVazio.local"
+                  [titulo]="vazio().titulo"
+                  [texto]="vazio().texto"
+                />
+              </li>
+            }
+          </ul>
+        }
       </section>
 
       <!-- Mapa -->
@@ -264,6 +294,7 @@ export class UbsMapPage {
   private readonly preferencias = inject(PreferenciasService);
 
   protected readonly raios = RAIOS_KM;
+  protected readonly iconesVazio = ICONES_VAZIO;
   protected readonly cor = COR;
   protected readonly texto = CLASSE_TEXTO;
   protected readonly statusLabel = STATUS_LABEL;
@@ -275,6 +306,26 @@ export class UbsMapPage {
   protected readonly soComRemedios = signal(false);
   /** Chip "Abertas agora": só as UBS abertas segundo a API (`abertaAgora`). */
   protected readonly soAbertas = signal(false);
+
+  /** Título e texto da lista vazia, conforme o filtro que esvaziou a lista. */
+  protected readonly vazio = computed(() => {
+    if (this.soComRemedios() && this.escolhidos().length) {
+      return {
+        titulo: 'Nenhuma unidade com estoque',
+        texto: 'Desligue o filtro para ver todas as unidades.',
+      };
+    }
+    if (this.soAbertas()) {
+      return {
+        titulo: 'Nenhuma unidade aberta agora',
+        texto: 'Desligue “Abertas agora” para ver todas as unidades.',
+      };
+    }
+    return {
+      titulo: 'Nenhuma unidade neste raio',
+      texto: this.posicao() ? 'Aumente o raio para ver unidades mais distantes.' : '',
+    };
+  });
   /** `undefined` enquanto o navegador não respondeu; `null` se a localização foi negada. */
   private readonly localizacao = signal<Coordenadas | null | undefined>(undefined);
   protected readonly posicao = computed(() => this.localizacao() ?? null);
@@ -286,17 +337,27 @@ export class UbsMapPage {
    * Com localização, a API devolve só as UBS do raio, já com a distância e em ordem; uma chamada
    * por raio escolhido (sem raio, a API usa 20 km). Sem localização, todas as UBS por nome.
    */
-  private readonly unidades = toSignal(
-    toObservable(computed(() => ({ pos: this.localizacao(), raio: this.raioKm() }))).pipe(
+  private readonly tentativa = signal(0);
+
+  protected readonly unidadesCarga = toSignal(
+    toObservable(
+      computed(() => ({
+        pos: this.localizacao(),
+        raio: this.raioKm(),
+        tentativa: this.tentativa(),
+      })),
+    ).pipe(
       filter(({ pos }) => pos !== undefined),
-      switchMap(({ pos, raio }): Observable<(Ubs | UbsProxima)[]> =>
-        (pos ? this.ubsService.proximas(pos, { raioKm: raio }) : this.ubsService.listar()).pipe(
-          catchError(() => of([])),
+      switchMap(({ pos, raio }) =>
+        carregar<(Ubs | UbsProxima)[]>(
+          pos ? this.ubsService.proximas(pos, { raioKm: raio }) : this.ubsService.listar(),
         ),
       ),
     ),
-    { initialValue: [] as (Ubs | UbsProxima)[] },
+    { initialValue: CARREGANDO as Recurso<(Ubs | UbsProxima)[]> },
   );
+
+  private readonly unidades = computed(() => dadosOu(this.unidadesCarga(), []));
 
   /** Texto do campo de busca do remédio; a lista do select vem da API, filtrada por ele. */
   protected readonly termoRemedio = signal('');
@@ -406,6 +467,10 @@ export class UbsMapPage {
 
   constructor() {
     posicaoAtual().then((p) => this.localizacao.set(p));
+  }
+
+  protected recarregar(): void {
+    this.tentativa.update((n) => n + 1);
   }
 
   protected definirReferencia(id: number): void {

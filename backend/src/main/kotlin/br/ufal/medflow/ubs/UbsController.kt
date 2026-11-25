@@ -65,6 +65,14 @@ class UbsController(
         return if (abertas == true) comHorario.filter { it.abertaAgora == true } else comHorario
     }
 
+    @Operation(
+        summary = "Lista os bairros com UBS",
+        description = "Bairros que têm ao menos uma unidade, sem repetição e em ordem alfabética. " +
+            "Usado na boas-vindas para quem não quer compartilhar a localização.",
+    )
+    @GetMapping("/bairros")
+    fun bairros(): List<String> = ubsRepository.findBairros()
+
     @GetMapping("/{id}")
     fun buscar(@PathVariable id: Long): UbsResponse {
         val ubs = (ubsRepository.findVisivel(id) ?: throw RecursoNaoEncontradoException("UBS", id)).toResponse()

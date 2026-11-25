@@ -20,6 +20,10 @@ interface UbsRepository : JpaRepository<Ubs, Long> {
     @Query("select count(u) from Ubs u where u.codigoIbgeMunicipio = :ibge and u.localizacaoOrigem <> br.ufal.medflow.ubs.OrigemLocalizacao.INVALIDA")
     fun contarVisiveisDoMunicipio(@Param("ibge") ibge: String): Long
 
+    /** Bairros que têm ao menos uma UBS, sem repetição e em ordem alfabética. */
+    @Query("select distinct u.bairro from Ubs u order by u.bairro")
+    fun findBairros(): List<String>
+
     fun findByCnesIn(cnes: Collection<String>): List<Ubs>
 
     fun countByCodigoIbgeMunicipio(ibge: String): Long

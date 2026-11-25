@@ -152,7 +152,7 @@ describe('ReconhecimentoVozService', () => {
     });
   });
 
-  const erros: Array<[string, ErroVoz]> = [
+  const erros: [string, ErroVoz][] = [
     ['not-allowed', 'sem-permissao'],
     ['service-not-allowed', 'sem-permissao'],
     ['no-speech', 'sem-fala'],
@@ -561,4 +561,59 @@ describe('ReconhecimentoVozService', () => {
     expect(service.estado()).toBe('inativo');
     expect(service.erro()).toBeNull();
   }));
+
+  describe('reconhecimento no aparelho', () => {
+    const comDisponibilidade = (available?: unknown): AmbienteReconhecimentoVoz =>
+      ({
+        isSecureContext: true,
+        SpeechRecognition: Object.assign(
+          class extends ReconhecimentoFalso {},
+          available === undefined ? {} : { available },
+        ),
+      }) as AmbienteReconhecimentoVoz;
+
+    it('só conta como local quando available() responde "available"', async () => {
+      const disponivel = jasmine.createSpy('available').and.resolveTo('available');
+      const service = criarServico(comDisponibilidade(disponivel));
+      expect(await service.reconhecimentoLocalDisponivel()).toBeTrue();
+      expect(disponivel).toHaveBeenCalledWith({ langs: ['pt-BR'], processLocally: true });
+    });
+
+    for (const resposta of ['downloadable', 'downloading', 'unavailable']) {
+      it(`"${resposta}" não conta como local`, async () => {
+        const service = criarServico(
+          comDisponibilidade(jasmine.createSpy('available').and.resolveTo(resposta)),
+        );
+        expect(await service.reconhecimentoLocalDisponivel()).toBeFalse();
+      });
+    }
+
+    it('sem available() ou com available() falhando, não conta como local', async () => {
+      expect(await criarServico(comDisponibilidade()).reconhecimentoLocalDisponivel()).toBeFalse();
+      TestBed.resetTestingModule();
+      const falha = jasmine.createSpy('available').and.rejectWith(new Error('bloqueado'));
+      expect(
+        await criarServico(comDisponibilidade(falha)).reconhecimentoLocalDisponivel(),
+      ).toBeFalse();
+    });
+
+    it('com local, liga processLocally; sem ele, não mexe na opção', async () => {
+      const service = criarServico();
+      const local = service.ouvir(undefined, { local: true });
+      expect(
+        (reconhecimentoAtual() as ReconhecimentoFalso & { processLocally?: boolean })
+          .processLocally,
+      ).toBeTrue();
+      service.cancelar();
+      await local;
+
+      const remoto = service.ouvir();
+      expect(
+        (reconhecimentoAtual() as ReconhecimentoFalso & { processLocally?: boolean })
+          .processLocally,
+      ).toBeUndefined();
+      service.cancelar();
+      await remoto;
+    });
+  });
 });

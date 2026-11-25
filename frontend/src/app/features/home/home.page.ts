@@ -15,14 +15,20 @@ import { Disponibilidade, statusExibido, temEstoque } from '../../core/models/es
 import { Medicamento } from '../../core/models/medicamento.model';
 import { StatusEstoque } from '../../core/models/status-estoque';
 import { Ubs, UbsProxima } from '../../core/models/ubs.model';
-import { MedicamentoService } from '../../core/services/medicamento.service';
+import { CARREGANDO, carregar, dadosOu, Recurso } from '../../core/recurso';
 import { textoChegada } from '../../core/remessa';
+import { AvisosService } from '../../core/services/avisos.service';
+import { ListaDesejosService } from '../../core/services/lista-desejos.service';
+import { MedicamentoService } from '../../core/services/medicamento.service';
 import { PreferenciasService } from '../../core/services/preferencias.service';
 import { UbsService } from '../../core/services/ubs.service';
 import { Button } from '../../shared/components/button';
 import { Chip } from '../../shared/components/chip';
+import { Esqueleto } from '../../shared/components/esqueleto';
+import { EstadoVazio, ICONES_VAZIO } from '../../shared/components/estado-vazio';
 import { Funcionamento } from '../../shared/components/funcionamento';
 import { MapaIlustrado } from '../../shared/components/mapa-ilustrado';
+import { MensagemErro } from '../../shared/components/mensagem-erro';
 import { SearchField } from '../../shared/components/search-field';
 import { StatusBadge } from '../../shared/components/status-badge';
 import { SyncIndicator } from '../../shared/components/sync-indicator';
@@ -36,6 +42,11 @@ interface Remedio {
   naReferencia: Disponibilidade | null;
   /** Unidade mais próxima com o item disponível (fora a de referência). */
   ondeTem: { ubs: Ubs; distancia: number | null } | null;
+}
+
+interface Carregados {
+  itens: { medicamento: Medicamento; disponibilidade: Disponibilidade[] }[];
+  falhas: number;
 }
 
 /** Ícone de pílula (traço, viewBox 24). */
@@ -52,6 +63,9 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
     StatusBadge,
     SyncIndicator,
     MapaIlustrado,
+    Esqueleto,
+    EstadoVazio,
+    MensagemErro,
     Funcionamento,
   ],
   template: `
@@ -82,9 +96,17 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
       </div>
       <a
         routerLink="/avisos"
-        class="hidden size-12 place-items-center rounded-control border border-outline bg-surface text-content xl:grid"
-        aria-label="Avisos"
+        class="relative hidden size-12 place-items-center rounded-control border border-outline bg-surface text-content xl:grid"
+        [attr.aria-label]="
+          avisos.naoLidos() ? 'Avisos, ' + avisos.naoLidos() + ' não lidos' : 'Avisos'
+        "
       >
+        @if (avisos.naoLidos()) {
+          <span
+            class="absolute right-2 top-2 size-2.5 rounded-full bg-status-falta"
+            aria-hidden="true"
+          ></span>
+        }
         <svg
           class="size-5"
           viewBox="0 0 24 24"
@@ -183,91 +205,117 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
             </a>
           </div>
 
-          <!-- Desktop: tabela -->
-          @if (remedios().length) {
-            <div class="surface-card hidden overflow-hidden xl:block">
-              <table class="w-full text-left">
-                <thead
-                  class="border-b border-outline text-xs font-semibold uppercase tracking-wider text-content-muted"
-                >
-                  <tr>
-                    <th class="px-7 py-4" colspan="2">Medicamento</th>
-                    <th class="px-3 py-4">Na sua UBS</th>
-                    <th class="px-3 py-4">Previsão / estoque</th>
-                    <th class="px-3 py-4">Onde tem agora</th>
-                    <th class="px-7 py-4"><span class="sr-only">Ação</span></th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y divide-outline">
-                  @for (r of remedios(); track r.medicamento.id) {
+          @let cargaRemedios = carregados();
+          @if (cargaRemedios.estado === 'carregando') {
+            <app-esqueleto
+              formato="cartao"
+              [quantidade]="qtdEsqueletoRemedios()"
+              rotulo="Carregando seus remédios"
+              class="grid gap-4 sm:grid-cols-2"
+            />
+          } @else if (cargaRemedios.estado === 'erro') {
+            <app-mensagem-erro
+              titulo="Não foi possível carregar seus remédios"
+              (tentarDeNovo)="recarregar()"
+            />
+          } @else {
+            @if (falhasRemedios(); as falhas) {
+              <app-mensagem-erro
+                class="mb-4"
+                [titulo]="
+                  falhas === 1
+                    ? 'Não foi possível carregar 1 remédio'
+                    : 'Não foi possível carregar ' + falhas + ' remédios'
+                "
+                (tentarDeNovo)="recarregar()"
+              />
+            }
+            <!-- Desktop: tabela -->
+            @if (remedios().length) {
+              <div class="surface-card hidden overflow-hidden xl:block">
+                <table class="w-full text-left">
+                  <thead
+                    class="border-b border-outline text-xs font-semibold uppercase tracking-wider text-content-muted"
+                  >
                     <tr>
-                      <td class="w-0 py-5 pl-7 pr-4">
-                        <ng-container *ngTemplateOutlet="pilula" />
-                      </td>
-                      <td class="py-5 pr-3 font-semibold">
-                        {{ r.medicamento.nome }} {{ r.medicamento.concentracao }}
-                      </td>
-                      <td class="px-3 py-5">
-                        @if (r.status) {
-                          <app-status-badge [status]="r.status" />
-                        } @else {
-                          <span class="text-sm text-content-muted">{{ semStatus() }}</span>
-                        }
-                      </td>
-                      <td class="px-3 py-5 text-sm text-content-muted">{{ previsao(r) }}</td>
-                      <td class="px-3 py-5 text-sm font-semibold text-brand-600">
-                        {{ ondeTem(r) }}
-                      </td>
-                      <td class="py-5 pl-3 pr-7 text-right">
-                        <a
-                          appButton
-                          variante="secundario"
-                          class="h-11! whitespace-nowrap"
-                          [routerLink]="acao(r).link"
-                          >{{ acao(r).rotulo }}</a
-                        >
-                      </td>
+                      <th class="px-7 py-4" colspan="2">Medicamento</th>
+                      <th class="px-3 py-4">Na sua UBS</th>
+                      <th class="px-3 py-4">Previsão / estoque</th>
+                      <th class="px-3 py-4">Onde tem agora</th>
+                      <th class="px-7 py-4"><span class="sr-only">Ação</span></th>
                     </tr>
-                  }
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody class="divide-y divide-outline">
+                    @for (r of remedios(); track r.medicamento.id) {
+                      <tr>
+                        <td class="w-0 py-5 pl-7 pr-4">
+                          <ng-container *ngTemplateOutlet="pilula" />
+                        </td>
+                        <td class="py-5 pr-3 font-semibold">
+                          {{ r.medicamento.nome }} {{ r.medicamento.concentracao }}
+                        </td>
+                        <td class="px-3 py-5">
+                          @if (r.status) {
+                            <app-status-badge [status]="r.status" />
+                          } @else {
+                            <span class="text-sm text-content-muted">{{ semStatus() }}</span>
+                          }
+                        </td>
+                        <td class="px-3 py-5 text-sm text-content-muted">{{ previsao(r) }}</td>
+                        <td class="px-3 py-5 text-sm font-semibold text-brand-600">
+                          {{ ondeTem(r) }}
+                        </td>
+                        <td class="py-5 pl-3 pr-7 text-right">
+                          <a
+                            appButton
+                            variante="secundario"
+                            class="h-11! whitespace-nowrap"
+                            [routerLink]="acao(r).link"
+                            >{{ acao(r).rotulo }}</a
+                          >
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+                <a
+                  routerLink="/medicamentos"
+                  class="block border-t border-outline px-7 py-4 font-semibold text-brand-600 hover:bg-canvas"
+                  >+ Adicionar remédio</a
+                >
+              </div>
+            }
+
+            <!-- Tablet e celular: cartões -->
+            <div class="grid gap-4 sm:grid-cols-2" [class]="remedios().length ? 'xl:hidden' : ''">
+              @for (r of remedios(); track r.medicamento.id) {
+                <a
+                  [routerLink]="acao(r).link"
+                  class="surface-card block p-6 transition-shadow hover:ring-2 hover:ring-brand-100 xl:hidden"
+                >
+                  <div class="flex items-start justify-between gap-2">
+                    <ng-container *ngTemplateOutlet="pilula" />
+                    @if (r.status) {
+                      <app-status-badge [status]="r.status" tamanho="md" />
+                    } @else {
+                      <span class="text-sm text-content-muted">{{ semStatus() }}</span>
+                    }
+                  </div>
+                  <h3 class="mt-4 text-lg font-bold">
+                    {{ r.medicamento.nome }} {{ r.medicamento.concentracao }}
+                  </h3>
+                  <p class="mt-1 text-content-muted">{{ previsao(r) }}</p>
+                  <p class="mt-2 font-semibold text-brand-600">{{ ondeTem(r) }}</p>
+                </a>
+              }
               <a
                 routerLink="/medicamentos"
-                class="block border-t border-outline px-7 py-4 font-semibold text-brand-600 hover:bg-canvas"
-                >+ Adicionar remédio</a
+                class="grid min-h-40 place-items-center rounded-card border-2 border-dashed border-outline p-6 text-lg font-semibold text-content-muted hover:border-brand-500 hover:text-brand-600"
               >
+                + Adicionar remédio
+              </a>
             </div>
           }
-
-          <!-- Tablet e celular: cartões -->
-          <div class="grid gap-4 sm:grid-cols-2" [class]="remedios().length ? 'xl:hidden' : ''">
-            @for (r of remedios(); track r.medicamento.id) {
-              <a
-                [routerLink]="acao(r).link"
-                class="surface-card block p-6 transition-shadow hover:ring-2 hover:ring-brand-100 xl:hidden"
-              >
-                <div class="flex items-start justify-between gap-2">
-                  <ng-container *ngTemplateOutlet="pilula" />
-                  @if (r.status) {
-                    <app-status-badge [status]="r.status" tamanho="md" />
-                  } @else {
-                    <span class="text-sm text-content-muted">{{ semStatus() }}</span>
-                  }
-                </div>
-                <h3 class="mt-4 text-lg font-bold">
-                  {{ r.medicamento.nome }} {{ r.medicamento.concentracao }}
-                </h3>
-                <p class="mt-1 text-content-muted">{{ previsao(r) }}</p>
-                <p class="mt-2 font-semibold text-brand-600">{{ ondeTem(r) }}</p>
-              </a>
-            }
-            <a
-              routerLink="/medicamentos"
-              class="grid min-h-40 place-items-center rounded-card border-2 border-dashed border-outline p-6 text-lg font-semibold text-content-muted hover:border-brand-500 hover:text-brand-600"
-            >
-              + Adicionar remédio
-            </a>
-          </div>
         </section>
 
         <section aria-labelledby="titulo-proximas">
@@ -278,41 +326,63 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
             </h2>
             <a routerLink="/mapa" class="font-semibold text-brand-600">Abrir mapa</a>
           </div>
-          <div class="grid gap-4 sm:grid-cols-3">
-            @for (p of proximas(); track p.ubs.id) {
-              <a
-                [routerLink]="['/ubs', p.ubs.id]"
-                class="surface-card block p-6 transition-shadow hover:ring-2 hover:ring-brand-100"
-              >
-                @if (p.distancia !== null) {
-                  <p class="text-sm text-content-muted">{{ distancia(p.distancia) }}</p>
-                }
-                <h3 class="mt-1 truncate text-lg font-bold">{{ p.ubs.nome }}</h3>
-                <app-funcionamento class="mt-1 block text-sm" [ubs]="p.ubs" />
-                @if (remedios().length) {
-                  <div
-                    class="mt-3 h-2 overflow-hidden rounded-full bg-outline"
-                    role="progressbar"
-                    [attr.aria-valuenow]="p.disponiveis"
-                    aria-valuemin="0"
-                    [attr.aria-valuemax]="remedios().length"
-                  >
+          @let cargaProximas = proximasCarga();
+          @if (cargaProximas.estado === 'carregando') {
+            <app-esqueleto
+              formato="cartao"
+              [quantidade]="3"
+              rotulo="Carregando as unidades de saúde"
+              class="grid gap-4 sm:grid-cols-3"
+            />
+          } @else if (cargaProximas.estado === 'erro') {
+            <app-mensagem-erro
+              titulo="Não foi possível carregar as unidades de saúde"
+              (tentarDeNovo)="recarregar()"
+            />
+          } @else {
+            <div class="grid gap-4 sm:grid-cols-3">
+              @for (p of proximas(); track p.ubs.id) {
+                <a
+                  [routerLink]="['/ubs', p.ubs.id]"
+                  class="surface-card block p-6 transition-shadow hover:ring-2 hover:ring-brand-100"
+                >
+                  @if (p.distancia !== null) {
+                    <p class="text-sm text-content-muted">{{ distancia(p.distancia) }}</p>
+                  }
+                  <h3 class="mt-1 truncate text-lg font-bold">{{ p.ubs.nome }}</h3>
+                  <app-funcionamento class="mt-1 block text-sm" [ubs]="p.ubs" />
+                  @if (remedios().length) {
                     <div
-                      class="h-full rounded-full bg-brand-600"
-                      [style.width.%]="(100 * p.disponiveis) / remedios().length"
-                    ></div>
-                  </div>
-                  <p class="mt-3 text-sm text-content-muted">
-                    {{ p.disponiveis }} de {{ remedios().length }} remédios disponíveis
-                  </p>
-                } @else {
-                  <p class="mt-1 text-sm text-content-muted">{{ p.ubs.bairro }}</p>
-                }
-              </a>
-            } @empty {
-              <p class="body-muted">Nenhuma unidade encontrada.</p>
-            }
-          </div>
+                      class="mt-3 h-2 overflow-hidden rounded-full bg-outline"
+                      role="progressbar"
+                      [attr.aria-valuenow]="p.disponiveis"
+                      aria-valuemin="0"
+                      [attr.aria-valuemax]="remedios().length"
+                    >
+                      <div
+                        class="h-full rounded-full bg-brand-600"
+                        [style.width.%]="(100 * p.disponiveis) / remedios().length"
+                      ></div>
+                    </div>
+                    <p class="mt-3 text-sm text-content-muted">
+                      {{ p.disponiveis }} de {{ remedios().length }} remédios disponíveis
+                    </p>
+                  } @else {
+                    <p class="mt-1 text-sm text-content-muted">{{ p.ubs.bairro }}</p>
+                  }
+                </a>
+              } @empty {
+                <app-estado-vazio
+                  class="sm:col-span-3"
+                  [titulo]="posicao() ? 'Nenhuma UBS perto de você' : 'Nenhuma unidade encontrada'"
+                  texto="Abra o mapa para procurar unidades em um raio maior."
+                  [icone]="iconesVazio.local"
+                >
+                  <a appButton variante="secundario" routerLink="/mapa">Abrir mapa</a>
+                </app-estado-vazio>
+              }
+            </div>
+          }
         </section>
       </div>
 
@@ -331,7 +401,20 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
                 <a routerLink="/mapa" class="font-semibold text-brand-600">Trocar</a>
               }
             </div>
-            @if (ubsReferencia(); as u) {
+            @if (referenciaPendente() === 'carregando') {
+              <app-esqueleto
+                formato="linha"
+                [quantidade]="1"
+                rotulo="Carregando sua UBS"
+                class="mt-3 block"
+              />
+            } @else if (referenciaPendente() === 'erro') {
+              <app-mensagem-erro
+                class="mt-3"
+                titulo="Não foi possível carregar sua UBS"
+                (tentarDeNovo)="recarregar()"
+              />
+            } @else if (ubsReferencia(); as u) {
               <p class="mt-3 text-2xl font-bold">{{ u.nome }}</p>
               <p class="mt-1 text-content-muted">
                 @if (distanciaReferencia() !== null) {
@@ -366,9 +449,59 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
               >Ver todos</a
             >
           </div>
-          <p class="mt-4 text-content-muted">
-            Você ainda não tem avisos. Quando um remédio da sua lista chegar, ele aparece aqui.
-          </p>
+          @let lista = avisos.avisos();
+          @if (lista === undefined) {
+            <p class="mt-4 text-content-muted">Carregando avisos…</p>
+          } @else if (lista === null) {
+            <p class="mt-4 text-content-muted">
+              Não foi possível carregar os avisos.
+              <button
+                type="button"
+                class="font-semibold text-brand-600 hover:underline"
+                (click)="carregarAvisos()"
+              >
+                Tentar de novo
+              </button>
+            </p>
+          } @else if (lista.length === 0) {
+            <p class="mt-4 text-content-muted">
+              Você ainda não tem avisos. Quando um remédio da sua lista chegar, ele aparece aqui.
+            </p>
+          } @else {
+            <ul class="mt-2 divide-y divide-outline">
+              @for (a of lista.slice(0, 3); track a.id) {
+                <li class="flex gap-3 py-3" [attr.data-lido]="a.lido">
+                  <span
+                    class="mt-2 size-2 shrink-0 rounded-full"
+                    [class]="a.lido ? 'bg-transparent' : 'bg-brand-600'"
+                    aria-hidden="true"
+                  ></span>
+                  <div class="min-w-0">
+                    <p class="font-semibold">
+                      {{ a.titulo }}
+                      @if (!a.lido) {
+                        <span class="sr-only">(não lido)</span>
+                      }
+                    </p>
+                    <p class="text-sm text-content-muted">{{ a.texto }}</p>
+                    <p class="mt-1 text-xs text-content-muted">{{ quando(a.criadoEm) }}</p>
+                  </div>
+                </li>
+              }
+            </ul>
+            @if (avisos.naoLidos()) {
+              <button
+                appButton
+                type="button"
+                variante="secundario"
+                class="mt-3 w-full"
+                [disabled]="marcandoLidos()"
+                (click)="marcarLidos()"
+              >
+                Marcar como lidos
+              </button>
+            }
+          }
         </section>
       </aside>
     </div>
@@ -379,8 +512,12 @@ export class HomePage {
   private readonly ubsService = inject(UbsService);
   private readonly medicamentoService = inject(MedicamentoService);
   private readonly preferencias = inject(PreferenciasService);
+  private readonly listaDesejos = inject(ListaDesejosService);
+  protected readonly avisos = inject(AvisosService);
+  protected readonly marcandoLidos = signal(false);
 
   protected readonly iconePilula = ICONE_PILULA;
+  protected readonly iconesVazio = ICONES_VAZIO;
   protected readonly iconePino =
     'M12 21s-7-6.2-7-12a7 7 0 0 1 14 0c0 5.8-7 12-7 12zM12 11.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z';
   protected readonly distancia = formatarDistancia;
@@ -390,19 +527,35 @@ export class HomePage {
   protected termo = '';
   protected readonly posicao = signal<Coordenadas | null>(null);
 
-  private readonly unidades = toSignal(this.ubsService.listar().pipe(catchError(() => of([]))), {
-    initialValue: [] as Ubs[],
-  });
+  private readonly tentativa = signal(0);
+
+  private readonly unidadesCarga = toSignal(
+    toObservable(this.tentativa).pipe(switchMap(() => carregar(this.ubsService.listar()))),
+    { initialValue: CARREGANDO as Recurso<Ubs[]> },
+  );
+  private readonly unidades = computed(() => dadosOu(this.unidadesCarga(), []));
 
   /** UBS do raio padrão da API, da mais próxima para a mais distante, com a distância. */
-  private readonly perto = toSignal(
-    toObservable(this.posicao).pipe(
-      switchMap((pos) =>
-        pos ? this.ubsService.proximas(pos).pipe(catchError(() => of([]))) : of([]),
+  private readonly pertoCarga = toSignal(
+    toObservable(computed(() => ({ pos: this.posicao(), tentativa: this.tentativa() }))).pipe(
+      switchMap(({ pos }) =>
+        pos ? carregar(this.ubsService.proximas(pos)) : of(CARREGANDO as Recurso<UbsProxima[]>),
       ),
     ),
-    { initialValue: [] as UbsProxima[] },
+    { initialValue: CARREGANDO as Recurso<UbsProxima[]> },
   );
+  private readonly perto = computed(() => dadosOu(this.pertoCarga(), []));
+
+  /** Com localização, a lista da API por proximidade; sem ela, todas as UBS por nome. */
+  protected readonly proximasCarga = computed(() =>
+    this.posicao() ? this.pertoCarga() : this.unidadesCarga(),
+  );
+
+  /** Situação da UBS de referência enquanto ela não pode ser mostrada (`null` = já resolvida). */
+  protected readonly referenciaPendente = computed(() => {
+    const estado = this.unidadesCarga().estado;
+    return this.preferencias.ubsReferenciaId() && estado !== 'pronto' ? estado : null;
+  });
 
   /** Distância (km) da API por id de UBS; fica sem distância quem está fora do raio. */
   private readonly distancias = computed(
@@ -423,22 +576,61 @@ export class HomePage {
     return u ? (this.distancias().get(u.id) ?? null) : null;
   });
 
-  private readonly carregados = toSignal(
-    toObservable(computed(() => this.preferencias.remediosContinuos())).pipe(
-      switchMap((ids) =>
-        ids.length === 0
-          ? of([])
-          : forkJoin(
-              ids.map((id) =>
-                forkJoin({
-                  medicamento: this.medicamentoService.buscarPorId(id),
-                  disponibilidade: this.medicamentoService.disponibilidade(id),
-                }).pipe(catchError(() => of(null))),
-              ),
-            ).pipe(map((r) => r.filter((x) => x !== null))),
+  /**
+   * Remédios de uso contínuo com a disponibilidade. Eles vêm da lista de desejos: enquanto ela não
+   * chega, é carregamento (e não "nenhum remédio"); se ela falha, é erro. Um remédio que falha não
+   * derruba os outros: fica de fora e entra na contagem de `falhas`, mostrada com "Tentar de novo".
+   */
+  protected readonly carregados = toSignal(
+    toObservable(
+      computed(() => {
+        const lista = this.listaDesejos.itens();
+        return {
+          // Só o estado da lista importa aqui: ligar um aviso ou mudar outro item não recarrega tudo.
+          lista: lista === undefined ? 'carregando' : lista === null ? 'erro' : 'ok',
+          ids: this.preferencias.remediosContinuos(),
+          tentativa: this.tentativa(),
+        };
+      }),
+    ).pipe(
+      distinctUntilChanged(
+        (a, b) =>
+          a.lista === b.lista && a.tentativa === b.tentativa && a.ids.join() === b.ids.join(),
+      ),
+      switchMap(({ lista, ids }) =>
+        lista === 'carregando'
+          ? of(CARREGANDO as Recurso<Carregados>)
+          : lista === 'erro'
+            ? of<Recurso<Carregados>>({ estado: 'erro', naoEncontrado: false })
+            : ids.length === 0
+              ? of<Recurso<Carregados>>({ estado: 'pronto', dados: { itens: [], falhas: 0 } })
+              : carregar(
+                  forkJoin(
+                    ids.map((id) =>
+                      forkJoin({
+                        medicamento: this.medicamentoService.buscarPorId(id),
+                        disponibilidade: this.medicamentoService.disponibilidade(id),
+                      }).pipe(catchError(() => of(null))),
+                    ),
+                  ).pipe(
+                    map((r) => ({
+                      itens: r.filter((x) => x !== null),
+                      falhas: r.filter((x) => x === null).length,
+                    })),
+                  ),
+                ),
       ),
     ),
-    { initialValue: [] as { medicamento: Medicamento; disponibilidade: Disponibilidade[] }[] },
+    { initialValue: CARREGANDO as Recurso<Carregados> },
+  );
+
+  protected readonly falhasRemedios = computed(
+    () => dadosOu(this.carregados(), { itens: [], falhas: 0 }).falhas,
+  );
+
+  /** Um cartão de esqueleto por remédio (até 4), para a área não mudar de tamanho ao carregar. */
+  protected readonly qtdEsqueletoRemedios = computed(() =>
+    Math.min(4, Math.max(1, this.preferencias.remediosContinuos().length)),
   );
 
   /**
@@ -473,7 +665,8 @@ export class HomePage {
   protected readonly remedios = computed((): Remedio[] => {
     const refId = this.preferencias.ubsReferenciaId();
     const distancias = this.distancias();
-    return this.carregados().map(({ medicamento, disponibilidade }) => {
+    const { itens } = dadosOu(this.carregados(), { itens: [], falhas: 0 } as Carregados);
+    return itens.map(({ medicamento, disponibilidade }) => {
       const naReferencia = disponibilidade.find((d) => d.ubs.id === refId) ?? null;
       const candidatas = disponibilidade
         .filter((d) => temEstoque(d) && d.ubs.id !== refId)
@@ -504,6 +697,13 @@ export class HomePage {
 
   constructor() {
     posicaoAtual().then((p) => this.posicao.set(p));
+    this.carregarAvisos();
+  }
+
+  protected recarregar(): void {
+    if (this.listaDesejos.itens() === null)
+      this.listaDesejos.listar().subscribe({ error: () => undefined });
+    this.tentativa.update((n) => n + 1);
   }
 
   protected previsao(r: Remedio): string {
@@ -541,5 +741,31 @@ export class HomePage {
 
   protected porCategoria(categoria: string): void {
     this.router.navigate(['/medicamentos'], { queryParams: { categoria } });
+  }
+
+  protected carregarAvisos(): void {
+    this.avisos.listar().subscribe({ error: () => undefined });
+  }
+
+  protected marcarLidos(): void {
+    this.marcandoLidos.set(true);
+    this.avisos.marcarComoLidos().subscribe({
+      next: () => this.marcandoLidos.set(false),
+      error: () => this.marcandoLidos.set(false),
+    });
+  }
+
+  /** "Hoje, 14:30", "Ontem, 09:10" ou "22/11, 08:00", no fuso de Maceió. */
+  protected quando(iso: string): string {
+    const fmt = (d: Date, o: Intl.DateTimeFormatOptions) =>
+      new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Maceio', ...o }).format(d);
+    const data = new Date(iso);
+    const dia = (d: Date) => fmt(d, { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const hora = fmt(data, { hour: '2-digit', minute: '2-digit' });
+    const agora = new Date();
+    const ontem = new Date(agora.getTime() - 86_400_000);
+    if (dia(data) === dia(agora)) return `Hoje, ${hora}`;
+    if (dia(data) === dia(ontem)) return `Ontem, ${hora}`;
+    return `${fmt(data, { day: '2-digit', month: '2-digit' })}, ${hora}`;
   }
 }
