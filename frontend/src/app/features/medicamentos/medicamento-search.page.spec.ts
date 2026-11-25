@@ -241,7 +241,7 @@ describe('MedicamentoSearchPage', () => {
 
     const req = http.expectOne((r) => r.url === '/api/medicamentos');
     expect(req.request.params.get('categoria')).toBe('Diabetes');
-    req.flush([]);
+    req.flush(pagina([]));
     http.verify();
   }));
 
@@ -422,6 +422,7 @@ describe('MedicamentoSearchPage', () => {
     http
       .expectOne('/api/medicamentos/99/rastreamento?ubsId=1')
       .flush({ medicamentoId: 99, ubsId: 1, remessa: null });
+    http.expectOne({ method: 'POST', url: '/api/medicamentos/99/buscas' }).flush(null);
     tick(250);
     http.expectOne('/api/medicamentos').flush(pagina([]));
     fixture.detectChanges();
@@ -440,6 +441,7 @@ describe('MedicamentoSearchPage', () => {
       .expectOne('/api/medicamentos/98/rastreamento?ubsId=1')
       .flush({ medicamentoId: 98, ubsId: 1, remessa: null });
     http.expectOne('/api/ubs?lat=0&lng=0&medicamentoId=98').flush([]);
+    http.expectOne({ method: 'POST', url: '/api/medicamentos/98/buscas' }).flush(null);
     fixture.detectChanges();
     expect(detalhe.querySelector('[role="alert"]')!.textContent).toContain(
       'Não foi possível carregar o medicamento',

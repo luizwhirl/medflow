@@ -218,6 +218,7 @@ describe('HomePage', () => {
   it('mostra esqueletos enquanto carrega, e não "nenhuma unidade"', () => {
     const fixture = TestBed.createComponent(HomePage);
     fixture.detectChanges();
+    http.expectOne('/api/avisos').flush([]);
     const el = fixture.nativeElement as HTMLElement;
     const rotulos = Array.from(el.querySelectorAll('app-esqueleto')).map((e) =>
       e.getAttribute('aria-label'),
@@ -247,6 +248,7 @@ describe('HomePage', () => {
   it('com erro nas unidades e em um remédio, mostra os erros e tenta de novo', () => {
     const fixture = TestBed.createComponent(HomePage);
     fixture.detectChanges();
+    http.expectOne('/api/avisos').flush([]);
     const el = fixture.nativeElement as HTMLElement;
     const semRede = new ProgressEvent('error');
 
@@ -288,6 +290,7 @@ describe('HomePage', () => {
   it('se a lista de desejos falha, mostra o erro dos remédios e tenta de novo', () => {
     const fixture = TestBed.createComponent(HomePage);
     fixture.detectChanges();
+    http.expectOne('/api/avisos').flush([]);
     const el = fixture.nativeElement as HTMLElement;
     http.expectOne('/api/ubs').flush([ubs(2, 'UBS Clima Bom')]);
     http.expectOne('/api/medicamentos/categorias').flush([]);
@@ -316,6 +319,7 @@ describe('HomePage', () => {
     );
     const fixture = TestBed.createComponent(HomePage);
     fixture.detectChanges();
+    http.expectOne('/api/avisos').flush([]);
     http.expectOne('/api/lista-desejos').flush([]);
     http.expectOne('/api/ubs').flush([]);
     http.expectOne('/api/medicamentos/categorias').flush([]);
