@@ -293,14 +293,44 @@ class PainelGestaoIntegrationTests(
         }
     }
 
+    private fun buscas(ubs: Long?, medicamento: Long, diasAtras: Long, total: Int) = jdbc.update(
+        "INSERT INTO contagem_busca (dia, medicamento_id, ubs_id, total) VALUES (?, ?, ?, ?)",
+        hoje.minusDays(diasAtras), medicamento, ubs, total,
+    )
+
     @Test
-    fun `mais procurados contam a lista de desejos em qualquer situacao do estoque`() {
+    fun `mais procurados somam as buscas dos ultimos 7 dias da UBS, e nao a lista de desejos`() {
         val c = cenario()
+        buscas(c.a, c.z, diasAtras = 0, total = 3)
+        buscas(c.a, c.z, diasAtras = 6, total = 4) // sétimo dia contando hoje: ainda entra
+        buscas(c.a, c.z, diasAtras = 7, total = 50) // fora da janela
+        buscas(c.a, c.y, diasAtras = 1, total = 5)
+        buscas(c.b, c.x, diasAtras = 0, total = 99) // outra UBS
+        buscas(null, c.x, diasAtras = 0, total = 99) // sem UBS de referência: só na rede
 
         pedir("demanda-reprimida", ubsId = c.a).andExpect {
-            jsonPath("$.maisProcurados[*].medicamento.id") { value(contains(c.x.toInt(), c.y.toInt(), c.w.toInt(), c.z.toInt())) }
-            jsonPath("$.maisProcurados[0].pacientes") { value(2) }
-            jsonPath("$.maisProcurados[3].pacientes") { value(1) }
+            // X e W estão na lista de desejos da A, mas ninguém os procurou lá nesses dias
+            jsonPath("$.maisProcurados[*].medicamento.id") { value(contains(c.z.toInt(), c.y.toInt())) }
+            jsonPath("$.maisProcurados[0].buscas") { value(7) }
+            jsonPath("$.maisProcurados[1].buscas") { value(5) }
+        }
+    }
+
+    @Test
+    fun `mais procurados da rede somam todas as UBS e as buscas sem UBS de referencia`() {
+        val c = cenario()
+        buscas(c.a, c.z, diasAtras = 0, total = 3)
+        buscas(c.a, c.y, diasAtras = 1, total = 5)
+        buscas(c.b, c.x, diasAtras = 0, total = 99)
+        buscas(null, c.x, diasAtras = 0, total = 99) // sem UBS de referência: entra só na rede
+        buscas(null, c.z, diasAtras = 2, total = 4)
+
+        // sem ubsId: gestor sem vínculo vê a rede toda (o seed não tem contagem de buscas)
+        pedir("demanda-reprimida").andExpect {
+            jsonPath("$.maisProcurados[*].medicamento.id") { value(contains(c.x.toInt(), c.z.toInt(), c.y.toInt())) }
+            jsonPath("$.maisProcurados[0].buscas") { value(198) }
+            jsonPath("$.maisProcurados[1].buscas") { value(7) }
+            jsonPath("$.maisProcurados[2].buscas") { value(5) }
         }
     }
 
@@ -453,6 +483,8 @@ class PainelGestaoIntegrationTests(
         item(vizinha, m, 50) // sobra (50 > 2 x 10), na mesma cidade
         lote(itemDoCarlos, "CARLOS-VENCIDO", -3, 4)
         desejo(paciente("Gui"), propria, m)
+        buscas(propria, m, diasAtras = 0, total = 2)
+        buscas(a.a, a.x, diasAtras = 0, total = 5) // procurado na UBS A: fora do escopo do Carlos
         jdbc.update("UPDATE ubs SET ultima_sincronizacao = ${meiaNoite(3)} WHERE id = ?", propria)
         val carlos = "carlos@medflow.local"
 

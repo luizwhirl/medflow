@@ -6,23 +6,21 @@ import { provideRouter } from '@angular/router';
 import { Shell } from './shell';
 
 describe('Shell', () => {
-  function montar(ubsReferenciaId: number | null = null) {
-    localStorage.setItem(
-      'medflow.preferencias',
-      JSON.stringify({ ubsReferenciaId, remediosContinuos: [4], buscasRecentes: [] }),
-    );
+  function montar(naoLidos = 0): HTMLElement {
     TestBed.configureTestingModule({
       providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
     });
     const fixture = TestBed.createComponent(Shell);
     fixture.detectChanges();
-    return { fixture, el: fixture.nativeElement as HTMLElement };
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne('/api/avisos/nao-lidos/total').flush({ naoLidos });
+    fixture.detectChanges();
+    http.verify();
+    return fixture.nativeElement as HTMLElement;
   }
 
-  afterEach(() => localStorage.removeItem('medflow.preferencias'));
-
   it('menu lateral tem os rótulos completos e curtos das seis abas', () => {
-    const lateral = montar().el.querySelector('aside nav')!;
+    const lateral = montar().querySelector('aside nav')!;
     const completos = Array.from(lateral.querySelectorAll('a span.hidden')).map((s) =>
       s.textContent?.trim(),
     );
@@ -37,26 +35,24 @@ describe('Shell', () => {
   });
 
   it('barra inferior usa os rótulos curtos', () => {
-    const navs = montar().el.querySelectorAll('nav');
+    const navs = montar().querySelectorAll('nav');
     const inferior = navs[navs.length - 1];
     const rotulos = Array.from(inferior.querySelectorAll('a')).map((a) => a.textContent?.trim());
     expect(rotulos).toEqual(['Início', 'Mapa', 'Buscar', 'Minha lista', 'Avisos', 'Perfil']);
   });
 
-  it('mostra quantos avisos não foram lidos na aba Avisos', () => {
-    const { fixture, el } = montar(2);
-    const http = TestBed.inject(HttpTestingController);
-    http.expectOne({ method: 'GET', url: '/api/avisos' }).flush([]);
-    http.expectOne('/api/avisos/nao-lidos/total').flush({ naoLidos: 2 });
-    fixture.detectChanges();
+  it('mostra os não lidos na aba Avisos, no menu e na barra inferior', () => {
+    const el = montar(120);
+    const contadores = Array.from(el.querySelectorAll('[data-contador]'));
+    expect(contadores.map((c) => c.textContent!.trim())).toEqual(['99+', '99+']);
+    for (const c of contadores) {
+      expect(c.closest('a')!.getAttribute('href')).toBe('/avisos');
+      // o leitor de tela ouve o número exato
+      expect(c.closest('a')!.textContent).toContain('120 não lidos');
+    }
+  });
 
-    const navs = el.querySelectorAll('nav');
-    const avisos = Array.from(navs[navs.length - 1].querySelectorAll('a')).find((a) =>
-      a.textContent!.includes('Avisos'),
-    )!;
-    // O número é só visual; o leitor de tela ouve "(2 não lidos)".
-    expect(avisos.querySelector('span[aria-hidden="true"]')!.textContent!.trim()).toBe('2');
-    expect(avisos.querySelector('.sr-only')!.textContent!.trim()).toBe('(2 não lidos)');
-    http.verify();
+  it('sem avisos não lidos, não mostra contador', () => {
+    expect(montar(0).querySelector('[data-contador]')).toBeNull();
   });
 });

@@ -72,7 +72,7 @@ describe('BoasVindasPage', () => {
   let http: HttpTestingController;
   let navegar: jasmine.Spy;
 
-  function abrir(localizacao: 'ok' | 'negada' = 'negada', voltar?: string) {
+  function abrir(localizacao: 'ok' | 'negada' = 'negada', voltar?: string, bairrosFalham = false) {
     salvarPreferencias({});
     spyOn(navigator.geolocation, 'getCurrentPosition').and.callFake((ok, erro) =>
       localizacao === 'ok'
@@ -89,7 +89,9 @@ describe('BoasVindasPage', () => {
     if (voltar) fixture.componentRef.setInput('voltar', voltar);
     fixture.detectChanges();
     http.expectOne('/api/lista-desejos').flush([]);
-    http.expectOne('/api/ubs/bairros').flush(['Benedito Bentes', 'Clima Bom']);
+    const bairros = http.expectOne('/api/ubs/bairros');
+    if (bairrosFalham) bairros.error(new ProgressEvent('error'));
+    else bairros.flush(['Benedito Bentes', 'Clima Bom']);
     fixture.detectChanges();
     return { fixture, el: fixture.nativeElement as HTMLElement };
   }
@@ -106,6 +108,14 @@ describe('BoasVindasPage', () => {
       o.textContent!.trim(),
     );
     expect(opcoes).toEqual(['Selecione', 'Benedito Bentes', 'Clima Bom']);
+  });
+
+  it('se os bairros não carregarem, avisa e desativa a escolha por bairro', () => {
+    const { el } = abrir('negada', undefined, true);
+    expect((el.querySelector('#bairro') as HTMLSelectElement).disabled).toBeTrue();
+    expect(el.querySelector('#erro-bairros')!.textContent).toContain(
+      'Não foi possível carregar os bairros',
+    );
   });
 
   it('com o bairro, a primeira UBS dele vira a de referência e volta para a rota pedida', fakeAsync(() => {

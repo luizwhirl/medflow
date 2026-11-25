@@ -1,5 +1,5 @@
 import { NgTemplateOutlet } from '@angular/common';
-import { Component, inject, input, signal } from '@angular/core';
+import { Component, computed, inject, input, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { catchError, firstValueFrom, of } from 'rxjs';
@@ -128,7 +128,8 @@ const RECURSOS = [
                 class="control min-w-0 flex-1"
                 [value]="bairro()"
                 (change)="bairro.set($any($event.target).value)"
-                [disabled]="bairros() === null"
+                [disabled]="bairros() === null || erroBairros()"
+                [attr.aria-describedby]="erroBairros() ? 'erro-bairros' : null"
               >
                 <option value="" disabled>
                   {{ bairros() === null ? 'Carregando bairros…' : 'Selecione' }}
@@ -146,6 +147,11 @@ const RECURSOS = [
                 OK
               </button>
             </div>
+            @if (erroBairros()) {
+              <p id="erro-bairros" class="text-sm font-semibold text-status-falta">
+                Não foi possível carregar os bairros. Use sua localização ou entre sem escolher.
+              </p>
+            }
           </form>
 
           @if (mensagem(); as m) {
@@ -183,11 +189,16 @@ export class BoasVindasPage {
   protected readonly ocupado = signal<'localizacao' | 'bairro' | null>(null);
   protected readonly mensagem = signal<string | null>(null);
 
-  /** `null` enquanto carrega; lista vazia se a API falhou. */
-  protected readonly bairros = toSignal(
-    this.ubsService.bairros().pipe(catchError(() => of([] as string[]))),
+  /** `null` enquanto carrega; `'erro'` se a API falhou. */
+  private readonly resposta = toSignal(
+    this.ubsService.bairros().pipe(catchError(() => of('erro' as const))),
     { initialValue: null },
   );
+  protected readonly erroBairros = computed(() => this.resposta() === 'erro');
+  protected readonly bairros = computed(() => {
+    const r = this.resposta();
+    return r === 'erro' ? [] : r;
+  });
 
   /** A UBS mais próxima vira a de referência (a busca por proximidade já vem ordenada). */
   protected async usarLocalizacao(): Promise<void> {

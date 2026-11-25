@@ -1,5 +1,5 @@
 import { NgTemplateOutlet } from '@angular/common';
-import { Component, inject } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 
 import { AvisosService } from '../core/services/avisos.service';
@@ -15,6 +15,22 @@ import { ICONE_MARCA, NAV_ITEMS } from './nav-items';
   selector: 'app-shell',
   imports: [RouterOutlet, RouterLink, RouterLinkActive, NgTemplateOutlet],
   template: `
+    <ng-template #contador let-item>
+      @if (item.path === '/avisos' && naoLidos()) {
+        <span
+          class="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-status-falta px-1 text-[0.6875rem] font-bold leading-none text-white"
+          aria-hidden="true"
+          data-contador
+          >{{ naoLidosTexto() }}</span
+        >
+      }
+    </ng-template>
+    <ng-template #rotuloLeitor let-item>
+      @if (item.path === '/avisos' && naoLidos()) {
+        <span class="sr-only">, {{ naoLidos() }} não lidos</span>
+      }
+    </ng-template>
+
     <ng-template #icone let-d>
       <svg
         class="size-6 shrink-0"
@@ -70,24 +86,11 @@ import { ICONE_MARCA, NAV_ITEMS } from './nav-items';
                 class="relative grid h-10 w-16 place-items-center rounded-full group-[.ativo]:bg-brand-100 xl:h-auto xl:w-auto xl:bg-transparent! xl:text-content-muted xl:group-[.ativo]:text-brand-600"
               >
                 <ng-container *ngTemplateOutlet="icone; context: { $implicit: item.icon }" />
-                @if (contador(item.path); as n) {
-                  <span
-                    class="absolute right-2 top-0 grid h-5 min-w-5 place-items-center rounded-full bg-status-falta px-1 text-[0.6875rem] font-bold text-white xl:hidden"
-                    aria-hidden="true"
-                    >{{ n }}</span
-                  >
-                }
+                <ng-container *ngTemplateOutlet="contador; context: { $implicit: item }" />
               </span>
               <span class="xl:hidden">{{ item.curto }}</span>
               <span class="hidden xl:inline">{{ item.label }}</span>
-              @if (contador(item.path); as n) {
-                <span
-                  class="ml-auto hidden h-6 min-w-6 place-items-center rounded-full bg-status-falta px-1.5 text-xs font-bold text-white xl:grid"
-                  aria-hidden="true"
-                  >{{ n }}</span
-                >
-                <span class="sr-only">({{ n }} não {{ n === 1 ? 'lido' : 'lidos' }})</span>
-              }
+              <ng-container *ngTemplateOutlet="rotuloLeitor; context: { $implicit: item }" />
             </a>
           }
         </nav>
@@ -134,18 +137,10 @@ import { ICONE_MARCA, NAV_ITEMS } from './nav-items';
           >
             <span class="relative">
               <ng-container *ngTemplateOutlet="icone; context: { $implicit: item.icon }" />
-              @if (contador(item.path); as n) {
-                <span
-                  class="absolute -right-2.5 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-status-falta px-1 text-[0.625rem] font-bold text-white"
-                  aria-hidden="true"
-                  >{{ n }}</span
-                >
-              }
+              <ng-container *ngTemplateOutlet="contador; context: { $implicit: item }" />
             </span>
             <span class="w-full truncate text-center">{{ item.curto }}</span>
-            @if (contador(item.path); as n) {
-              <span class="sr-only">({{ n }} não {{ n === 1 ? 'lido' : 'lidos' }})</span>
-            }
+            <ng-container *ngTemplateOutlet="rotuloLeitor; context: { $implicit: item }" />
           </a>
         }
       </nav>
@@ -153,12 +148,16 @@ import { ICONE_MARCA, NAV_ITEMS } from './nav-items';
   `,
 })
 export class Shell {
-  private readonly avisos = inject(AvisosService);
   protected readonly nav = NAV_ITEMS;
   protected readonly iconeMarca = ICONE_MARCA;
 
-  /** Número no item do menu (hoje, só os avisos não lidos); 0 esconde o contador. */
-  protected contador(path: string): number {
-    return path === '/avisos' ? this.avisos.naoLidos() : 0;
+  private readonly avisos = inject(AvisosService);
+  protected readonly naoLidos = this.avisos.naoLidos;
+  protected readonly naoLidosTexto = computed(() =>
+    this.naoLidos() > 99 ? '99+' : String(this.naoLidos()),
+  );
+
+  constructor() {
+    this.avisos.contarNaoLidos();
   }
 }

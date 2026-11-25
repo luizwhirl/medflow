@@ -1,15 +1,18 @@
+/** Tipos de aviso gerados pela API (`/api/avisos`). */
 export type TipoAviso = 'MEDICAMENTO_DISPONIVEL' | 'UBS_DADOS_ATRASADOS';
 
-/** Aviso do aparelho (`GET /api/avisos`, cabeçalho `X-Dispositivo-Id`); o texto vem pronto da API. */
+/** Aviso do aparelho (sem login), do mais recente para o mais antigo. */
 export interface Aviso {
   id: number;
   tipo: TipoAviso;
   titulo: string;
   texto: string;
   lido: boolean;
+  /** Instante ISO-8601. */
   criadoEm: string;
 }
 
+/** Tom visual do aviso na tela de avisos: chegada de remédio ou alerta sobre os dados da UBS. */
 export type TomAviso = 'disponivel' | 'alerta';
 
 export function tomDoAviso(a: Pick<Aviso, 'tipo'>): TomAviso {

@@ -2,107 +2,76 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 
-import { Aviso, quandoAconteceu, tomDoAviso } from '../models/aviso.model';
+import { Aviso } from '../models/aviso.model';
 import { AvisosService } from './avisos.service';
 
-const APARELHO = '15da7427-97f6-4bf1-9d99-004af964e951';
+const aparelho = '3f1c2b7e-8a4d-4e1f-9b2c-5d6e7f8a9b0c';
 
-const aviso = (id: number, lido = false, extra: Partial<Aviso> = {}): Aviso => ({
+const aviso = (id: number, lido: boolean): Aviso => ({
   id,
   tipo: 'MEDICAMENTO_DISPONIVEL',
   titulo: 'Medicamento disponível',
-  texto: 'O medicamento Metformina está disponível na unidade UBS Clima Bom.',
+  texto: 'Metformina chegou na sua UBS.',
   lido,
-  criadoEm: '2026-11-24T10:00:00Z',
-  ...extra,
-});
-
-describe('tomDoAviso e quandoAconteceu', () => {
-  it('usa alerta para dados atrasados e disponível para o resto', () => {
-    expect(tomDoAviso({ tipo: 'UBS_DADOS_ATRASADOS' })).toBe('alerta');
-    expect(tomDoAviso({ tipo: 'MEDICAMENTO_DISPONIVEL' })).toBe('disponivel');
-  });
-
-  it('formata o tempo de forma curta', () => {
-    const agora = Date.parse('2026-11-23T12:00:00Z');
-    expect(quandoAconteceu('2026-11-23T11:59:40Z', agora)).toBe('agora');
-    expect(quandoAconteceu('2026-11-23T11:20:00Z', agora)).toBe('há 40 min');
-    expect(quandoAconteceu('2026-11-23T09:00:00Z', agora)).toBe('há 3 h');
-    expect(quandoAconteceu('2026-11-22T10:00:00Z', agora)).toBe('ontem');
-    expect(quandoAconteceu('2026-11-19T12:00:00Z', agora)).toBe('há 4 dias');
-    expect(quandoAconteceu(undefined)).toBe('');
-  });
+  criadoEm: '2026-11-24T15:00:00Z',
 });
 
 describe('AvisosService', () => {
   let http: HttpTestingController;
+  let service: AvisosService;
 
-  function iniciar(): AvisosService {
-    localStorage.setItem('medflow.dispositivo', APARELHO);
+  beforeEach(() => {
+    localStorage.setItem('medflow.dispositivo', aparelho);
     TestBed.configureTestingModule({
       providers: [provideHttpClient(), provideHttpClientTesting()],
     });
     http = TestBed.inject(HttpTestingController);
-    return TestBed.inject(AvisosService);
-  }
+    service = TestBed.inject(AvisosService);
+  });
 
-  function responder(avisos: Aviso[], naoLidos: number): void {
+  afterEach(() => http.verify());
+
+  it('lista e conta os avisos do aparelho pelo X-Dispositivo-Id', () => {
+    service.listar().subscribe();
+    service.contarNaoLidos();
+
     const lista = http.expectOne({ method: 'GET', url: '/api/avisos' });
-    const total = http.expectOne('/api/avisos/nao-lidos/total');
-    expect(lista.request.headers.get('X-Dispositivo-Id')).toBe(APARELHO);
-    expect(total.request.headers.get('X-Dispositivo-Id')).toBe(APARELHO);
-    lista.flush(avisos);
-    total.flush({ naoLidos });
-  }
+    const total = http.expectOne({ method: 'GET', url: '/api/avisos/nao-lidos/total' });
+    for (const req of [lista, total]) {
+      expect(req.request.headers.get('X-Dispositivo-Id')).toBe(aparelho);
+    }
+    lista.flush([aviso(2, false), aviso(1, true)]);
+    total.flush({ naoLidos: 7 });
 
-  afterEach(() => {
-    http.verify();
-    localStorage.removeItem('medflow.dispositivo');
+    expect(service.avisos()?.map((a) => a.id)).toEqual([2, 1]);
+    expect(service.naoLidos()).toBe(7);
   });
 
-  it('pede os avisos do aparelho e usa o total de não lidos da API', () => {
-    const service = iniciar();
-    expect(service.estado()).toEqual({ tipo: 'carregando' });
-    // O total conta também os avisos além dos 50 da lista.
-    responder([aviso(2), aviso(1, true)], 60);
+  it('marcar como lidos zera o contador e marca os avisos já carregados', () => {
+    service.listar().subscribe();
+    http.expectOne('/api/avisos').flush([aviso(2, false), aviso(1, true)]);
+    service.contarNaoLidos();
+    http.expectOne('/api/avisos/nao-lidos/total').flush({ naoLidos: 1 });
 
-    expect(service.avisos().map((a) => a.id)).toEqual([2, 1]);
-    expect(service.naoLidos()).toBe(60);
-  });
-
-  it('marca todos como lidos na API e zera o contador', () => {
-    const service = iniciar();
-    responder([aviso(2), aviso(1)], 2);
-
-    service.marcarTodosComoLidos();
-    const patch = http.expectOne({ method: 'PATCH', url: '/api/avisos/lidas' });
-    expect(patch.request.headers.get('X-Dispositivo-Id')).toBe(APARELHO);
-    patch.flush({ atualizados: 2 });
+    service.marcarComoLidos().subscribe();
+    const req = http.expectOne({ method: 'PATCH', url: '/api/avisos/lidas' });
+    expect(req.request.headers.get('X-Dispositivo-Id')).toBe(aparelho);
+    req.flush({ atualizados: 1 });
 
     expect(service.naoLidos()).toBe(0);
-    expect(service.avisos().every((a) => a.lido)).toBeTrue();
+    expect(service.avisos()?.every((a) => a.lido)).toBeTrue();
   });
 
-  it('se marcar como lidos falhar, mantém como estava', () => {
-    const service = iniciar();
-    responder([aviso(1)], 1);
+  it('falha na leitura deixa a lista como erro e o contador como estava', () => {
+    service.contarNaoLidos();
+    http.expectOne('/api/avisos/nao-lidos/total').flush({ naoLidos: 3 });
 
-    service.marcarTodosComoLidos();
-    http
-      .expectOne({ method: 'PATCH', url: '/api/avisos/lidas' })
-      .flush(null, { status: 500, statusText: 'Erro' });
+    service.listar().subscribe({ error: () => undefined });
+    http.expectOne('/api/avisos').flush(null, { status: 500, statusText: 'Erro' });
+    service.contarNaoLidos();
+    http.expectOne('/api/avisos/nao-lidos/total').error(new ProgressEvent('error'));
 
-    expect(service.naoLidos()).toBe(1);
-  });
-
-  it('tenta de novo após erro', () => {
-    const service = iniciar();
-    http.expectOne({ method: 'GET', url: '/api/avisos' }).error(new ProgressEvent('error'));
-    http.expectOne('/api/avisos/nao-lidos/total');
-    expect(service.estado()).toEqual({ tipo: 'erro' });
-
-    service.recarregar();
-    responder([], 0);
-    expect(service.estado()).toEqual({ tipo: 'ok', avisos: [], naoLidos: 0 });
+    expect(service.avisos()).toBeNull();
+    expect(service.naoLidos()).toBe(3);
   });
 });

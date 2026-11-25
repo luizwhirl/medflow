@@ -82,8 +82,9 @@ describe('AvisosPage', () => {
 
   it('filtra os não lidos e marca todos como lidos na API', () => {
     const { fixture, el } = carregar();
-    expect(texto(botao(el, 'Todos'))).toBe('Todos · 3');
-    expect(texto(botao(el, 'Não lidos'))).toBe('Não lidos · 2');
+    // Sem números nos filtros: a lista traz no máximo 50, e o total de não lidos pode passar disso.
+    expect(texto(botao(el, 'Todos'))).toBe('Todos');
+    expect(texto(botao(el, 'Não lidos'))).toBe('Não lidos');
 
     botao(el, 'Não lidos').click();
     fixture.detectChanges();
@@ -118,5 +119,22 @@ describe('AvisosPage', () => {
     responder([], 0);
     fixture.detectChanges();
     expect(texto(el)).toContain('Nenhum aviso agora');
+  });
+
+  it('se não conseguir marcar como lidos, avisa e deixa tentar de novo', () => {
+    const { fixture, el } = carregar();
+    botao(el, 'Marcar todos como lidos').click();
+    fixture.detectChanges();
+    expect(botao(el, 'Marcar todos como lidos').disabled).toBeTrue();
+
+    http
+      .expectOne({ method: 'PATCH', url: '/api/avisos/lidas' })
+      .flush(null, { status: 500, statusText: 'Erro' });
+    fixture.detectChanges();
+    expect(texto(el.querySelector('[role="alert"]')!)).toContain(
+      'Não foi possível marcar os avisos como lidos',
+    );
+    expect(botao(el, 'Marcar todos como lidos').disabled).toBeFalse();
+    expect(itens(el).filter((i) => i.getAttribute('data-lido') === 'false').length).toBe(2);
   });
 });

@@ -11,7 +11,6 @@ import {
   linkRota,
   posicaoAtual,
 } from '../../core/geo';
-import { quandoAconteceu, tomDoAviso, TomAviso } from '../../core/models/aviso.model';
 import { Disponibilidade, statusExibido, temEstoque } from '../../core/models/estoque.model';
 import { Medicamento } from '../../core/models/medicamento.model';
 import { StatusEstoque } from '../../core/models/status-estoque';
@@ -84,9 +83,17 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
       </div>
       <a
         routerLink="/avisos"
-        class="hidden size-12 place-items-center rounded-control border border-outline bg-surface text-content xl:grid"
-        aria-label="Avisos"
+        class="relative hidden size-12 place-items-center rounded-control border border-outline bg-surface text-content xl:grid"
+        [attr.aria-label]="
+          avisos.naoLidos() ? 'Avisos, ' + avisos.naoLidos() + ' não lidos' : 'Avisos'
+        "
       >
+        @if (avisos.naoLidos()) {
+          <span
+            class="absolute right-2 top-2 size-2.5 rounded-full bg-status-falta"
+            aria-hidden="true"
+          ></span>
+        }
         <svg
           class="size-5"
           viewBox="0 0 24 24"
@@ -368,33 +375,57 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
               >Ver todos</a
             >
           </div>
-          @if (avisosRecentes(); as recentes) {
-            @if (recentes.length) {
-              <ul class="divide-y divide-outline" aria-label="Avisos recentes">
-                @for (a of recentes; track a.id) {
-                  <li class="flex gap-3 py-3">
-                    <span
-                      class="mt-1.5 size-2 shrink-0 rounded-full"
-                      [class]="corAviso[a.tom]"
-                      aria-hidden="true"
-                    ></span>
-                    <span class="min-w-0">
-                      <span class="block" [class.font-semibold]="!a.lido">{{ a.titulo }}</span>
-                      <span class="block text-sm text-content-muted">{{ a.quando }}</span>
-                    </span>
-                  </li>
-                }
-              </ul>
-              <a
-                routerLink="/avisos"
-                class="mt-2 inline-block font-semibold text-brand-600 xl:hidden"
-                >Ver todos</a
+          @let lista = avisos.avisos();
+          @if (lista === undefined) {
+            <p class="mt-4 text-content-muted">Carregando avisos…</p>
+          } @else if (lista === null) {
+            <p class="mt-4 text-content-muted">
+              Não foi possível carregar os avisos.
+              <button
+                type="button"
+                class="font-semibold text-brand-600 hover:underline"
+                (click)="carregarAvisos()"
               >
-            } @else {
-              <p class="mt-4 text-content-muted">
-                Você ainda não tem avisos. Quando um remédio da sua lista chegar na UBS, ele aparece
-                aqui.
-              </p>
+                Tentar de novo
+              </button>
+            </p>
+          } @else if (lista.length === 0) {
+            <p class="mt-4 text-content-muted">
+              Você ainda não tem avisos. Quando um remédio da sua lista chegar, ele aparece aqui.
+            </p>
+          } @else {
+            <ul class="mt-2 divide-y divide-outline">
+              @for (a of lista.slice(0, 3); track a.id) {
+                <li class="flex gap-3 py-3" [attr.data-lido]="a.lido">
+                  <span
+                    class="mt-2 size-2 shrink-0 rounded-full"
+                    [class]="a.lido ? 'bg-transparent' : 'bg-brand-600'"
+                    aria-hidden="true"
+                  ></span>
+                  <div class="min-w-0">
+                    <p class="font-semibold">
+                      {{ a.titulo }}
+                      @if (!a.lido) {
+                        <span class="sr-only">(não lido)</span>
+                      }
+                    </p>
+                    <p class="text-sm text-content-muted">{{ a.texto }}</p>
+                    <p class="mt-1 text-xs text-content-muted">{{ quando(a.criadoEm) }}</p>
+                  </div>
+                </li>
+              }
+            </ul>
+            @if (avisos.naoLidos()) {
+              <button
+                appButton
+                type="button"
+                variante="secundario"
+                class="mt-3 w-full"
+                [disabled]="marcandoLidos()"
+                (click)="marcarLidos()"
+              >
+                Marcar como lidos
+              </button>
             }
           }
         </section>
@@ -408,25 +439,7 @@ export class HomePage {
   private readonly medicamentoService = inject(MedicamentoService);
   private readonly preferencias = inject(PreferenciasService);
   protected readonly avisos = inject(AvisosService);
-
-  protected readonly corAviso: Record<TomAviso, string> = {
-    disponivel: 'bg-status-disponivel',
-    alerta: 'bg-status-alerta',
-  };
-
-  /** Os três avisos mais recentes (mesma chamada do contador do menu e da tela de Avisos). */
-  protected readonly avisosRecentes = computed(() =>
-    this.avisos
-      .avisos()
-      .slice(0, 3)
-      .map((a) => ({
-        id: a.id,
-        lido: a.lido,
-        titulo: a.titulo,
-        tom: tomDoAviso(a),
-        quando: quandoAconteceu(a.criadoEm),
-      })),
-  );
+  protected readonly marcandoLidos = signal(false);
 
   protected readonly iconePilula = ICONE_PILULA;
   protected readonly iconePino =
@@ -552,6 +565,7 @@ export class HomePage {
 
   constructor() {
     posicaoAtual().then((p) => this.posicao.set(p));
+    this.carregarAvisos();
   }
 
   protected previsao(r: Remedio): string {
@@ -589,5 +603,31 @@ export class HomePage {
 
   protected porCategoria(categoria: string): void {
     this.router.navigate(['/medicamentos'], { queryParams: { categoria } });
+  }
+
+  protected carregarAvisos(): void {
+    this.avisos.listar().subscribe({ error: () => undefined });
+  }
+
+  protected marcarLidos(): void {
+    this.marcandoLidos.set(true);
+    this.avisos.marcarComoLidos().subscribe({
+      next: () => this.marcandoLidos.set(false),
+      error: () => this.marcandoLidos.set(false),
+    });
+  }
+
+  /** "Hoje, 14:30", "Ontem, 09:10" ou "22/11, 08:00", no fuso de Maceió. */
+  protected quando(iso: string): string {
+    const fmt = (d: Date, o: Intl.DateTimeFormatOptions) =>
+      new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Maceio', ...o }).format(d);
+    const data = new Date(iso);
+    const dia = (d: Date) => fmt(d, { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const hora = fmt(data, { hour: '2-digit', minute: '2-digit' });
+    const agora = new Date();
+    const ontem = new Date(agora.getTime() - 86_400_000);
+    if (dia(data) === dia(agora)) return `Hoje, ${hora}`;
+    if (dia(data) === dia(ontem)) return `Ontem, ${hora}`;
+    return `${fmt(data, { day: '2-digit', month: '2-digit' })}, ${hora}`;
   }
 }

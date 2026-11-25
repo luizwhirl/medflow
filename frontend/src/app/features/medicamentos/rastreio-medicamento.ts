@@ -1,10 +1,11 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, input, signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import {
   catchError,
   distinctUntilChanged,
+  filter,
   forkJoin,
   map,
   Observable,
@@ -25,6 +26,7 @@ import { Disponibilidade, statusExibido, temEstoque } from '../../core/models/es
 import { ItemListaDesejo } from '../../core/models/lista-desejos.model';
 import { Medicamento } from '../../core/models/medicamento.model';
 import { RemessaRastreamento } from '../../core/models/rastreamento.model';
+import { primeiraProcuraDoDia } from '../../core/buscas-contadas';
 import { formatarDia, linhaDoTempo, PASSOS_REMESSA } from '../../core/remessa';
 import { Ubs } from '../../core/models/ubs.model';
 import { ListaDesejosService } from '../../core/services/lista-desejos.service';
@@ -446,6 +448,20 @@ export class RastreioMedicamento {
 
   constructor() {
     posicaoAtual().then((p) => this.posicao.set(p));
+    // Uma procura por medicamento aberto, uma vez por dia neste aparelho (recarregar ou reabrir
+    // não conta de novo); falhar aqui não atrapalha a tela.
+    toObservable(this.id)
+      .pipe(
+        distinctUntilChanged(),
+        filter((id) => primeiraProcuraDoDia(id)),
+        switchMap((id) =>
+          this.medicamentoService
+            .registrarBusca(id, this.preferencias.ubsReferenciaId())
+            .pipe(catchError(() => of(null))),
+        ),
+        takeUntilDestroyed(),
+      )
+      .subscribe();
   }
 
   /** Adiciona à Minha lista (na UBS de referência) ou tira dela. */

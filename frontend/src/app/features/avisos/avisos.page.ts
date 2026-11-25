@@ -46,98 +46,92 @@ const COR: Record<TomAviso, string> = {
         @if (avisos.naoLidos() > 0) {
           <button
             type="button"
-            class="font-semibold text-brand-600 hover:underline"
-            (click)="avisos.marcarTodosComoLidos()"
+            class="font-semibold text-brand-600 hover:underline disabled:opacity-60"
+            [disabled]="marcando()"
+            (click)="marcarTodos()"
           >
             Marcar todos como lidos
           </button>
         }
       </header>
+      <p class="mt-2 text-sm font-semibold text-status-falta empty:hidden" role="alert">
+        {{ erroMarcar() ? 'Não foi possível marcar os avisos como lidos. Tente de novo.' : '' }}
+      </p>
 
-      @let e = avisos.estado();
-      @switch (e.tipo) {
-        @case ('carregando') {
-          <p class="body-muted mt-6">Carregando avisos…</p>
-        }
-        @case ('erro') {
-          <div class="feedback-error mt-6 flex flex-wrap items-center justify-between gap-3">
-            <span>Não foi possível carregar os avisos agora. Verifique a conexão.</span>
-            <button type="button" class="font-semibold underline" (click)="avisos.recarregar()">
-              Tentar de novo
-            </button>
-          </div>
-        }
-        @case ('ok') {
-          <div class="mt-5 flex gap-2" role="group" aria-label="Filtrar avisos">
-            <app-chip
-              [selecionado]="!soNaoLidos()"
-              [fixo]="true"
-              (selecionadoChange)="soNaoLidos.set(false)"
-              >Todos · {{ avisos.avisos().length }}</app-chip
-            >
-            <app-chip
-              [selecionado]="soNaoLidos()"
-              [fixo]="true"
-              (selecionadoChange)="soNaoLidos.set(true)"
-              >Não lidos · {{ e.naoLidos }}</app-chip
-            >
-          </div>
+      @let lista = avisos.avisos();
+      @if (lista === undefined) {
+        <p class="body-muted mt-6">Carregando avisos…</p>
+      } @else if (lista === null) {
+        <div class="feedback-error mt-6 flex flex-wrap items-center justify-between gap-3">
+          <span>Não foi possível carregar os avisos agora. Verifique a conexão.</span>
+          <button type="button" class="font-semibold underline" (click)="carregar()">
+            Tentar de novo
+          </button>
+        </div>
+      } @else {
+        <div class="mt-5 flex gap-2" role="group" aria-label="Filtrar avisos">
+          <app-chip
+            [selecionado]="!soNaoLidos()"
+            [fixo]="true"
+            (selecionadoChange)="soNaoLidos.set(false)"
+            >Todos</app-chip
+          >
+          <app-chip
+            [selecionado]="soNaoLidos()"
+            [fixo]="true"
+            (selecionadoChange)="soNaoLidos.set(true)"
+            >Não lidos</app-chip
+          >
+        </div>
 
-          <ul class="surface-list mt-4" aria-label="Lista de avisos">
-            @for (l of linhas(); track l.id) {
-              <li>
-                <div
-                  class="flex gap-4 px-5 py-4"
-                  [class.bg-brand-50]="!l.lido"
-                  [attr.data-lido]="l.lido"
+        <ul class="surface-list mt-4" aria-label="Lista de avisos">
+          @for (l of linhas(); track l.id) {
+            <li>
+              <div
+                class="flex gap-4 px-5 py-4"
+                [class.bg-brand-50]="!l.lido"
+                [attr.data-lido]="l.lido"
+              >
+                <span
+                  class="grid size-11 shrink-0 place-items-center rounded-full"
+                  [class]="cor[l.tom]"
                 >
-                  <span
-                    class="grid size-11 shrink-0 place-items-center rounded-full"
-                    [class]="cor[l.tom]"
-                  >
-                    <ng-container
-                      *ngTemplateOutlet="icone; context: { $implicit: icones[l.tom] }"
-                    />
-                  </span>
-                  <span class="min-w-0 flex-1">
-                    <span class="flex items-start gap-2">
-                      <span
-                        class="flex-1"
-                        [class.font-bold]="!l.lido"
-                        [class.font-semibold]="l.lido"
-                      >
-                        {{ l.titulo }}
-                      </span>
-                      @if (!l.lido) {
-                        <span
-                          class="mt-2 size-2.5 shrink-0 rounded-full bg-brand-600"
-                          aria-hidden="true"
-                        ></span>
-                        <span class="sr-only">(não lido)</span>
-                      }
+                  <ng-container *ngTemplateOutlet="icone; context: { $implicit: icones[l.tom] }" />
+                </span>
+                <span class="min-w-0 flex-1">
+                  <span class="flex items-start gap-2">
+                    <span class="flex-1" [class.font-bold]="!l.lido" [class.font-semibold]="l.lido">
+                      {{ l.titulo }}
                     </span>
-                    <span class="mt-0.5 block text-sm text-content-muted">{{ l.texto }}</span>
-                    @if (l.quando) {
-                      <span class="mt-1 block text-xs text-content-muted">{{ l.quando }}</span>
+                    @if (!l.lido) {
+                      <span
+                        class="mt-2 size-2.5 shrink-0 rounded-full bg-brand-600"
+                        aria-hidden="true"
+                      ></span>
+                      <span class="sr-only">(não lido)</span>
                     }
                   </span>
-                </div>
-              </li>
-            } @empty {
-              <li class="body-muted p-6 text-center">
-                @if (soNaoLidos()) {
-                  Você leu todos os avisos.
-                } @else {
-                  Nenhum aviso agora. Ative o aviso nos remédios da
-                  <a routerLink="/lista" class="font-semibold text-brand-600 hover:underline"
-                    >Minha lista</a
-                  >
-                  para saber quando eles chegarem na UBS.
-                }
-              </li>
-            }
-          </ul>
-        }
+                  <span class="mt-0.5 block text-sm text-content-muted">{{ l.texto }}</span>
+                  @if (l.quando) {
+                    <span class="mt-1 block text-xs text-content-muted">{{ l.quando }}</span>
+                  }
+                </span>
+              </div>
+            </li>
+          } @empty {
+            <li class="body-muted p-6 text-center">
+              @if (soNaoLidos()) {
+                Você leu todos os avisos.
+              } @else {
+                Nenhum aviso agora. Ative o aviso nos remédios da
+                <a routerLink="/lista" class="font-semibold text-brand-600 hover:underline"
+                  >Minha lista</a
+                >
+                para saber quando eles chegarem na UBS.
+              }
+            </li>
+          }
+        </ul>
       }
     </div>
   `,
@@ -148,10 +142,11 @@ export class AvisosPage {
   protected readonly icones = ICONE;
   protected readonly cor = COR;
   protected readonly soNaoLidos = signal(false);
+  protected readonly marcando = signal(false);
+  protected readonly erroMarcar = signal(false);
 
   protected readonly linhas = computed(() =>
-    this.avisos
-      .avisos()
+    (this.avisos.avisos() ?? [])
       .filter((a) => !this.soNaoLidos() || !a.lido)
       .map((a) => ({
         id: a.id,
@@ -162,4 +157,26 @@ export class AvisosPage {
         quando: quandoAconteceu(a.criadoEm),
       })),
   );
+
+  constructor() {
+    // Busca de novo ao abrir: avisos gerados depois da última leitura aparecem aqui e no contador.
+    this.carregar();
+  }
+
+  protected carregar(): void {
+    this.avisos.listar().subscribe({ error: () => undefined });
+    this.avisos.contarNaoLidos();
+  }
+
+  protected marcarTodos(): void {
+    this.marcando.set(true);
+    this.erroMarcar.set(false);
+    this.avisos.marcarComoLidos().subscribe({
+      next: () => this.marcando.set(false),
+      error: () => {
+        this.marcando.set(false);
+        this.erroMarcar.set(true);
+      },
+    });
+  }
 }
