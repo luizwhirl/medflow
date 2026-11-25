@@ -9,7 +9,7 @@
 2. Faça commits pequenos e com mensagem clara (veja abaixo).
 3. Abra um Pull Request para a `develop` preenchendo o template, com pelo menos **1 revisor**.
    O título começa com o ticket do Jira entre colchetes (veja [Título do Pull Request](#título-do-pull-request)).
-4. O CI precisa passar antes do merge: build e testes do backend, validação das migrations (Flyway, contra o banco da branch de destino) e, no front, Prettier, ESLint, build e testes.
+4. O CI precisa passar antes do merge: build e testes do backend, validação das migrations (Flyway, contra o banco da branch de destino, no perfil dev e na configuração de produção) e, no front, Prettier, ESLint, build e testes.
 5. A `main` só recebe a `develop` quando fechamos uma entrega; ninguém abre PR de feature direto para ela.
 
 ## Mensagens de commit
@@ -46,6 +46,7 @@ Use o número do ticket que o PR resolve (o mesmo citado no corpo do PR).
 - **Kotlin:** estilo oficial do Kotlin (4 espaços), package-by-feature, DTOs como `data class`.
 - **Angular/TS:** Prettier (`npm run format`), componentes standalone, signals, Tailwind para estilos.
 - **SQL:** palavras-chave em maiúsculas, nomes em `snake_case`, migrations nunca editadas depois de mergeadas.
+- **Número da migration:** use uma versão maior que a última do `develop`. Se outro PR com migration entrar antes do seu, atualize a branch com o `develop` e renumere se preciso: em produção o Flyway não aplica versão menor que a última já aplicada, e o CI só confere contra o `develop` do momento em que rodou.
 - Escreva testes junto com a funcionalidade: `*Test.kt` / `*.spec.ts`.
 
 ## Antes de abrir o PR
