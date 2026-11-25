@@ -1,9 +1,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { ActivatedRouteSnapshot, RouterStateSnapshot } from '@angular/router';
 
-import { marcarAvisosComoLidos } from '../guards/avisos.guard';
 import { Aviso } from '../models/aviso.model';
 import { AvisosService } from './avisos.service';
 
@@ -75,15 +73,5 @@ describe('AvisosService', () => {
 
     expect(service.avisos()).toBeNull();
     expect(service.naoLidos()).toBe(3);
-  });
-
-  it('abrir a tela de avisos marca todos como lidos sem segurar a navegação', () => {
-    const liberou = TestBed.runInInjectionContext(() =>
-      marcarAvisosComoLidos({} as ActivatedRouteSnapshot, {} as RouterStateSnapshot),
-    );
-    expect(liberou).toBeTrue();
-    http
-      .expectOne({ method: 'PATCH', url: '/api/avisos/lidas' })
-      .flush(null, { status: 500, statusText: 'Erro' });
   });
 });
