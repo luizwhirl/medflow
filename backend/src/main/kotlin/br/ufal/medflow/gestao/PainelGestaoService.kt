@@ -12,6 +12,9 @@ import java.time.ZoneId
 const val DIAS_VENCIMENTO_PADRAO = 60
 const val DIAS_ATRASO_PADRAO = 1
 
+/** "Mais procurados" contam as buscas de hoje e dos 6 dias anteriores. */
+const val DIAS_MAIS_PROCURADOS = 7L
+
 /** Fuso do "hoje" do painel (vencimento dos lotes e atraso da sincronização): o de Maceió, como no resto do projeto. */
 internal val FUSO_PAINEL: ZoneId = ZoneId.of("America/Maceio")
 
@@ -61,7 +64,7 @@ class PainelGestaoService(
         val ubsId = escopoService.resolver(usuarioId, ubsIdPedida).ubsId
         return DemandaReprimidaResponse(
             itens = repositorio.demandaPorUbs(ubsId, limite),
-            maisProcurados = repositorio.maisProcurados(ubsId, limite),
+            maisProcurados = repositorio.maisProcurados(ubsId, hoje().minusDays(DIAS_MAIS_PROCURADOS - 1), limite),
         )
     }
 

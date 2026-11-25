@@ -1,7 +1,8 @@
 import { NgTemplateOutlet } from '@angular/common';
-import { Component } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 
+import { AvisosService } from '../core/services/avisos.service';
 import { BannerOffline } from '../shared/components/banner-offline';
 import { ICONE_MARCA, NAV_ITEMS } from './nav-items';
 
@@ -15,6 +16,22 @@ import { ICONE_MARCA, NAV_ITEMS } from './nav-items';
   selector: 'app-shell',
   imports: [RouterOutlet, RouterLink, RouterLinkActive, NgTemplateOutlet, BannerOffline],
   template: `
+    <ng-template #contador let-item>
+      @if (item.path === '/avisos' && naoLidos()) {
+        <span
+          class="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-status-falta px-1 text-[0.6875rem] font-bold leading-none text-white"
+          aria-hidden="true"
+          data-contador
+          >{{ naoLidosTexto() }}</span
+        >
+      }
+    </ng-template>
+    <ng-template #rotuloLeitor let-item>
+      @if (item.path === '/avisos' && naoLidos()) {
+        <span class="sr-only">, {{ naoLidos() }} não lidos</span>
+      }
+    </ng-template>
+
     <ng-template #icone let-d>
       <svg
         class="size-6 shrink-0"
@@ -67,12 +84,14 @@ import { ICONE_MARCA, NAV_ITEMS } from './nav-items';
               class="group flex flex-col items-center gap-1 py-1 text-xs font-medium text-content-muted xl:flex-row xl:gap-3 xl:rounded-control xl:px-4 xl:py-3 xl:text-base xl:font-normal xl:text-content [&.ativo]:text-brand-600 xl:[&.ativo]:bg-brand-50 xl:[&.ativo]:font-semibold"
             >
               <span
-                class="grid h-10 w-16 place-items-center rounded-full group-[.ativo]:bg-brand-100 xl:h-auto xl:w-auto xl:bg-transparent! xl:text-content-muted xl:group-[.ativo]:text-brand-600"
+                class="relative grid h-10 w-16 place-items-center rounded-full group-[.ativo]:bg-brand-100 xl:h-auto xl:w-auto xl:bg-transparent! xl:text-content-muted xl:group-[.ativo]:text-brand-600"
               >
                 <ng-container *ngTemplateOutlet="icone; context: { $implicit: item.icon }" />
+                <ng-container *ngTemplateOutlet="contador; context: { $implicit: item }" />
               </span>
               <span class="xl:hidden">{{ item.curto }}</span>
               <span class="hidden xl:inline">{{ item.label }}</span>
+              <ng-container *ngTemplateOutlet="rotuloLeitor; context: { $implicit: item }" />
             </a>
           }
         </nav>
@@ -119,8 +138,12 @@ import { ICONE_MARCA, NAV_ITEMS } from './nav-items';
             [attr.aria-current]="rla.isActive ? 'page' : null"
             class="flex min-w-0 flex-col items-center gap-0.5 px-0.5 py-2 text-[0.625rem] font-medium text-content-muted"
           >
-            <ng-container *ngTemplateOutlet="icone; context: { $implicit: item.icon }" />
+            <span class="relative">
+              <ng-container *ngTemplateOutlet="icone; context: { $implicit: item.icon }" />
+              <ng-container *ngTemplateOutlet="contador; context: { $implicit: item }" />
+            </span>
             <span class="w-full truncate text-center">{{ item.curto }}</span>
+            <ng-container *ngTemplateOutlet="rotuloLeitor; context: { $implicit: item }" />
           </a>
         }
       </nav>
@@ -130,4 +153,14 @@ import { ICONE_MARCA, NAV_ITEMS } from './nav-items';
 export class Shell {
   protected readonly nav = NAV_ITEMS;
   protected readonly iconeMarca = ICONE_MARCA;
+
+  private readonly avisos = inject(AvisosService);
+  protected readonly naoLidos = this.avisos.naoLidos;
+  protected readonly naoLidosTexto = computed(() =>
+    this.naoLidos() > 99 ? '99+' : String(this.naoLidos()),
+  );
+
+  constructor() {
+    this.avisos.contarNaoLidos();
+  }
 }

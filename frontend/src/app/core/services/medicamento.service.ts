@@ -16,10 +16,19 @@ export class MedicamentoService {
   /**
    * Primeira página da busca, em ordem de nome, com o total encontrado.
    * Sem `tamanho`, a API devolve 20 itens (no máximo, `TAMANHO_MAXIMO_PAGINA`).
+   * `alternativas` são as outras transcrições da busca por voz: vão como `busca` repetido, e a API
+   * ordena pela que combinar melhor (até três no total).
    */
-  buscar(termo = '', categoria = '', tamanho?: number): Observable<Pagina<Medicamento>> {
+  buscar(
+    termo = '',
+    categoria = '',
+    tamanho?: number,
+    alternativas: string[] = [],
+  ): Observable<Pagina<Medicamento>> {
     let params = new HttpParams();
-    if (termo) params = params.set('busca', termo);
+    if (termo) {
+      for (const t of [termo, ...alternativas].slice(0, 3)) params = params.append('busca', t);
+    }
     if (categoria) params = params.set('categoria', categoria);
     if (tamanho != null) params = params.set('tamanho', tamanho);
     return this.http.get<Pagina<Medicamento>>(this.baseUrl, { params });
@@ -37,6 +46,14 @@ export class MedicamentoService {
   rastreamento(id: number, ubsId: number): Observable<Rastreamento> {
     const params = new HttpParams().set('ubsId', ubsId);
     return this.http.get<Rastreamento>(`${this.baseUrl}/${id}/rastreamento`, { params });
+  }
+
+  /**
+   * Conta uma procura do medicamento para o "mais procurados" da gestão. A API guarda só a contagem
+   * do dia por medicamento e UBS de referência, sem nada da pessoa.
+   */
+  registrarBusca(id: number, ubsId: number | null): Observable<void> {
+    return this.http.post<void>(`${this.baseUrl}/${id}/buscas`, ubsId ? { ubsId } : {});
   }
 
   disponibilidade(id: number): Observable<Disponibilidade[]> {

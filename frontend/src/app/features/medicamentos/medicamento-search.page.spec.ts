@@ -81,6 +81,7 @@ describe('MedicamentoSearchPage', () => {
   let http: HttpTestingController;
 
   beforeEach(() => {
+    localStorage.removeItem('medflow.buscas-contadas');
     localStorage.setItem(
       'medflow.preferencias',
       JSON.stringify({ ubsReferenciaId: 1, buscasRecentes: [] }),
@@ -94,7 +95,10 @@ describe('MedicamentoSearchPage', () => {
     http = TestBed.inject(HttpTestingController);
   });
 
-  afterEach(() => localStorage.removeItem('medflow.preferencias'));
+  afterEach(() => {
+    localStorage.removeItem('medflow.preferencias');
+    localStorage.removeItem('medflow.buscas-contadas');
+  });
 
   function resultados(el: HTMLElement): string[] {
     return Array.from(el.querySelectorAll('[aria-label="Resultados"] a')).map((a) =>
@@ -261,6 +265,7 @@ describe('MedicamentoSearchPage', () => {
     http.expectOne('/api/medicamentos/categorias').flush([]);
     http.expectOne('/api/medicamentos/1').flush(metformina);
     http.expectOne('/api/medicamentos/1/disponibilidade').flush(disponibilidade);
+    http.expectOne({ method: 'POST', url: '/api/medicamentos/1/buscas' }).flush(null);
     if (comReferencia) {
       http
         .expectOne('/api/medicamentos/1/rastreamento?ubsId=1')
@@ -464,6 +469,7 @@ describe('MedicamentoSearchPage', () => {
         atualizadoEm: '',
       },
     ]);
+    http.expectOne({ method: 'POST', url: '/api/medicamentos/1/buscas' }).flush(null);
     http
       .expectOne('/api/medicamentos/1/rastreamento?ubsId=1')
       .flush({ medicamentoId: 1, ubsId: 1, remessa: null });

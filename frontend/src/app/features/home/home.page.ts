@@ -17,6 +17,7 @@ import { StatusEstoque } from '../../core/models/status-estoque';
 import { Ubs, UbsProxima } from '../../core/models/ubs.model';
 import { CARREGANDO, carregar, dadosOu, Recurso } from '../../core/recurso';
 import { textoChegada } from '../../core/remessa';
+import { AvisosService } from '../../core/services/avisos.service';
 import { ListaDesejosService } from '../../core/services/lista-desejos.service';
 import { MedicamentoService } from '../../core/services/medicamento.service';
 import { PreferenciasService } from '../../core/services/preferencias.service';
@@ -95,9 +96,17 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
       </div>
       <a
         routerLink="/avisos"
-        class="hidden size-12 place-items-center rounded-control border border-outline bg-surface text-content xl:grid"
-        aria-label="Avisos"
+        class="relative hidden size-12 place-items-center rounded-control border border-outline bg-surface text-content xl:grid"
+        [attr.aria-label]="
+          avisos.naoLidos() ? 'Avisos, ' + avisos.naoLidos() + ' não lidos' : 'Avisos'
+        "
       >
+        @if (avisos.naoLidos()) {
+          <span
+            class="absolute right-2 top-2 size-2.5 rounded-full bg-status-falta"
+            aria-hidden="true"
+          ></span>
+        }
         <svg
           class="size-5"
           viewBox="0 0 24 24"
@@ -440,9 +449,59 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
               >Ver todos</a
             >
           </div>
-          <p class="mt-4 text-content-muted">
-            Você ainda não tem avisos. Quando um remédio da sua lista chegar, ele aparece aqui.
-          </p>
+          @let lista = avisos.avisos();
+          @if (lista === undefined) {
+            <p class="mt-4 text-content-muted">Carregando avisos…</p>
+          } @else if (lista === null) {
+            <p class="mt-4 text-content-muted">
+              Não foi possível carregar os avisos.
+              <button
+                type="button"
+                class="font-semibold text-brand-600 hover:underline"
+                (click)="carregarAvisos()"
+              >
+                Tentar de novo
+              </button>
+            </p>
+          } @else if (lista.length === 0) {
+            <p class="mt-4 text-content-muted">
+              Você ainda não tem avisos. Quando um remédio da sua lista chegar, ele aparece aqui.
+            </p>
+          } @else {
+            <ul class="mt-2 divide-y divide-outline">
+              @for (a of lista.slice(0, 3); track a.id) {
+                <li class="flex gap-3 py-3" [attr.data-lido]="a.lido">
+                  <span
+                    class="mt-2 size-2 shrink-0 rounded-full"
+                    [class]="a.lido ? 'bg-transparent' : 'bg-brand-600'"
+                    aria-hidden="true"
+                  ></span>
+                  <div class="min-w-0">
+                    <p class="font-semibold">
+                      {{ a.titulo }}
+                      @if (!a.lido) {
+                        <span class="sr-only">(não lido)</span>
+                      }
+                    </p>
+                    <p class="text-sm text-content-muted">{{ a.texto }}</p>
+                    <p class="mt-1 text-xs text-content-muted">{{ quando(a.criadoEm) }}</p>
+                  </div>
+                </li>
+              }
+            </ul>
+            @if (avisos.naoLidos()) {
+              <button
+                appButton
+                type="button"
+                variante="secundario"
+                class="mt-3 w-full"
+                [disabled]="marcandoLidos()"
+                (click)="marcarLidos()"
+              >
+                Marcar como lidos
+              </button>
+            }
+          }
         </section>
       </aside>
     </div>
@@ -454,6 +513,8 @@ export class HomePage {
   private readonly medicamentoService = inject(MedicamentoService);
   private readonly preferencias = inject(PreferenciasService);
   private readonly listaDesejos = inject(ListaDesejosService);
+  protected readonly avisos = inject(AvisosService);
+  protected readonly marcandoLidos = signal(false);
 
   protected readonly iconePilula = ICONE_PILULA;
   protected readonly iconesVazio = ICONES_VAZIO;
@@ -628,6 +689,7 @@ export class HomePage {
 
   constructor() {
     posicaoAtual().then((p) => this.posicao.set(p));
+    this.carregarAvisos();
   }
 
   protected recarregar(): void {
@@ -671,5 +733,31 @@ export class HomePage {
 
   protected porCategoria(categoria: string): void {
     this.router.navigate(['/medicamentos'], { queryParams: { categoria } });
+  }
+
+  protected carregarAvisos(): void {
+    this.avisos.listar().subscribe({ error: () => undefined });
+  }
+
+  protected marcarLidos(): void {
+    this.marcandoLidos.set(true);
+    this.avisos.marcarComoLidos().subscribe({
+      next: () => this.marcandoLidos.set(false),
+      error: () => this.marcandoLidos.set(false),
+    });
+  }
+
+  /** "Hoje, 14:30", "Ontem, 09:10" ou "22/11, 08:00", no fuso de Maceió. */
+  protected quando(iso: string): string {
+    const fmt = (d: Date, o: Intl.DateTimeFormatOptions) =>
+      new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Maceio', ...o }).format(d);
+    const data = new Date(iso);
+    const dia = (d: Date) => fmt(d, { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const hora = fmt(data, { hour: '2-digit', minute: '2-digit' });
+    const agora = new Date();
+    const ontem = new Date(agora.getTime() - 86_400_000);
+    if (dia(data) === dia(agora)) return `Hoje, ${hora}`;
+    if (dia(data) === dia(ontem)) return `Ontem, ${hora}`;
+    return `${fmt(data, { day: '2-digit', month: '2-digit' })}, ${hora}`;
   }
 }

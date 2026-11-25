@@ -51,6 +51,7 @@ class SecurityConfig(private val props: JwtProperties) {
                 authorize(HttpMethod.POST, "/api/auth/cadastro", permitAll)
                 authorize(HttpMethod.GET, "/api/ubs/**", permitAll)
                 authorize(HttpMethod.GET, "/api/medicamentos/**", permitAll)
+                authorize(HttpMethod.POST, "/api/medicamentos/*/buscas", permitAll)
                 authorize("/actuator/health/**", permitAll)
                 authorize("/swagger-ui.html", permitAll)
                 authorize("/swagger-ui/**", permitAll)

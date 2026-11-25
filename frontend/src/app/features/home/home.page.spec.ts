@@ -7,6 +7,7 @@ import { compararDistancia, formatarDistancia } from '../../core/geo';
 import { ItemListaDesejo } from '../../core/models/lista-desejos.model';
 import { Medicamento } from '../../core/models/medicamento.model';
 import { Ubs } from '../../core/models/ubs.model';
+import { AvisosService } from '../../core/services/avisos.service';
 import { PreferenciasService } from '../../core/services/preferencias.service';
 import { HomePage } from './home.page';
 
@@ -124,6 +125,7 @@ describe('PreferenciasService', () => {
       ubsReferenciaId: 7,
       buscasRecentes: ['Insulina'],
       remediosAMigrar: [],
+      boasVindasConcluidas: false,
     });
   });
 
@@ -162,6 +164,7 @@ describe('HomePage', () => {
     fixture.detectChanges();
 
     http.expectOne('/api/lista-desejos').flush([desejo(10, 1, 2)]);
+    http.expectOne('/api/avisos').flush([]);
     fixture.detectChanges();
     http.expectOne('/api/ubs').flush([ubs(1, 'UBS Centro'), ubs(2, 'UBS Clima Bom')]);
     http.expectOne('/api/medicamentos/categorias').flush(['Diabetes', 'Hipertensão']);
@@ -189,6 +192,7 @@ describe('HomePage', () => {
     fixture.detectChanges();
 
     http.expectOne('/api/lista-desejos').flush([desejo(10, 1, 2)]);
+    http.expectOne('/api/avisos').flush([]);
     fixture.detectChanges();
     http.expectOne('/api/ubs').flush([ubs(1, 'UBS Centro'), ubs(2, 'UBS Clima Bom')]);
     http.expectOne('/api/medicamentos/categorias').flush([]);
@@ -335,6 +339,7 @@ describe('HomePage', () => {
     fixture.detectChanges();
 
     http.expectOne('/api/lista-desejos').flush([desejo(10, 1, 2)]);
+    http.expectOne('/api/avisos').flush([]);
     fixture.detectChanges();
     http.expectOne('/api/ubs').flush([ubs(1, 'UBS Centro'), ubs(2, 'UBS Clima Bom')]);
     http.expectOne('/api/medicamentos/categorias').flush([]);
@@ -375,6 +380,7 @@ describe('HomePage', () => {
     fixture.detectChanges();
 
     http.expectOne('/api/lista-desejos').flush([desejo(10, 1, 2)]);
+    http.expectOne('/api/avisos').flush([]);
     fixture.detectChanges();
     http.expectOne('/api/ubs').flush([ubs(1, 'UBS Centro'), ubs(2, 'UBS Clima Bom')]);
     http.expectOne('/api/medicamentos/categorias').flush([]);
@@ -409,6 +415,71 @@ describe('HomePage', () => {
     )!.textContent!;
     expect(continuos).toContain('Chega qui, 22/10');
     expect(continuos).not.toContain('Sem previsão de remessa');
+    http.verify();
+  });
+
+  it('Avisos recentes mostra os três últimos, destaca os não lidos e marca como lidos', () => {
+    const fixture = TestBed.createComponent(HomePage);
+    fixture.detectChanges();
+    http.expectOne('/api/lista-desejos').flush([]);
+    const agora = new Date().toISOString();
+    http.expectOne('/api/avisos').flush(
+      [4, 3, 2, 1].map((id) => ({
+        id,
+        tipo: 'MEDICAMENTO_DISPONIVEL',
+        titulo: `Aviso ${id}`,
+        texto: 'Metformina chegou na sua UBS.',
+        lido: id < 3,
+        criadoEm: agora,
+      })),
+    );
+    http.expectOne('/api/ubs').flush([]);
+    http.expectOne('/api/medicamentos/categorias').flush([]);
+    // o contador vem do menu; aqui ele é preenchido direto no serviço
+    const avisos = TestBed.inject(AvisosService);
+    avisos.contarNaoLidos();
+    http.expectOne('/api/avisos/nao-lidos/total').flush({ naoLidos: 2 });
+    fixture.detectChanges();
+
+    const card = () =>
+      (fixture.nativeElement as HTMLElement).querySelector('[aria-labelledby="titulo-avisos"]')!;
+    const itens = Array.from(card().querySelectorAll('li'));
+    expect(itens.map((li) => li.querySelector('p')!.textContent!.trim())).toEqual([
+      'Aviso 4 (não lido)',
+      'Aviso 3 (não lido)',
+      'Aviso 2',
+    ]);
+    expect(itens[0].textContent).toContain('Hoje,');
+
+    const marcar = Array.from(card().querySelectorAll('button')).find((b) =>
+      b.textContent!.includes('Marcar como lidos'),
+    )!;
+    marcar.click();
+    http.expectOne({ method: 'PATCH', url: '/api/avisos/lidas' }).flush({ atualizados: 2 });
+    fixture.detectChanges();
+
+    expect(card().querySelectorAll('li[data-lido="false"]').length).toBe(0);
+    expect(card().textContent).not.toContain('Marcar como lidos');
+    http.verify();
+  });
+
+  it('Avisos recentes mostra o erro e deixa tentar de novo', () => {
+    const fixture = TestBed.createComponent(HomePage);
+    fixture.detectChanges();
+    http.expectOne('/api/lista-desejos').flush([]);
+    http.expectOne('/api/avisos').flush(null, { status: 500, statusText: 'Erro' });
+    http.expectOne('/api/ubs').flush([]);
+    http.expectOne('/api/medicamentos/categorias').flush([]);
+    fixture.detectChanges();
+
+    const card = (fixture.nativeElement as HTMLElement).querySelector(
+      '[aria-labelledby="titulo-avisos"]',
+    )!;
+    expect(card.textContent).toContain('Não foi possível carregar os avisos.');
+    card.querySelector('button')!.click();
+    http.expectOne('/api/avisos').flush([]);
+    fixture.detectChanges();
+    expect(card.textContent).toContain('Você ainda não tem avisos.');
     http.verify();
   });
 });

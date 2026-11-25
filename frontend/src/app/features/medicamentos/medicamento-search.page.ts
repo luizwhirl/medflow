@@ -9,6 +9,7 @@ import { Medicamento } from '../../core/models/medicamento.model';
 import { CARREGANDO, carregar, dadosOu, Recurso } from '../../core/recurso';
 import { MedicamentoService } from '../../core/services/medicamento.service';
 import { PreferenciasService } from '../../core/services/preferencias.service';
+import { ResultadoVoz } from '../../core/services/reconhecimento-voz.service';
 import { UbsService } from '../../core/services/ubs.service';
 import { Chip } from '../../shared/components/chip';
 import { Esqueleto } from '../../shared/components/esqueleto';
@@ -63,6 +64,7 @@ interface Resultado {
           [valor]="termo()"
           (valorChange)="termo.set($event)"
           (buscar)="preferencias.registrarBusca($event)"
+          (voz)="voz.set($event)"
         />
         <div
           class="-mx-4 mt-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] md:-mx-7 md:px-7"
@@ -272,22 +274,34 @@ export class MedicamentoSearchPage {
 
   private readonly tentativa = signal(0);
 
+  /** Última busca por voz; as alternativas valem enquanto o campo tiver o texto reconhecido. */
+  protected readonly voz = signal<ResultadoVoz | null>(null);
+  private readonly alternativas = computed(() => {
+    const v = this.voz();
+    return v && v.texto.trim() === this.termo().trim() ? v.alternativas : [];
+  });
+
   /** Busca na API e a disponibilidade dos primeiros resultados. */
   protected readonly resultado = toSignal(
     toObservable(
       computed(() => ({
         termo: this.termo().trim(),
         categoria: this.categoriaAtual(),
+        alternativas: this.alternativas(),
         tentativa: this.tentativa(),
       })),
     ).pipe(
       debounceTime(250),
       distinctUntilChanged(
-        (a, b) => a.termo === b.termo && a.categoria === b.categoria && a.tentativa === b.tentativa,
+        (a, b) =>
+          a.termo === b.termo &&
+          a.categoria === b.categoria &&
+          a.alternativas.join('|') === b.alternativas.join('|') &&
+          a.tentativa === b.tentativa,
       ),
-      switchMap(({ termo, categoria }) =>
+      switchMap(({ termo, categoria, alternativas }) =>
         carregar(
-          this.medicamentoService.buscar(termo, categoria).pipe(
+          this.medicamentoService.buscar(termo, categoria, undefined, alternativas).pipe(
             switchMap((pagina) =>
               pagina.itens.length === 0
                 ? of({ itens: [] as Encontrado[], total: 0 })

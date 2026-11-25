@@ -60,7 +60,7 @@ class PainelGestaoController(private val painel: PainelGestaoService) {
     @Operation(
         summary = "Demanda reprimida",
         description = "Pacientes da lista de desejos que esperam um medicamento sem estoque disponível na UBS, " +
-            "e os medicamentos mais desejados (proxy de \"mais procurados\").",
+            "e os medicamentos mais procurados no app nos últimos 7 dias (contagem de buscas).",
     )
     @GetMapping("/demanda-reprimida")
     fun demandaReprimida(
