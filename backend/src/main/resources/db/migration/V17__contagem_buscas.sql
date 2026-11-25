@@ -8,7 +8,8 @@ CREATE TABLE contagem_busca (
     medicamento_id BIGINT NOT NULL REFERENCES medicamento (id) ON DELETE CASCADE,
     -- UBS de referência de quem procurou; NULL quando a pessoa ainda não escolheu uma.
     ubs_id BIGINT REFERENCES ubs (id) ON DELETE CASCADE,
-    total INTEGER NOT NULL CHECK (total > 0)
+    -- BIGINT: a rota é pública e sem limite de chamadas; um INTEGER estouraria e passaria a responder 500.
+    total BIGINT NOT NULL CHECK (total > 0)
 );
 
 -- Uma linha por dia, medicamento e UBS (a sem UBS também é uma só); o registro soma 1 com ON CONFLICT.

@@ -58,7 +58,7 @@ data class DemandaItemResponse(
 )
 
 /** Quantas vezes o medicamento foi procurado no app nos últimos dias (`contagem_busca`). */
-data class MaisProcuradoResponse(val medicamento: MedicamentoResumoResponse, val buscas: Int)
+data class MaisProcuradoResponse(val medicamento: MedicamentoResumoResponse, val buscas: Long)
 
 data class DemandaReprimidaResponse(
     val itens: List<DemandaItemResponse>,

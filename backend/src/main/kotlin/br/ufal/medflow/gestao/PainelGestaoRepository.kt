@@ -165,20 +165,22 @@ class PainelGestaoRepository(jdbcTemplate: JdbcTemplate) {
         )
     }
 
-    /** Medicamentos mais desejados na lista de desejos (qualquer situação do estoque), no escopo. */
-    /** Buscas no app desde [desde] (inclusive); na UBS, as de quem a tem como referência. */
+    /**
+     * Buscas no app desde [desde] (inclusive); na UBS, as de quem a tem como referência. Empates seguem nome,
+     * concentração e id, para o corte do LIMIT ser sempre o mesmo.
+     */
     fun maisProcurados(ubsId: Long?, desde: LocalDate, limite: Int): List<MaisProcuradoResponse> = jdbc.query(
         """
         SELECT b.medicamento_id, m.nome AS medicamento_nome, m.concentracao, SUM(b.total) AS buscas
         FROM contagem_busca b JOIN medicamento m ON m.id = b.medicamento_id
         WHERE b.dia >= :desde AND ${escopo("b.ubs_id", ubsId)}
         GROUP BY b.medicamento_id, m.nome, m.concentracao
-        ORDER BY buscas DESC, m.nome
+        ORDER BY buscas DESC, m.nome, m.concentracao, b.medicamento_id
         LIMIT :limite
         """,
         params(ubsId).addValue("desde", desde).addValue("limite", limite),
     ) { rs, _ ->
-        MaisProcuradoResponse(MedicamentoResumoResponse(rs.getLong("medicamento_id"), nomeComConcentracao(rs)), rs.getInt("buscas"))
+        MaisProcuradoResponse(MedicamentoResumoResponse(rs.getLong("medicamento_id"), nomeComConcentracao(rs)), rs.getLong("buscas"))
     }
 
     fun lotesVencendo(ubsId: Long?, ate: LocalDate, hoje: LocalDate, limite: Int): List<LoteVencendoResponse> = jdbc.query(

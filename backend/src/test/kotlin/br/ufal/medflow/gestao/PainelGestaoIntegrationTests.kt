@@ -317,6 +317,24 @@ class PainelGestaoIntegrationTests(
     }
 
     @Test
+    fun `mais procurados da rede somam todas as UBS e as buscas sem UBS de referencia`() {
+        val c = cenario()
+        buscas(c.a, c.z, diasAtras = 0, total = 3)
+        buscas(c.a, c.y, diasAtras = 1, total = 5)
+        buscas(c.b, c.x, diasAtras = 0, total = 99)
+        buscas(null, c.x, diasAtras = 0, total = 99) // sem UBS de referência: entra só na rede
+        buscas(null, c.z, diasAtras = 2, total = 4)
+
+        // sem ubsId: gestor sem vínculo vê a rede toda (o seed não tem contagem de buscas)
+        pedir("demanda-reprimida").andExpect {
+            jsonPath("$.maisProcurados[*].medicamento.id") { value(contains(c.x.toInt(), c.z.toInt(), c.y.toInt())) }
+            jsonPath("$.maisProcurados[0].buscas") { value(198) }
+            jsonPath("$.maisProcurados[1].buscas") { value(7) }
+            jsonPath("$.maisProcurados[2].buscas") { value(5) }
+        }
+    }
+
+    @Test
     fun `lotes vencendo trazem os vencidos e os do prazo, do que vence primeiro, sem saldo zero`() {
         val c = cenario()
 

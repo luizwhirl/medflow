@@ -648,7 +648,7 @@ Atenção: cada destino é avaliado sozinho, então a mesma UBS de origem pode a
 }
 ```
 
-`status` e `quantidade` são `null` quando a UBS ainda não tem posição do medicamento. `maisProcurados` soma as [buscas](#contagem-de-buscas) de hoje e dos 6 dias anteriores (fuso de Maceió), da mais procurada para a menos, com o nome desempatando. Com `ubsId` (ou para o gestor com vínculo), contam só as buscas de quem tem essa UBS como referência; na rede, todas, inclusive as de quem ainda não escolheu UBS. Medicamento sem busca no período não aparece.
+`status` e `quantidade` são `null` quando a UBS ainda não tem posição do medicamento. `maisProcurados` soma as [buscas](#contagem-de-buscas) de hoje e dos 6 dias anteriores (fuso de Maceió), da mais procurada para a menos, com nome, concentração e id desempatando. Com `ubsId` (ou para o gestor com vínculo), contam só as buscas de quem tem essa UBS como referência; na rede, todas, inclusive as de quem ainda não escolheu UBS. Medicamento sem busca no período não aparece.
 
 ### Lotes vencendo e sincronização atrasada
 
@@ -690,7 +690,7 @@ Cada lote traz `numeroLote`, `validade`, `quantidade`, `diasParaVencer` (negativ
 
 ## Contagem de buscas
 
-`POST /api/medicamentos/{id}/buscas` (público, sem login). O app chama uma vez a cada medicamento aberto (na busca ou no detalhe). Corpo opcional:
+`POST /api/medicamentos/{id}/buscas` (público, sem login). O app chama quando um medicamento é aberto (na busca ou no detalhe), no máximo uma vez por dia e medicamento em cada aparelho: recarregar a página, voltar no navegador ou reabrir o mesmo remédio não conta de novo. O controle fica no navegador (`medflow.buscas-contadas`, só o dia e os ids). Corpo opcional:
 
 ```json
 { "ubsId": 1 }
@@ -700,7 +700,11 @@ Cada lote traz `numeroLote`, `validade`, `quantidade`, `diasParaVencer` (negativ
 
 **O que é guardado (LGPD):** só a contagem, na tabela `contagem_busca` (V17): uma linha por dia, medicamento e UBS, com o `total` de procuras. Nada do que foi digitado ou falado, nenhum identificador do aparelho e nenhum horário. As linhas com mais de 12 meses são apagadas todo dia às 3h (`app.buscas.retencao-meses` e `app.buscas.cron-limpeza`).
 
-A rota não tem como saber se a procura é de uma pessoa real, então a contagem pode ser inflada de propósito. Ela serve como tendência no painel, não como número exato.
+**O que conta como busca:** o medicamento aberto, não o termo digitado. Buscas que terminam sem abrir nenhum resultado, ou sem resultado, não entram. Foi uma escolha para não guardar texto livre (que pode conter dado pessoal ou de saúde).
+
+A rota não tem como saber se a procura é de uma pessoa real nem limita a quantidade de chamadas, então a contagem pode ser inflada de propósito. Ela serve como tendência no painel, não como número exato. O `total` é `BIGINT` para não estourar.
+
+O card "Mais procurados" da tela do painel ainda mostra dados fictícios: ele passa a usar `maisProcurados` quando a tela do painel for ligada aos endpoints de `/api/gestao` (o front ainda usa `TODO(PDS-21)`).
 
 ## Movimentações de estoque
 

@@ -61,6 +61,7 @@ describe('RastreioMedicamento · Avisar quando chegar', () => {
     }
   }
 
+  beforeEach(() => localStorage.removeItem('medflow.buscas-contadas'));
   afterEach(() => http.verify());
 
   const botao = (el: HTMLElement) =>

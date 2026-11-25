@@ -81,6 +81,7 @@ describe('MedicamentoSearchPage', () => {
   let http: HttpTestingController;
 
   beforeEach(() => {
+    localStorage.removeItem('medflow.buscas-contadas');
     localStorage.setItem(
       'medflow.preferencias',
       JSON.stringify({ ubsReferenciaId: 1, buscasRecentes: [] }),
@@ -94,7 +95,10 @@ describe('MedicamentoSearchPage', () => {
     http = TestBed.inject(HttpTestingController);
   });
 
-  afterEach(() => localStorage.removeItem('medflow.preferencias'));
+  afterEach(() => {
+    localStorage.removeItem('medflow.preferencias');
+    localStorage.removeItem('medflow.buscas-contadas');
+  });
 
   function resultados(el: HTMLElement): string[] {
     return Array.from(el.querySelectorAll('[aria-label="Resultados"] a')).map((a) =>
