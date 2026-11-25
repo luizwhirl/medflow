@@ -169,3 +169,11 @@ migration `V14__lista_desejos_dispositivo.sql`.
 
 A restrição de unicidade por `(dispositivo_id, chave_evento)`
 evita a duplicação de avisos para o mesmo evento e dispositivo.
+
+## Contagem de buscas
+
+A migration `V17__contagem_buscas.sql` cria `contagem_busca`, que alimenta o "mais procurados" do painel da gestão (PDS-49). Cada linha é um dia, um medicamento e a UBS de referência de quem procurou (`ubs_id` nulo quando a pessoa ainda não escolheu uma), com o `total` de procuras. Por LGPD, não há texto digitado ou falado, aparelho nem horário.
+
+O índice único `uk_contagem_busca` usa `COALESCE(ubs_id, 0)` para que as procuras sem UBS também caiam numa linha só por dia. O registro soma 1 com `INSERT ... ON CONFLICT DO UPDATE`, que é atômico mesmo com procuras simultâneas. Apagar o medicamento ou a UBS apaga as contagens deles.
+
+As linhas com mais de 12 meses são apagadas todo dia às 3h de Maceió (`app.buscas.retencao-meses` e `app.buscas.cron-limpeza`). O seed não tem contagens de exemplo: elas aparecem conforme o app é usado.

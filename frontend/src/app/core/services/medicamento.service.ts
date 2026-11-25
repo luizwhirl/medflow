@@ -48,6 +48,14 @@ export class MedicamentoService {
     return this.http.get<Rastreamento>(`${this.baseUrl}/${id}/rastreamento`, { params });
   }
 
+  /**
+   * Conta uma procura do medicamento para o "mais procurados" da gestão. A API guarda só a contagem
+   * do dia por medicamento e UBS de referência, sem nada da pessoa.
+   */
+  registrarBusca(id: number, ubsId: number | null): Observable<void> {
+    return this.http.post<void>(`${this.baseUrl}/${id}/buscas`, ubsId ? { ubsId } : {});
+  }
+
   disponibilidade(id: number): Observable<Disponibilidade[]> {
     return this.http.get<Disponibilidade[]>(`${this.baseUrl}/${id}/disponibilidade`);
   }
