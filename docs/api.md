@@ -5,6 +5,7 @@ Base: `http://localhost:8080/api`. A documentação interativa fica em `/swagger
 | Método | Rota | Descrição |
 | --- | --- | --- |
 | GET | `/ubs` | Lista as unidades por nome. Com `lat` e `lng`, da mais próxima para a mais distante; com `abertas=true`, só as abertas agora (veja abaixo) |
+| GET | `/ubs/bairros` | Bairros que têm UBS, sem repetição e em ordem alfabética (boas-vindas) |
 | GET | `/ubs/{id}` | Detalhe de uma unidade, com o horário de funcionamento |
 | GET | `/ubs/{id}/estoque` | Itens do estoque da UBS, paginados, com filtro opcional por status |
 | GET | `/ubs/{id}/movimentacoes` | Últimas movimentações de estoque da UBS, com filtro opcional por medicamento |

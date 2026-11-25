@@ -125,6 +125,7 @@ describe('PreferenciasService', () => {
       ubsReferenciaId: 7,
       buscasRecentes: ['Insulina'],
       remediosAMigrar: [],
+      boasVindasConcluidas: false,
     });
   });
 
