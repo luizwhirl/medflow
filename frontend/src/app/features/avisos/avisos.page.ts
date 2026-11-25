@@ -2,20 +2,17 @@ import { NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
-import { quandoAconteceu, textoDoAviso, TomAviso } from '../../core/models/aviso.model';
+import { quandoAconteceu, tomDoAviso, TomAviso } from '../../core/models/aviso.model';
 import { AvisosService } from '../../core/services/avisos.service';
-import { PreferenciasService } from '../../core/services/preferencias.service';
 import { Chip } from '../../shared/components/chip';
 
 const ICONE: Record<TomAviso, string> = {
   disponivel: 'M5 12.5 9.5 17 19 7',
-  info: 'M3 6h11v10H3zM14 9h4l3 3v4h-7zM7 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM17 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4z',
   alerta: 'M12 3 2 20h20zM12 10v4M12 17h.01',
 };
 
 const COR: Record<TomAviso, string> = {
   disponivel: 'bg-status-disponivel-subtle text-status-disponivel',
-  info: 'bg-status-info-subtle text-status-info',
   alerta: 'bg-status-alerta-subtle text-status-alerta',
 };
 
@@ -43,7 +40,7 @@ const COR: Record<TomAviso, string> = {
         <div>
           <h1 class="text-3xl font-bold tracking-tight">Avisos</h1>
           <p class="mt-1 text-content-muted">
-            Chegadas, remessas e atrasos da sua UBS para os seus remédios de uso contínuo.
+            Chegadas dos remédios da sua lista e atrasos nos dados das UBS que você acompanha.
           </p>
         </div>
         @if (avisos.naoLidos() > 0) {
@@ -59,19 +56,6 @@ const COR: Record<TomAviso, string> = {
 
       @let e = avisos.estado();
       @switch (e.tipo) {
-        @case ('sem-ubs') {
-          <div class="surface-card mt-6 p-8 text-center">
-            <h2 class="text-lg font-bold">Escolha sua UBS de referência</h2>
-            <p class="mt-1 text-content-muted">
-              Os avisos são da unidade onde você retira seus remédios.
-            </p>
-            <a
-              routerLink="/mapa"
-              class="mt-5 inline-flex h-12 items-center rounded-control bg-brand-600 px-5 font-bold text-white hover:bg-brand-700"
-              >Escolher UBS</a
-            >
-          </div>
-        }
         @case ('carregando') {
           <p class="body-muted mt-6">Carregando avisos…</p>
         }
@@ -95,26 +79,24 @@ const COR: Record<TomAviso, string> = {
               [selecionado]="soNaoLidos()"
               [fixo]="true"
               (selecionadoChange)="soNaoLidos.set(true)"
-              >Não lidos · {{ avisos.naoLidos() }}</app-chip
+              >Não lidos · {{ e.naoLidos }}</app-chip
             >
           </div>
 
           <ul class="surface-list mt-4" aria-label="Lista de avisos">
             @for (l of linhas(); track l.id) {
               <li>
-                <a
-                  [routerLink]="l.texto.link"
-                  (click)="avisos.marcarComoLido(l.id)"
-                  class="flex gap-4 px-5 py-4 transition-colors hover:bg-surface-muted"
+                <div
+                  class="flex gap-4 px-5 py-4"
                   [class.bg-brand-50]="!l.lido"
                   [attr.data-lido]="l.lido"
                 >
                   <span
                     class="grid size-11 shrink-0 place-items-center rounded-full"
-                    [class]="cor[l.texto.tom]"
+                    [class]="cor[l.tom]"
                   >
                     <ng-container
-                      *ngTemplateOutlet="icone; context: { $implicit: icones[l.texto.tom] }"
+                      *ngTemplateOutlet="icone; context: { $implicit: icones[l.tom] }"
                     />
                   </span>
                   <span class="min-w-0 flex-1">
@@ -124,7 +106,7 @@ const COR: Record<TomAviso, string> = {
                         [class.font-bold]="!l.lido"
                         [class.font-semibold]="l.lido"
                       >
-                        {{ l.texto.titulo }}
+                        {{ l.titulo }}
                       </span>
                       @if (!l.lido) {
                         <span
@@ -134,25 +116,23 @@ const COR: Record<TomAviso, string> = {
                         <span class="sr-only">(não lido)</span>
                       }
                     </span>
-                    <span class="mt-0.5 block text-sm text-content-muted">{{
-                      l.texto.detalhe
-                    }}</span>
+                    <span class="mt-0.5 block text-sm text-content-muted">{{ l.texto }}</span>
                     @if (l.quando) {
                       <span class="mt-1 block text-xs text-content-muted">{{ l.quando }}</span>
                     }
                   </span>
-                </a>
+                </div>
               </li>
             } @empty {
               <li class="body-muted p-6 text-center">
                 @if (soNaoLidos()) {
                   Você leu todos os avisos.
-                } @else if (semRemedios()) {
-                  Nenhum aviso agora. Adicione seus remédios de uso contínuo (em Buscar, “Adicionar
-                  à lista”) para saber quando chegarem na sua UBS.
                 } @else {
-                  Nenhum aviso agora. Quando um remédio seu chegar ou estiver a caminho, ele aparece
-                  aqui.
+                  Nenhum aviso agora. Ative o aviso nos remédios da
+                  <a routerLink="/lista" class="font-semibold text-brand-600 hover:underline"
+                    >Minha lista</a
+                  >
+                  para saber quando eles chegarem na UBS.
                 }
               </li>
             }
@@ -164,14 +144,10 @@ const COR: Record<TomAviso, string> = {
 })
 export class AvisosPage {
   protected readonly avisos = inject(AvisosService);
-  private readonly preferencias = inject(PreferenciasService);
 
   protected readonly icones = ICONE;
   protected readonly cor = COR;
   protected readonly soNaoLidos = signal(false);
-  protected readonly semRemedios = computed(
-    () => this.preferencias.remediosContinuos().length === 0,
-  );
 
   protected readonly linhas = computed(() =>
     this.avisos
@@ -180,8 +156,10 @@ export class AvisosPage {
       .map((a) => ({
         id: a.id,
         lido: a.lido,
-        texto: textoDoAviso(a),
-        quando: quandoAconteceu(a.ocorridoEm),
+        titulo: a.titulo,
+        texto: a.texto,
+        tom: tomDoAviso(a),
+        quando: quandoAconteceu(a.criadoEm),
       })),
   );
 }

@@ -13,8 +13,10 @@ export class UbsService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = `${environment.apiUrl}/ubs`;
 
-  listar(): Observable<Ubs[]> {
-    return this.http.get<Ubs[]>(this.baseUrl);
+  /** Todas as UBS por nome; com `abertas`, só as abertas agora (sem horário cadastrado, ficam de fora). */
+  listar(filtro: { abertas?: boolean } = {}): Observable<Ubs[]> {
+    const params = filtro.abertas ? new HttpParams().set('abertas', true) : undefined;
+    return this.http.get<Ubs[]>(this.baseUrl, { params });
   }
 
   /**

@@ -2,7 +2,7 @@ import { NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
-import { catchError, forkJoin, map, of, switchMap } from 'rxjs';
+import { catchError, distinctUntilChanged, forkJoin, map, of, switchMap } from 'rxjs';
 
 import {
   compararDistancia,
@@ -11,17 +11,19 @@ import {
   linkRota,
   posicaoAtual,
 } from '../../core/geo';
-import { quandoAconteceu, textoDoAviso, TomAviso } from '../../core/models/aviso.model';
+import { quandoAconteceu, tomDoAviso, TomAviso } from '../../core/models/aviso.model';
 import { Disponibilidade, statusExibido, temEstoque } from '../../core/models/estoque.model';
 import { Medicamento } from '../../core/models/medicamento.model';
 import { StatusEstoque } from '../../core/models/status-estoque';
 import { Ubs, UbsProxima } from '../../core/models/ubs.model';
 import { AvisosService } from '../../core/services/avisos.service';
 import { MedicamentoService } from '../../core/services/medicamento.service';
+import { textoChegada } from '../../core/remessa';
 import { PreferenciasService } from '../../core/services/preferencias.service';
 import { UbsService } from '../../core/services/ubs.service';
 import { Button } from '../../shared/components/button';
 import { Chip } from '../../shared/components/chip';
+import { Funcionamento } from '../../shared/components/funcionamento';
 import { MapaIlustrado } from '../../shared/components/mapa-ilustrado';
 import { SearchField } from '../../shared/components/search-field';
 import { StatusBadge } from '../../shared/components/status-badge';
@@ -52,6 +54,7 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
     StatusBadge,
     SyncIndicator,
     MapaIlustrado,
+    Funcionamento,
   ],
   template: `
     <ng-template #pilula>
@@ -287,6 +290,7 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
                   <p class="text-sm text-content-muted">{{ distancia(p.distancia) }}</p>
                 }
                 <h3 class="mt-1 truncate text-lg font-bold">{{ p.ubs.nome }}</h3>
+                <app-funcionamento class="mt-1 block text-sm" [ubs]="p.ubs" />
                 @if (remedios().length) {
                   <div
                     class="mt-3 h-2 overflow-hidden rounded-full bg-outline"
@@ -337,6 +341,7 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
                 }
                 {{ u.bairro }}
               </p>
+              <app-funcionamento class="mt-2 block" [ubs]="u" />
               <div class="mt-5 flex gap-3">
                 <a appButton class="flex-1" [routerLink]="['/ubs', u.id]">Ver estoque</a>
                 <a
@@ -367,24 +372,16 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
             @if (recentes.length) {
               <ul class="divide-y divide-outline" aria-label="Avisos recentes">
                 @for (a of recentes; track a.id) {
-                  <li>
-                    <a
-                      [routerLink]="a.texto.link"
-                      (click)="avisos.marcarComoLido(a.id)"
-                      class="flex gap-3 py-3 hover:text-brand-700"
-                    >
-                      <span
-                        class="mt-1.5 size-2 shrink-0 rounded-full"
-                        [class]="corAviso[a.texto.tom]"
-                        aria-hidden="true"
-                      ></span>
-                      <span class="min-w-0">
-                        <span class="block" [class.font-semibold]="!a.lido">{{
-                          a.texto.titulo
-                        }}</span>
-                        <span class="block text-sm text-content-muted">{{ a.quando }}</span>
-                      </span>
-                    </a>
+                  <li class="flex gap-3 py-3">
+                    <span
+                      class="mt-1.5 size-2 shrink-0 rounded-full"
+                      [class]="corAviso[a.tom]"
+                      aria-hidden="true"
+                    ></span>
+                    <span class="min-w-0">
+                      <span class="block" [class.font-semibold]="!a.lido">{{ a.titulo }}</span>
+                      <span class="block text-sm text-content-muted">{{ a.quando }}</span>
+                    </span>
                   </li>
                 }
               </ul>
@@ -395,7 +392,7 @@ const ICONE_PILULA = 'M10.5 20.5 3.5 13.5a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 
               >
             } @else {
               <p class="mt-4 text-content-muted">
-                Você ainda não tem avisos. Quando um remédio seu chegar na sua UBS, ele aparece
+                Você ainda não tem avisos. Quando um remédio da sua lista chegar na UBS, ele aparece
                 aqui.
               </p>
             }
@@ -414,7 +411,6 @@ export class HomePage {
 
   protected readonly corAviso: Record<TomAviso, string> = {
     disponivel: 'bg-status-disponivel',
-    info: 'bg-status-info',
     alerta: 'bg-status-alerta',
   };
 
@@ -426,8 +422,9 @@ export class HomePage {
       .map((a) => ({
         id: a.id,
         lido: a.lido,
-        texto: textoDoAviso(a),
-        quando: quandoAconteceu(a.ocorridoEm),
+        titulo: a.titulo,
+        tom: tomDoAviso(a),
+        quando: quandoAconteceu(a.criadoEm),
       })),
   );
 
@@ -492,6 +489,35 @@ export class HomePage {
     { initialValue: [] as { medicamento: Medicamento; disponibilidade: Disponibilidade[] }[] },
   );
 
+  /**
+   * "Chega qui, 22/10" por id de remédio, da remessa a caminho da UBS de referência.
+   * Uma chamada por remédio; sem UBS de referência, nenhuma.
+   */
+  private readonly chegadas = toSignal(
+    toObservable(
+      computed(() => ({
+        ids: this.preferencias.remediosContinuos(),
+        ubsId: this.preferencias.ubsReferenciaId(),
+      })),
+    ).pipe(
+      // só refaz as chamadas quando a lista ou a UBS mudam, não a cada preferência salva
+      distinctUntilChanged((a, b) => a.ubsId === b.ubsId && a.ids.join() === b.ids.join()),
+      switchMap(({ ids, ubsId }) =>
+        ubsId === null || ids.length === 0
+          ? of(new Map<number, string | null>())
+          : forkJoin(
+              ids.map((id) =>
+                this.medicamentoService.rastreamento(id, ubsId).pipe(
+                  map((r) => [id, textoChegada(r.remessa)] as const),
+                  catchError(() => of([id, null] as const)),
+                ),
+              ),
+            ).pipe(map((pares) => new Map<number, string | null>(pares))),
+      ),
+    ),
+    { initialValue: new Map<number, string | null>() },
+  );
+
   protected readonly remedios = computed((): Remedio[] => {
     const refId = this.preferencias.ubsReferenciaId();
     const distancias = this.distancias();
@@ -531,6 +557,8 @@ export class HomePage {
   protected previsao(r: Remedio): string {
     if (r.naReferencia && temEstoque(r.naReferencia))
       return `~${r.naReferencia.quantidade} un. em estoque`;
+    const chegada = this.chegadas().get(r.medicamento.id);
+    if (chegada) return chegada;
     if (r.naReferencia?.status === 'RESERVADO')
       return `${r.naReferencia.quantidade} un. reservadas`;
     return 'Sem previsão de remessa';

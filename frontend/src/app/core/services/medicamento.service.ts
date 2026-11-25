@@ -6,6 +6,7 @@ import { environment } from '../../../environments/environment';
 import { Disponibilidade } from '../models/estoque.model';
 import { Medicamento } from '../models/medicamento.model';
 import { Pagina } from '../models/pagina.model';
+import { Rastreamento } from '../models/rastreamento.model';
 
 @Injectable({ providedIn: 'root' })
 export class MedicamentoService {
@@ -30,6 +31,12 @@ export class MedicamentoService {
 
   buscarPorId(id: number): Observable<Medicamento> {
     return this.http.get<Medicamento>(`${this.baseUrl}/${id}`);
+  }
+
+  /** Remessa do medicamento a caminho da UBS (etapas, datas e previsão). */
+  rastreamento(id: number, ubsId: number): Observable<Rastreamento> {
+    const params = new HttpParams().set('ubsId', ubsId);
+    return this.http.get<Rastreamento>(`${this.baseUrl}/${id}/rastreamento`, { params });
   }
 
   disponibilidade(id: number): Observable<Disponibilidade[]> {

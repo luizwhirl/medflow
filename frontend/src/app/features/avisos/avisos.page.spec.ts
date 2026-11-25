@@ -8,48 +8,35 @@ import { AvisosPage } from './avisos.page';
 
 const AVISOS: Aviso[] = [
   {
-    id: 'remessa-9-EM_TRANSPORTE',
-    tipo: 'REMESSA',
-    ubsId: 2,
-    ubsNome: 'UBS Clima Bom',
-    medicamentoId: 1,
-    medicamentoNome: 'Metformina',
-    medicamentoConcentracao: '850 mg',
-    quantidade: 300,
-    etapa: 'EM_TRANSPORTE',
-    previsaoChegada: '2026-11-26',
+    id: 3,
+    tipo: 'MEDICAMENTO_DISPONIVEL',
+    titulo: 'Medicamento disponível',
+    texto: 'O medicamento Metformina está disponível na unidade UBS Clima Bom.',
+    lido: false,
+    criadoEm: '2026-11-24T10:00:00Z',
   },
   {
-    id: 'disponivel-2-3',
-    tipo: 'DISPONIVEL',
-    ubsId: 2,
-    ubsNome: 'UBS Clima Bom',
-    medicamentoId: 3,
-    medicamentoNome: 'Losartana',
-    medicamentoConcentracao: '50 mg',
-    quantidade: 80,
+    id: 2,
+    tipo: 'MEDICAMENTO_DISPONIVEL',
+    titulo: 'Medicamento disponível',
+    texto: 'O medicamento Losartana está disponível na unidade UBS Clima Bom.',
+    lido: true,
+    criadoEm: '2026-11-23T10:00:00Z',
   },
   {
-    id: 'sincronizacao-2-nunca',
-    tipo: 'SINCRONIZACAO_ATRASADA',
-    ubsId: 2,
-    ubsNome: 'UBS Clima Bom',
+    id: 1,
+    tipo: 'UBS_DADOS_ATRASADOS',
+    titulo: 'Dados da UBS desatualizados',
+    texto: 'Os dados de estoque da unidade UBS Clima Bom estão desatualizados.',
+    lido: false,
+    criadoEm: '2026-11-22T10:00:00Z',
   },
 ];
 
 describe('AvisosPage', () => {
   let http: HttpTestingController;
 
-  function abrir(
-    ubsReferenciaId: number | null = 2,
-    remediosContinuos = [1, 3],
-    lidos: string[] = [],
-  ) {
-    localStorage.setItem(
-      'medflow.preferencias',
-      JSON.stringify({ ubsReferenciaId, remediosContinuos, buscasRecentes: [] }),
-    );
-    localStorage.setItem('medflow.avisos-lidos', JSON.stringify(lidos));
+  function abrir() {
     TestBed.configureTestingModule({
       providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
     });
@@ -59,49 +46,42 @@ describe('AvisosPage', () => {
     return { fixture, el: fixture.nativeElement as HTMLElement };
   }
 
+  function responder(avisos: Aviso[], naoLidos: number): void {
+    http.expectOne({ method: 'GET', url: '/api/avisos' }).flush(avisos);
+    http.expectOne('/api/avisos/nao-lidos/total').flush({ naoLidos });
+  }
+
   afterEach(() => http.verify());
 
   const texto = (el: Element) => el.textContent!.replace(/\s+/g, ' ').trim();
   const itens = (el: HTMLElement) =>
-    Array.from(el.querySelectorAll<HTMLAnchorElement>('[aria-label="Lista de avisos"] a'));
+    Array.from(el.querySelectorAll<HTMLElement>('[aria-label="Lista de avisos"] [data-lido]'));
   const botao = (el: HTMLElement, rotulo: string) =>
     Array.from(el.querySelectorAll('button')).find((b) => texto(b).startsWith(rotulo))!;
 
-  function carregar(lidos: string[] = []) {
-    const pagina = abrir(2, [1, 3], lidos);
-    http.expectOne('/api/avisos?ubsId=2&medicamentoIds=1,3').flush(AVISOS);
+  function carregar() {
+    const pagina = abrir();
+    responder(AVISOS, 2);
     pagina.fixture.detectChanges();
     return pagina;
   }
 
-  it('lista os avisos com texto, link e marcação de não lido', () => {
-    const { el } = carregar(['disponivel-2-3']);
-    const [remessa, disponivel, sinc] = itens(el);
+  it('lista os avisos com o texto da API e a marcação de não lido', () => {
+    const { el } = carregar();
+    const [disponivel, lido, atraso] = itens(el);
 
-    expect(texto(remessa)).toContain('Metformina 850 mg a caminho (não lido)');
-    expect(texto(remessa)).toContain('Previsão: qui, 26/11.');
-    expect(remessa.getAttribute('href')).toBe('/medicamentos/1');
-    expect(remessa.getAttribute('data-lido')).toBe('false');
+    expect(texto(disponivel)).toContain('Medicamento disponível (não lido)');
+    expect(texto(disponivel)).toContain('Metformina está disponível na unidade UBS Clima Bom');
+    expect(disponivel.getAttribute('data-lido')).toBe('false');
 
-    expect(texto(disponivel)).not.toContain('(não lido)');
-    expect(disponivel.getAttribute('data-lido')).toBe('true');
+    expect(texto(lido)).not.toContain('(não lido)');
+    expect(lido.getAttribute('data-lido')).toBe('true');
 
-    expect(texto(sinc)).toContain('Dados atrasados na sua UBS');
-    expect(sinc.getAttribute('href')).toBe('/ubs/2');
+    expect(texto(atraso)).toContain('Dados da UBS desatualizados');
   });
 
-  it('abrir um aviso o marca como lido', () => {
+  it('filtra os não lidos e marca todos como lidos na API', () => {
     const { fixture, el } = carregar();
-    itens(el)[0].click();
-    fixture.detectChanges();
-    expect(itens(el)[0].getAttribute('data-lido')).toBe('true');
-    expect(JSON.parse(localStorage.getItem('medflow.avisos-lidos')!)).toEqual([
-      'remessa-9-EM_TRANSPORTE',
-    ]);
-  });
-
-  it('filtra os não lidos e marca todos como lidos', () => {
-    const { fixture, el } = carregar(['disponivel-2-3']);
     expect(texto(botao(el, 'Todos'))).toBe('Todos · 3');
     expect(texto(botao(el, 'Não lidos'))).toBe('Não lidos · 2');
 
@@ -110,6 +90,7 @@ describe('AvisosPage', () => {
     expect(itens(el).length).toBe(2);
 
     botao(el, 'Marcar todos como lidos').click();
+    http.expectOne({ method: 'PATCH', url: '/api/avisos/lidas' }).flush({ atualizados: 2 });
     fixture.detectChanges();
     expect(itens(el).length).toBe(0);
     expect(texto(el.querySelector('[aria-label="Lista de avisos"]')!)).toBe(
@@ -118,28 +99,23 @@ describe('AvisosPage', () => {
     expect(botao(el, 'Marcar todos como lidos')).toBeUndefined();
   });
 
-  it('sem UBS de referência, pede para escolher uma sem chamar a API', () => {
-    const { el } = abrir(null);
-    expect(texto(el)).toContain('Escolha sua UBS de referência');
-    expect(el.querySelector('a[href="/mapa"]')).not.toBeNull();
-  });
-
-  it('sem remédios de uso contínuo, explica como passar a receber avisos', () => {
-    const { fixture, el } = abrir(2, []);
-    http.expectOne('/api/avisos?ubsId=2').flush([]);
+  it('sem avisos, explica como passar a recebê-los', () => {
+    const { fixture, el } = abrir();
+    responder([], 0);
     fixture.detectChanges();
-    expect(texto(el)).toContain('Adicione seus remédios de uso contínuo');
+    expect(texto(el)).toContain('Ative o aviso nos remédios da Minha lista');
+    expect(el.querySelector('a[href="/lista"]')).not.toBeNull();
   });
 
   it('falha ao carregar permite tentar de novo', () => {
     const { fixture, el } = abrir();
-    http.expectOne('/api/avisos?ubsId=2&medicamentoIds=1,3').error(new ProgressEvent('error'));
+    http.expectOne({ method: 'GET', url: '/api/avisos' }).error(new ProgressEvent('error'));
+    http.expectOne('/api/avisos/nao-lidos/total');
     fixture.detectChanges();
     expect(texto(el)).toContain('Não foi possível carregar os avisos agora');
 
     botao(el, 'Tentar de novo').click();
-    fixture.detectChanges();
-    http.expectOne('/api/avisos?ubsId=2&medicamentoIds=1,3').flush([]);
+    responder([], 0);
     fixture.detectChanges();
     expect(texto(el)).toContain('Nenhum aviso agora');
   });

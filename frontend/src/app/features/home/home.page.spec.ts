@@ -4,6 +4,7 @@ import { TestBed, fakeAsync, flushMicrotasks } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 
 import { compararDistancia, formatarDistancia } from '../../core/geo';
+import { ItemListaDesejo } from '../../core/models/lista-desejos.model';
 import { Medicamento } from '../../core/models/medicamento.model';
 import { Ubs } from '../../core/models/ubs.model';
 import { PreferenciasService } from '../../core/services/preferencias.service';
@@ -47,23 +48,94 @@ describe('formatarDistancia', () => {
   });
 });
 
+const desejo = (id: number, medicamentoId: number, ubsId = 7): ItemListaDesejo => ({
+  id,
+  ubsId,
+  ubsNome: `UBS ${ubsId}`,
+  medicamentoId,
+  medicamentoNome: `Remédio ${medicamentoId}`,
+  medicamentoConcentracao: '10 mg',
+  notificar: false,
+  criadoEm: '2026-11-24T10:00:00Z',
+});
+
 describe('PreferenciasService', () => {
-  beforeEach(() => localStorage.removeItem('medflow.preferencias'));
+  let http: HttpTestingController;
 
-  it('alterna remédios e persiste no navegador', () => {
+  function iniciar(salvo: object | null, lista: ItemListaDesejo[]): PreferenciasService {
+    if (salvo) localStorage.setItem('medflow.preferencias', JSON.stringify(salvo));
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
+    http = TestBed.inject(HttpTestingController);
     const prefs = TestBed.inject(PreferenciasService);
-    prefs.alternarRemedioContinuo(3);
-    prefs.alternarRemedioContinuo(5);
-    prefs.alternarRemedioContinuo(3);
-    prefs.definirUbsReferencia(7);
+    http.expectOne({ method: 'GET', url: '/api/lista-desejos' }).flush(lista);
+    return prefs;
+  }
 
-    expect(prefs.remediosContinuos()).toEqual([5]);
+  beforeEach(() => localStorage.removeItem('medflow.preferencias'));
+  afterEach(() => {
+    http.verify();
+    localStorage.removeItem('medflow.preferencias');
+  });
+
+  it('usa os remédios da lista de desejos, sem repetir o que está em mais de uma UBS', () => {
+    const prefs = iniciar(null, [desejo(10, 5), desejo(11, 3), desejo(12, 5, 8)]);
+    expect(prefs.remediosContinuos()).toEqual([5, 3]);
+  });
+
+  it('adiciona o remédio na UBS de referência, sem aviso, e remove de todas as UBS', () => {
+    const prefs = iniciar({ ubsReferenciaId: 7 }, [desejo(10, 5), desejo(12, 5, 8)]);
+
+    prefs.alternarRemedioContinuo(3).subscribe();
+    const post = http.expectOne({ method: 'POST', url: '/api/lista-desejos' });
+    expect(post.request.body).toEqual({ ubsId: 7, medicamentoId: 3, notificar: false });
+    post.flush(desejo(13, 3));
+    expect(prefs.remediosContinuos()).toEqual([3, 5]);
+
+    prefs.alternarRemedioContinuo(5).subscribe();
+    http.expectOne({ method: 'DELETE', url: '/api/lista-desejos/10' }).flush(null);
+    http.expectOne({ method: 'DELETE', url: '/api/lista-desejos/12' }).flush(null);
+    expect(prefs.remediosContinuos()).toEqual([3]);
+  });
+
+  it('sem UBS de referência, não tem onde adicionar', () => {
+    const prefs = iniciar(null, []);
+    let erro = false;
+    prefs.alternarRemedioContinuo(3).subscribe({ error: () => (erro = true) });
+    expect(erro).toBeTrue();
+  });
+
+  it('leva para a API os remédios que estavam só no navegador e guarda a UBS e as buscas', () => {
+    const prefs = iniciar(
+      { ubsReferenciaId: null, remediosContinuos: [3, 5], buscasRecentes: ['Insulina'] },
+      [desejo(10, 5)],
+    );
+    // Sem UBS de referência não dá para migrar: espera a pessoa escolher uma.
+    http.expectNone({ method: 'POST', url: '/api/lista-desejos' });
+
+    prefs.definirUbsReferencia(7);
+    const post = http.expectOne({ method: 'POST', url: '/api/lista-desejos' });
+    expect(post.request.body).toEqual({ ubsId: 7, medicamentoId: 3, notificar: false });
+    post.flush(desejo(11, 3));
+
+    expect(prefs.remediosContinuos()).toEqual([3, 5]);
     expect(JSON.parse(localStorage.getItem('medflow.preferencias')!)).toEqual({
       ubsReferenciaId: 7,
-      remediosContinuos: [5],
-      buscasRecentes: [],
+      buscasRecentes: ['Insulina'],
       boasVindasConcluidas: false,
+      remediosAMigrar: [],
     });
+  });
+
+  it('o que falhar na migração fica para a próxima vez', () => {
+    const prefs = iniciar({ ubsReferenciaId: 7, remediosContinuos: [3] }, []);
+    http
+      .expectOne({ method: 'POST', url: '/api/lista-desejos' })
+      .flush(null, { status: 500, statusText: 'Erro' });
+
+    expect(prefs.remediosContinuos()).toEqual([]);
+    expect(JSON.parse(localStorage.getItem('medflow.preferencias')!).remediosAMigrar).toEqual([3]);
   });
 });
 
@@ -73,7 +145,7 @@ describe('HomePage', () => {
   beforeEach(() => {
     localStorage.setItem(
       'medflow.preferencias',
-      JSON.stringify({ ubsReferenciaId: 2, remediosContinuos: [1], buscasRecentes: ['Insulina'] }),
+      JSON.stringify({ ubsReferenciaId: 2, buscasRecentes: ['Insulina'] }),
     );
     spyOn(navigator.geolocation, 'getCurrentPosition').and.callFake((_ok, erro) =>
       erro?.({} as GeolocationPositionError),
@@ -86,13 +158,23 @@ describe('HomePage', () => {
 
   afterEach(() => localStorage.removeItem('medflow.preferencias'));
 
+  function responderAvisos(avisos: object[] = [], naoLidos = 0): void {
+    http.expectOne({ method: 'GET', url: '/api/avisos' }).flush(avisos);
+    http.expectOne('/api/avisos/nao-lidos/total').flush({ naoLidos });
+  }
+
   it('mostra UBS de referência, remédio contínuo com status na referência e atalhos', () => {
     const fixture = TestBed.createComponent(HomePage);
     fixture.detectChanges();
 
+    http.expectOne('/api/lista-desejos').flush([desejo(10, 1, 2)]);
+    fixture.detectChanges();
     http.expectOne('/api/ubs').flush([ubs(1, 'UBS Centro'), ubs(2, 'UBS Clima Bom')]);
     http.expectOne('/api/medicamentos/categorias').flush(['Diabetes', 'Hipertensão']);
     http.expectOne('/api/medicamentos/1').flush(metformina);
+    http
+      .expectOne('/api/medicamentos/1/rastreamento?ubsId=2')
+      .flush({ medicamentoId: 1, ubsId: 2, remessa: null });
     http.expectOne('/api/medicamentos/1/disponibilidade').flush([
       { ubs: ubs(1, 'UBS Centro'), status: 'DISPONIVEL', quantidade: 10, atualizadoEm: '' },
       { ubs: ubs(2, 'UBS Clima Bom'), status: 'EM_FALTA', quantidade: 0, atualizadoEm: '' },
@@ -105,7 +187,7 @@ describe('HomePage', () => {
     expect(texto('titulo-continuos')).toContain('Metformina 850 mg');
     expect(texto('titulo-continuos')).toContain('Em falta');
     expect(texto('titulo-atalhos')).toContain('Hipertensão');
-    http.expectOne('/api/avisos?ubsId=2&medicamentoIds=1').flush([]);
+    responderAvisos();
     http.verify();
   });
 
@@ -113,9 +195,14 @@ describe('HomePage', () => {
     const fixture = TestBed.createComponent(HomePage);
     fixture.detectChanges();
 
+    http.expectOne('/api/lista-desejos').flush([desejo(10, 1, 2)]);
+    fixture.detectChanges();
     http.expectOne('/api/ubs').flush([ubs(1, 'UBS Centro'), ubs(2, 'UBS Clima Bom')]);
     http.expectOne('/api/medicamentos/categorias').flush([]);
     http.expectOne('/api/medicamentos/1').flush(metformina);
+    http
+      .expectOne('/api/medicamentos/1/rastreamento?ubsId=2')
+      .flush({ medicamentoId: 1, ubsId: 2, remessa: null });
     http
       .expectOne('/api/medicamentos/1/disponibilidade')
       .flush([
@@ -128,7 +215,7 @@ describe('HomePage', () => {
     expect(continuos).toContain('Sem registro na sua UBS');
     expect(continuos).not.toContain('Disponível');
     expect(continuos).toContain('Nenhuma UBS com estoque');
-    http.expectOne('/api/avisos?ubsId=2&medicamentoIds=1').flush([]);
+    responderAvisos();
     http.verify();
   });
 
@@ -141,9 +228,14 @@ describe('HomePage', () => {
     flushMicrotasks();
     fixture.detectChanges();
 
+    http.expectOne('/api/lista-desejos').flush([desejo(10, 1, 2)]);
+    fixture.detectChanges();
     http.expectOne('/api/ubs').flush([ubs(1, 'UBS Centro'), ubs(2, 'UBS Clima Bom')]);
     http.expectOne('/api/medicamentos/categorias').flush([]);
     http.expectOne('/api/medicamentos/1').flush(metformina);
+    http
+      .expectOne('/api/medicamentos/1/rastreamento?ubsId=2')
+      .flush({ medicamentoId: 1, ubsId: 2, remessa: null });
     http.expectOne('/api/medicamentos/1/disponibilidade').flush([
       { ubs: ubs(3, 'UBS Longe'), status: 'DISPONIVEL', quantidade: 4, atualizadoEm: '' },
       { ubs: ubs(1, 'UBS Centro'), status: 'DISPONIVEL', quantidade: 10, atualizadoEm: '' },
@@ -169,49 +261,88 @@ describe('HomePage', () => {
       'UBS Centro',
     ]);
     expect(cartoes[0].textContent).toContain('800 m');
-    http.expectOne('/api/avisos?ubsId=2&medicamentoIds=1').flush([]);
+    responderAvisos();
     http.verify();
   }));
 
   it('o cartão "Avisos recentes" mostra os três mais recentes, com os não lidos em destaque', () => {
-    localStorage.setItem('medflow.avisos-lidos', JSON.stringify(['disponivel-2-1']));
     const fixture = TestBed.createComponent(HomePage);
     fixture.detectChanges();
+    http.expectOne('/api/lista-desejos').flush([]);
     http.expectOne('/api/ubs').flush([ubs(2, 'UBS Clima Bom')]);
     http.expectOne('/api/medicamentos/categorias').flush([]);
-    http.expectOne('/api/medicamentos/1').flush(metformina);
-    http.expectOne('/api/medicamentos/1/disponibilidade').flush([]);
-    const aviso = (id: string, tipo: string, extra = {}) => ({
+    const aviso = (id: number, titulo: string, lido: boolean) => ({
       id,
-      tipo,
-      ubsId: 2,
-      ubsNome: 'UBS Clima Bom',
-      medicamentoId: 1,
-      medicamentoNome: 'Metformina',
-      medicamentoConcentracao: '850 mg',
-      quantidade: 30,
-      ...extra,
+      tipo: 'MEDICAMENTO_DISPONIVEL',
+      titulo,
+      texto: 'Exemplo',
+      lido,
+      criadoEm: '2026-11-24T10:00:00Z',
     });
-    http
-      .expectOne('/api/avisos?ubsId=2&medicamentoIds=1')
-      .flush([
-        aviso('remessa-9-EM_TRANSPORTE', 'REMESSA', { etapa: 'EM_TRANSPORTE' }),
-        aviso('disponivel-2-1', 'DISPONIVEL'),
-        aviso('remessa-8-PEDIDO', 'REMESSA', { etapa: 'PEDIDO' }),
-        aviso('remessa-7-PEDIDO', 'REMESSA', { etapa: 'PEDIDO' }),
-      ]);
+    responderAvisos(
+      [
+        aviso(4, 'Medicamento disponível', false),
+        aviso(3, 'Dados da UBS desatualizados', true),
+        aviso(2, 'Outro aviso', false),
+        aviso(1, 'Aviso antigo', false),
+      ],
+      3,
+    );
     fixture.detectChanges();
 
     const itens = Array.from(
       (fixture.nativeElement as HTMLElement).querySelectorAll('[aria-label="Avisos recentes"] li'),
     );
     expect(itens.map((li) => li.querySelector('span span')!.textContent!.trim())).toEqual([
-      'Metformina 850 mg a caminho',
-      'Metformina 850 mg disponível',
-      'Pedido de Metformina 850 mg feito',
+      'Medicamento disponível',
+      'Dados da UBS desatualizados',
+      'Outro aviso',
     ]);
     expect(itens[0].querySelector('.font-semibold')).not.toBeNull();
     expect(itens[1].querySelector('.font-semibold')).toBeNull();
+    http.verify();
+  });
+
+  it('mostra quando chega a remessa a caminho da UBS de referência', () => {
+    const fixture = TestBed.createComponent(HomePage);
+    fixture.detectChanges();
+
+    http.expectOne('/api/lista-desejos').flush([desejo(10, 1, 2)]);
+    fixture.detectChanges();
+    http.expectOne('/api/ubs').flush([ubs(1, 'UBS Centro'), ubs(2, 'UBS Clima Bom')]);
+    http.expectOne('/api/medicamentos/categorias').flush([]);
+    http.expectOne('/api/medicamentos/1').flush(metformina);
+    http.expectOne('/api/medicamentos/1/rastreamento?ubsId=2').flush({
+      medicamentoId: 1,
+      ubsId: 2,
+      remessa: {
+        id: 4,
+        quantidade: 300,
+        previsaoChegada: '2026-10-22',
+        etapaAtual: 'EM_TRANSPORTE',
+        concluida: false,
+        linhaDoTempo: [
+          { etapa: 'PEDIDO', ocorridoEm: '2026-10-19T12:00:00Z' },
+          { etapa: 'SEPARADO_CAF', ocorridoEm: '2026-10-20T12:00:00Z' },
+          { etapa: 'EM_TRANSPORTE', ocorridoEm: '2026-10-21T12:00:00Z' },
+          { etapa: 'RECEBIDO', ocorridoEm: null },
+          { etapa: 'DISPONIVEL', ocorridoEm: null },
+        ],
+      },
+    });
+    http
+      .expectOne('/api/medicamentos/1/disponibilidade')
+      .flush([
+        { ubs: ubs(2, 'UBS Clima Bom'), status: 'EM_FALTA', quantidade: 0, atualizadoEm: '' },
+      ]);
+    fixture.detectChanges();
+
+    const continuos = (fixture.nativeElement as HTMLElement).querySelector(
+      '[aria-labelledby="titulo-continuos"]',
+    )!.textContent!;
+    expect(continuos).toContain('Chega qui, 22/10');
+    expect(continuos).not.toContain('Sem previsão de remessa');
+    responderAvisos();
     http.verify();
   });
 });

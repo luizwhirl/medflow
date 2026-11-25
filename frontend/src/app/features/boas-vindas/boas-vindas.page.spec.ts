@@ -21,7 +21,6 @@ function salvarPreferencias(parcial: object) {
     'medflow.preferencias',
     JSON.stringify({
       ubsReferenciaId: null,
-      remediosContinuos: [],
       buscasRecentes: [],
       ...parcial,
     }),
@@ -30,7 +29,10 @@ function salvarPreferencias(parcial: object) {
 
 describe('exigirBoasVindas', () => {
   function rodar(url: string) {
-    TestBed.configureTestingModule({ providers: [provideRouter([])] });
+    // A lista de desejos lida pelas preferências não interessa aqui.
+    TestBed.configureTestingModule({
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
+    });
     return TestBed.runInInjectionContext(() =>
       exigirBoasVindas({} as ActivatedRouteSnapshot, { url } as RouterStateSnapshot),
     );
@@ -86,6 +88,7 @@ describe('BoasVindasPage', () => {
     const fixture = TestBed.createComponent(BoasVindasPage);
     if (voltar) fixture.componentRef.setInput('voltar', voltar);
     fixture.detectChanges();
+    http.expectOne('/api/lista-desejos').flush([]);
     http.expectOne('/api/ubs/bairros').flush(['Benedito Bentes', 'Clima Bom']);
     fixture.detectChanges();
     return { fixture, el: fixture.nativeElement as HTMLElement };

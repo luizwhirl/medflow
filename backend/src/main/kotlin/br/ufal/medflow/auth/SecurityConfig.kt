@@ -27,7 +27,7 @@ import javax.crypto.spec.SecretKeySpec
 
 /**
  * API sem sessão: cada requisição leva um JWT (HS256). Leitura de UBS e medicamentos é pública,
- * a lista de desejos é pública e identificada pelo aparelho (cabeçalho X-Dispositivo-Id),
+ * a lista de desejos e os avisos são públicos e identificados pelo aparelho (cabeçalho X-Dispositivo-Id),
  * o prefixo `/api/gestao` é só do papel GESTOR e o restante exige login.
  */
 @Configuration
@@ -51,7 +51,6 @@ class SecurityConfig(private val props: JwtProperties) {
                 authorize(HttpMethod.POST, "/api/auth/cadastro", permitAll)
                 authorize(HttpMethod.GET, "/api/ubs/**", permitAll)
                 authorize(HttpMethod.GET, "/api/medicamentos/**", permitAll)
-                authorize(HttpMethod.GET, "/api/avisos", permitAll) // sem login: UBS e remédios vêm na URL
                 authorize("/actuator/health/**", permitAll)
                 authorize("/swagger-ui.html", permitAll)
                 authorize("/swagger-ui/**", permitAll)
@@ -59,6 +58,8 @@ class SecurityConfig(private val props: JwtProperties) {
                 // Sem login: o dono da lista é o aparelho do cabeçalho X-Dispositivo-Id.
                 authorize("/api/lista-desejos", permitAll)
                 authorize("/api/lista-desejos/**", permitAll)
+                authorize("/api/avisos", permitAll)
+                authorize("/api/avisos/**", permitAll)
                 authorize("/api/gestao/**", hasRole("GESTOR"))
                 authorize(anyRequest, authenticated)
             }

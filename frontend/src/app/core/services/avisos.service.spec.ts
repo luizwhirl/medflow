@@ -2,61 +2,28 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 
-import { Aviso, formatarPrevisao, quandoAconteceu, textoDoAviso } from '../models/aviso.model';
+import { Aviso, quandoAconteceu, tomDoAviso } from '../models/aviso.model';
 import { AvisosService } from './avisos.service';
-import { PreferenciasService } from './preferencias.service';
 
-const base = {
-  ubsId: 2,
-  ubsNome: 'UBS Clima Bom',
-  medicamentoId: 1,
-  medicamentoNome: 'Metformina',
-};
-const aviso = (id: string, extra: Partial<Aviso> = {}): Aviso =>
-  ({ id, tipo: 'DISPONIVEL', ...base, ...extra }) as Aviso;
+const APARELHO = '15da7427-97f6-4bf1-9d99-004af964e951';
 
-describe('textoDoAviso', () => {
-  it('monta título, detalhe, tom e link de cada tipo', () => {
-    expect(textoDoAviso(aviso('d', { medicamentoConcentracao: '850 mg', quantidade: 30 }))).toEqual(
-      {
-        titulo: 'Metformina 850 mg disponível',
-        detalhe: '~30 un. na UBS Clima Bom. Retire no horário de funcionamento.',
-        tom: 'disponivel',
-        link: ['/medicamentos', 1],
-      },
-    );
-
-    const remessa = textoDoAviso(
-      aviso('r', {
-        tipo: 'REMESSA',
-        etapa: 'EM_TRANSPORTE',
-        quantidade: 40,
-        previsaoChegada: '2026-11-26',
-      }),
-    );
-    expect(remessa.titulo).toBe('Metformina a caminho');
-    expect(remessa.detalhe).toBe('Remessa de 40 un. para a UBS Clima Bom. Previsão: qui, 26/11.');
-    expect(remessa.tom).toBe('info');
-
-    const sinc = textoDoAviso(aviso('s', { tipo: 'SINCRONIZACAO_ATRASADA' }));
-    expect(sinc.detalhe).toBe(
-      'A UBS Clima Bom ainda não sincronizou o estoque. Ligue antes de ir.',
-    );
-    expect(sinc.link).toEqual(['/ubs', 2]);
-  });
-
-  it('descreve o atraso da sincronização em horas e depois em dias', () => {
-    const ha = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
-    const detalhe = (h: number) =>
-      textoDoAviso(aviso('s', { tipo: 'SINCRONIZACAO_ATRASADA', ocorridoEm: ha(h) })).detalhe;
-    expect(detalhe(30)).toContain('sem sincronizar há 30 h');
-    expect(detalhe(24 * 12)).toContain('sem sincronizar há 12 dias');
-  });
+const aviso = (id: number, lido = false, extra: Partial<Aviso> = {}): Aviso => ({
+  id,
+  tipo: 'MEDICAMENTO_DISPONIVEL',
+  titulo: 'Medicamento disponível',
+  texto: 'O medicamento Metformina está disponível na unidade UBS Clima Bom.',
+  lido,
+  criadoEm: '2026-11-24T10:00:00Z',
+  ...extra,
 });
 
-describe('formatarPrevisao e quandoAconteceu', () => {
-  it('formatam a previsão sem mudar o dia e o tempo de forma curta', () => {
-    expect(formatarPrevisao('2026-11-23')).toBe('seg, 23/11');
+describe('tomDoAviso e quandoAconteceu', () => {
+  it('usa alerta para dados atrasados e disponível para o resto', () => {
+    expect(tomDoAviso({ tipo: 'UBS_DADOS_ATRASADOS' })).toBe('alerta');
+    expect(tomDoAviso({ tipo: 'MEDICAMENTO_DISPONIVEL' })).toBe('disponivel');
+  });
+
+  it('formata o tempo de forma curta', () => {
     const agora = Date.parse('2026-11-23T12:00:00Z');
     expect(quandoAconteceu('2026-11-23T11:59:40Z', agora)).toBe('agora');
     expect(quandoAconteceu('2026-11-23T11:20:00Z', agora)).toBe('há 40 min');
@@ -70,68 +37,72 @@ describe('formatarPrevisao e quandoAconteceu', () => {
 describe('AvisosService', () => {
   let http: HttpTestingController;
 
-  function iniciar(
-    ubsReferenciaId: number | null,
-    remediosContinuos: number[],
-    lidos: string[] = [],
-  ) {
-    localStorage.setItem(
-      'medflow.preferencias',
-      JSON.stringify({ ubsReferenciaId, remediosContinuos, buscasRecentes: [] }),
-    );
-    localStorage.setItem('medflow.avisos-lidos', JSON.stringify(lidos));
+  function iniciar(): AvisosService {
+    localStorage.setItem('medflow.dispositivo', APARELHO);
     TestBed.configureTestingModule({
       providers: [provideHttpClient(), provideHttpClientTesting()],
     });
     http = TestBed.inject(HttpTestingController);
-    const service = TestBed.inject(AvisosService);
-    service.estado(); // assina a carga
-    TestBed.tick();
-    return service;
+    return TestBed.inject(AvisosService);
   }
 
-  afterEach(() => http.verify());
+  function responder(avisos: Aviso[], naoLidos: number): void {
+    const lista = http.expectOne({ method: 'GET', url: '/api/avisos' });
+    const total = http.expectOne('/api/avisos/nao-lidos/total');
+    expect(lista.request.headers.get('X-Dispositivo-Id')).toBe(APARELHO);
+    expect(total.request.headers.get('X-Dispositivo-Id')).toBe(APARELHO);
+    lista.flush(avisos);
+    total.flush({ naoLidos });
+  }
 
-  it('sem UBS de referência não chama a API', () => {
-    const service = iniciar(null, [1]);
-    expect(service.estado()).toEqual({ tipo: 'sem-ubs' });
+  afterEach(() => {
+    http.verify();
+    localStorage.removeItem('medflow.dispositivo');
   });
 
-  it('pede os avisos da UBS e dos remédios e conta os não lidos', () => {
-    const service = iniciar(2, [1, 3], ['a']);
-    http.expectOne('/api/avisos?ubsId=2&medicamentoIds=1,3').flush([aviso('a'), aviso('b')]);
+  it('pede os avisos do aparelho e usa o total de não lidos da API', () => {
+    const service = iniciar();
+    expect(service.estado()).toEqual({ tipo: 'carregando' });
+    // O total conta também os avisos além dos 50 da lista.
+    responder([aviso(2), aviso(1, true)], 60);
 
-    expect(service.avisos().map((a) => [a.id, a.lido])).toEqual([
-      ['a', true],
-      ['b', false],
-    ]);
-    expect(service.naoLidos()).toBe(1);
+    expect(service.avisos().map((a) => a.id)).toEqual([2, 1]);
+    expect(service.naoLidos()).toBe(60);
   });
 
-  it('marca como lido, guarda no navegador e esquece lidos que sumiram', () => {
-    const service = iniciar(2, [], ['antigo']);
-    http.expectOne('/api/avisos?ubsId=2').flush([aviso('a'), aviso('b')]);
-    expect(JSON.parse(localStorage.getItem('medflow.avisos-lidos')!)).toEqual([]);
+  it('marca todos como lidos na API e zera o contador', () => {
+    const service = iniciar();
+    responder([aviso(2), aviso(1)], 2);
 
-    service.marcarComoLido('a');
-    expect(service.naoLidos()).toBe(1);
     service.marcarTodosComoLidos();
+    const patch = http.expectOne({ method: 'PATCH', url: '/api/avisos/lidas' });
+    expect(patch.request.headers.get('X-Dispositivo-Id')).toBe(APARELHO);
+    patch.flush({ atualizados: 2 });
+
     expect(service.naoLidos()).toBe(0);
-    expect(JSON.parse(localStorage.getItem('medflow.avisos-lidos')!)).toEqual(['a', 'b']);
+    expect(service.avisos().every((a) => a.lido)).toBeTrue();
   });
 
-  it('recarrega ao trocar a UBS de referência e tenta de novo após erro', () => {
-    const service = iniciar(2, [1]);
-    http.expectOne('/api/avisos?ubsId=2&medicamentoIds=1').error(new ProgressEvent('error'));
+  it('se marcar como lidos falhar, mantém como estava', () => {
+    const service = iniciar();
+    responder([aviso(1)], 1);
+
+    service.marcarTodosComoLidos();
+    http
+      .expectOne({ method: 'PATCH', url: '/api/avisos/lidas' })
+      .flush(null, { status: 500, statusText: 'Erro' });
+
+    expect(service.naoLidos()).toBe(1);
+  });
+
+  it('tenta de novo após erro', () => {
+    const service = iniciar();
+    http.expectOne({ method: 'GET', url: '/api/avisos' }).error(new ProgressEvent('error'));
+    http.expectOne('/api/avisos/nao-lidos/total');
     expect(service.estado()).toEqual({ tipo: 'erro' });
 
     service.recarregar();
-    TestBed.tick();
-    http.expectOne('/api/avisos?ubsId=2&medicamentoIds=1').flush([]);
-    expect(service.estado()).toEqual({ tipo: 'ok', avisos: [] });
-
-    TestBed.inject(PreferenciasService).definirUbsReferencia(5);
-    TestBed.tick();
-    http.expectOne('/api/avisos?ubsId=5&medicamentoIds=1').flush([]);
+    responder([], 0);
+    expect(service.estado()).toEqual({ tipo: 'ok', avisos: [], naoLidos: 0 });
   });
 });

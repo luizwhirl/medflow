@@ -3,8 +3,10 @@ package br.ufal.medflow.ubs
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
+import java.time.Instant
 
 interface UbsRepository : JpaRepository<Ubs, Long> {
+
     fun findAllByOrderByNomeAsc(): List<Ubs>
 
     /** Bairros que têm ao menos uma UBS, sem repetição e em ordem alfabética. */
@@ -14,6 +16,31 @@ interface UbsRepository : JpaRepository<Ubs, Long> {
     fun findByCnesIn(cnes: Collection<String>): List<Ubs>
 
     fun countByCodigoIbgeMunicipio(ibge: String): Long
+
+    /**
+     * Busca UBS de um município cujos dados estão atrasados.
+     *
+     * O limite é calculado pelo serviço a partir da configuração
+     * de prazo máximo. Unidades sem data também são consideradas.
+     *
+     * O filtro ocorre diretamente no banco de dados.
+     */
+    @Query(
+        """
+        select u
+        from Ubs u
+        where u.codigoIbgeMunicipio = :codigoIbge
+          and (
+              u.ultimaSincronizacao is null
+              or u.ultimaSincronizacao < :limite
+          )
+        order by u.id
+        """,
+    )
+    fun buscarComDadosAtrasados(
+        @Param("codigoIbge") codigoIbge: String,
+        @Param("limite") limite: Instant,
+    ): List<Ubs>
 
     /**
      * UBS da mais próxima para a mais distante, a partir de um ponto (fórmula de Haversine, em km, no banco).

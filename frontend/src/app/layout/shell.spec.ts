@@ -11,7 +11,6 @@ describe('Shell', () => {
       'medflow.preferencias',
       JSON.stringify({ ubsReferenciaId, remediosContinuos: [4], buscasRecentes: [] }),
     );
-    localStorage.removeItem('medflow.avisos-lidos');
     TestBed.configureTestingModule({
       providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
     });
@@ -47,10 +46,8 @@ describe('Shell', () => {
   it('mostra quantos avisos não foram lidos na aba Avisos', () => {
     const { fixture, el } = montar(2);
     const http = TestBed.inject(HttpTestingController);
-    http.expectOne('/api/avisos?ubsId=2&medicamentoIds=4').flush([
-      { id: 'a', tipo: 'DISPONIVEL', ubsId: 2, ubsNome: 'UBS' },
-      { id: 'b', tipo: 'SINCRONIZACAO_ATRASADA', ubsId: 2, ubsNome: 'UBS' },
-    ]);
+    http.expectOne({ method: 'GET', url: '/api/avisos' }).flush([]);
+    http.expectOne('/api/avisos/nao-lidos/total').flush({ naoLidos: 2 });
     fixture.detectChanges();
 
     const navs = el.querySelectorAll('nav');

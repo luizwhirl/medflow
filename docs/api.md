@@ -18,15 +18,17 @@ Base: `http://localhost:8080/api`. A documentação interativa fica em `/swagger
 | GET | `/medicamentos/{id}/disponibilidade` | Unidades com o medicamento (disponíveis primeiro) |
 | GET | `/medicamentos/{id}/rastreamento?ubsId=` | Remessa do medicamento para a UBS: etapa atual, previsão de chegada e linha do tempo |
 | GET | `/medicamentos/{id}/disponibilidade/resumo` | Total de unidades e unidades com estoque disponível, com filtro opcional por município |
-| GET | `/avisos?ubsId=&medicamentoIds=` | Avisos da UBS para os medicamentos acompanhados (veja abaixo) |
 | GET | `/lista-desejos` | Lista os medicamentos desejados pelo aparelho (sem login, cabeçalho `X-Dispositivo-Id`) |
 | POST | `/lista-desejos` | Adiciona um medicamento à lista de desejos |
 | PATCH | `/lista-desejos/{id}` | Ativa ou desativa a notificação de um item |
 | DELETE | `/lista-desejos/{id}` | Remove um item da lista de desejos |
+| GET | `/avisos` | Lista os 50 avisos mais recentes do dispositivo (`X-Dispositivo-Id`) |
+| GET | `/avisos/nao-lidos/total` | Total de avisos não lidos do dispositivo |
+| PATCH | `/avisos/lidas` | Marca como lidos os avisos do dispositivo |
 
 ## Autenticação
 
-A leitura de UBS e medicamentos (`GET /api/ubs/**` e `GET /api/medicamentos/**`), a saúde (`/actuator/health`) e a documentação (Swagger) são públicas. A lista de desejos (`/api/lista-desejos` e subrotas) também é pública e identificada pelo aparelho (veja [Lista de desejos](#lista-de-desejos)). Todo o resto exige login. O prefixo `/api/gestao` é só do papel `GESTOR`. Rota que não existe também responde `401` sem token.
+A leitura de UBS e medicamentos (`GET /api/ubs/**` e `GET /api/medicamentos/**`), a saúde (`/actuator/health`) e a documentação (Swagger) são públicas. A lista de desejos (`/api/lista-desejos` e subrotas) também é pública e identificada pelo aparelho (veja [Lista de desejos](#lista-de-desejos)). Os avisos (`/api/avisos` e subrotas) também são públicos e identificados pelo cabeçalho `X-Dispositivo-Id`. Todo o resto exige login. O prefixo `/api/gestao` é só do papel `GESTOR`. Rota que não existe também responde `401` sem token.
 
 | Método | Rota | Quem | Descrição |
 | --- | --- | --- | --- |
@@ -40,7 +42,7 @@ A leitura de UBS e medicamentos (`GET /api/ubs/**` e `GET /api/medicamentos/**`)
 { "token": "eyJhbGciOiJIUzI1NiJ9...", "tipo": "Bearer", "expiraEmSegundos": 28800, "papel": "CIDADAO" }
 ```
 
-Nas demais chamadas, envie `Authorization: Bearer <token>`. O token é um JWT assinado com HS256, vale 8 horas (`JWT_EXPIRACAO`) e leva o id da conta (`sub`), o `email` e o `papel` (`CIDADAO` ou `GESTOR`).
+Nas chamadas autenticadas, envie `Authorization: Bearer <token>`. As rotas de avisos não exigem token e utilizam `X-Dispositivo-Id`. O token é um JWT assinado com HS256, vale 8 horas (`JWT_EXPIRACAO`) e leva o id da conta (`sub`), o `email` e o `papel` (`CIDADAO` ou `GESTOR`).
 
 `POST /api/auth/cadastro` com `{"nome": "...", "email": "...", "senha": "..."}` (senha de 8 a 72 caracteres) devolve `201` com `id`, `nome`, `email` e `papel`. O papel **não** pode ser escolhido: toda conta criada por aqui é `CIDADAO`. Conta de `GESTOR` só é criada direto no banco, com a senha em BCrypt.
 
@@ -52,7 +54,7 @@ Nas demais chamadas, envie `Authorization: Bearer <token>`. O token é um JWT as
 | Cadastro com e-mail que já existe (a caixa não importa) | `409` com `title: "E-mail já cadastrado"` |
 | Corpo inválido (campo vazio, e-mail ruim, senha curta) | `400` |
 
-Todos os erros seguem o padrão `application/problem+json`. O CORS libera o cabeçalho `Authorization` para as origens de `CORS_ALLOWED_ORIGINS`.
+Todos os erros seguem o padrão `application/problem+json`. O CORS libera os cabeçalhos `Authorization` e `X-Dispositivo-Id` para as origens de `CORS_ALLOWED_ORIGINS`.
 
 Com o suporte nativo a RFC 9457 habilitado, erros gerados automaticamente pelo Spring MVC podem apresentar o campo `title` em inglês, como `"Bad Request"` (400), `"Method Not Allowed"` (405) e `"Unsupported Media Type"` (415). Já os erros tratados pelos handlers de domínio utilizam títulos em português, como `"Parâmetro inválido"` e `"Recurso não encontrado"`. Para identificar erros programaticamente, utilize o código HTTP (`status`), em vez de depender do texto de `title`.
 
@@ -172,7 +174,84 @@ As consultas de propriedade são filtradas diretamente no banco de dados pelo `X
 
 Os erros de domínio utilizam o padrão RFC 9457 (`application/problem+json`).
 
-O campo `notificar` controla a preferência de aviso. O envio efetivo das notificações será implementado na F5.
+O campo `notificar` controla a geração dos avisos persistidos pela API. Com `false`, o cidadão não recebe novos avisos relacionados àquele item. Os avisos já gerados permanecem disponíveis no histórico.
+
+## Avisos do cidadão (sem login)
+
+Os avisos são registros armazenados no banco e vinculados a um **UUID do dispositivo**, e não à conta do usuário. Não há push, SMS ou e-mail nesta funcionalidade. O navegador gera um UUID aleatório, mantém esse valor em `localStorage` e o envia no cabeçalho `X-Dispositivo-Id`, o mesmo utilizado pela lista de desejos do PR #33.
+
+**Exemplo:** `X-Dispositivo-Id: 15da7427-97f6-4bf1-9d99-004af964e951`.
+
+Não é necessário enviar `Authorization`. Os três endpoints exigem um UUID com 36 caracteres no formato canônico; se faltar ou estiver inválido, retornam `400` (`application/problem+json`). O identificador funciona como uma chave de acesso de posse do navegador, **não como autenticação forte**: quem descobrir o UUID poderá consultar ou marcar os avisos desse dispositivo. Por isso, não exponha o UUID em URLs, logs ou analytics e não grave informações pessoais nem condições de saúde detalhadas nos avisos.
+
+### Listar avisos
+
+`GET /api/avisos`
+
+Retorna até **50 avisos mais recentes** do dispositivo, ordenados por `criadoEm` decrescente e, em caso de empate, por `id` decrescente. Se não houver avisos, retorna `[]`.
+
+```json
+[
+  {
+    "id": 21,
+    "tipo": "MEDICAMENTO_DISPONIVEL",
+    "titulo": "Medicamento disponível",
+    "texto": "O medicamento acompanhado está disponível na UBS selecionada.",
+    "lido": false,
+    "criadoEm": "2026-11-19T16:30:00Z"
+  }
+]
+```
+
+### Contar avisos não lidos
+
+`GET /api/avisos/nao-lidos/total`
+
+A contagem é executada no banco, inclusive para avisos além dos 50 mais recentes.
+
+```json
+{ "naoLidos": 7 }
+```
+
+### Marcar avisos como lidos
+
+`PATCH /api/avisos/lidas`
+
+Não recebe corpo. Marca como lidos somente os avisos do UUID informado. A atualização é feita no banco e não remove o histórico.
+
+```json
+{ "atualizados": 2 }
+```
+
+### Geração automática
+
+| Tipo | Quando é gerado |
+| --- | --- |
+| `MEDICAMENTO_DISPONIVEL` | Na sincronização, quando o medicamento passa a estar disponível na UBS acompanhada. |
+| `UBS_DADOS_ATRASADOS` | Na verificação de atraso dos dados da UBS acompanhada. |
+
+O destinatário deve ter um item de lista de desejos com `dispositivo_id` definido e `notificar = true`. Para disponibilidade, o par UBS/medicamento deve coincidir. Para atraso, basta acompanhar a UBS.
+
+A geração de disponibilidade evita produzir novo aviso se o dispositivo já tiver um aviso **não lido** para a mesma UBS e medicamento. Depois de marcar esse aviso como lido, somente uma **nova transição real de estoque para disponível** poderá produzir outro. A geração ocorre na mesma transação da sincronização de estoque; falhas provocam rollback conjunto.
+
+Avisos de atraso têm chave derivada da UBS e da última referência de dados. A constraint `uk_aviso_dispositivo_evento` impede duplicação quando o job é repetido. Atraso é calculado por **dias de calendário no fuso `America/Maceio`**, não por uma janela móvel de horas. Por padrão, a UBS está atrasada quando a posição é **anterior ao início de ontem** ou não existe data de referência. Uma posição de ontem não dispara aviso logo após a meia-noite de hoje. A tolerância é configurada por `app.avisos.atraso-dias` (padrão `1`, inteiro positivo). O job depende de `app.sync.ativo=true`.
+
+### Migrations e dados de exemplo
+
+A migration `V16__avisos.sql` cria avisos identificados por `dispositivo_id UUID`, sem vínculo com contas de usuários. A lista de desejos utiliza o modelo exclusivamente por dispositivo estabelecido pela migration `V14__lista_desejos_dispositivo.sql`.
+
+No perfil `dev`, `AvisosDeExemplo` insere idempotentemente **três avisos fictícios** (dois não lidos, um lido) para o UUID de demonstração `15da7427-97f6-4bf1-9d99-004af964e951`. Para testá-los no frontend, use esse UUID no `localStorage` de desenvolvimento e no cabeçalho `X-Dispositivo-Id`; não o utilize como UUID de um dispositivo real.
+
+### Integração e erros
+
+| Situação | Resposta |
+| --- | --- |
+| UUID ausente ou inválido | `400 Bad Request` (`Parâmetro inválido`) |
+| UUID válido sem avisos | `200 OK` com `[]` |
+| UUID válido sem avisos não lidos | `200 OK` com `{"naoLidos": 0}` |
+| UUID válido sem avisos para marcar | `200 OK` com `{"atualizados": 0}` |
+
+A API não verifica uma sessão ou conta de cidadão. A separação dos registros usa exclusivamente `dispositivo_id`; não exponha esse identificador a terceiros. A lista de desejos e os avisos utilizam o mesmo UUID no frontend.
 
 ## Paginação
 
@@ -635,41 +714,6 @@ A `quantidade` tem sinal: `ENTRADA` é positiva, `DISPENSACAO` é negativa e `AJ
 
 - `404` se a UBS ou o `medicamentoId` informado não existir. Um medicamento que existe mas não tem movimentação na UBS responde `200` com `[]`.
 - É uma lista simples com as últimas `limite` movimentações, e não uma página como as listagens de estoque e medicamentos (`pagina` e `tamanho`): a tela só mostra as mais recentes. Se virar histórico completo, passa a usar `PaginaResponse`.
-
-## Avisos
-
-`GET /api/avisos?ubsId=1&medicamentoIds=3,5` é público (sem login): o cidadão informa a UBS de referência e os medicamentos que acompanha (até 50, separados por vírgula; `medicamentoIds` é opcional). A resposta vem do mais recente para o mais antigo, e um aviso sem data (UBS que nunca sincronizou) vai para o fim.
-
-| `tipo` | Quando aparece | Campos além de `id`, `tipo`, `ubsId` e `ubsNome` |
-| --- | --- | --- |
-| `DISPONIVEL` | O medicamento está com status `DISPONIVEL` e quantidade maior que zero na UBS | `medicamentoId`, `medicamentoNome`, `medicamentoConcentracao`, `quantidade`, `ocorridoEm` (atualização do estoque) |
-| `REMESSA` | Há remessa do medicamento para a UBS que ainda não chegou à etapa `DISPONIVEL` | os do medicamento, `quantidade`, `etapa` (a mais avançada registrada; `PEDIDO` se não houver eventos), `previsaoChegada` (`AAAA-MM-DD`), `ocorridoEm` (momento da etapa) |
-| `SINCRONIZACAO_ATRASADA` | A UBS está há mais de 24 h sem sincronizar, ou nunca sincronizou | `ocorridoEm` (última sincronização; ausente se nunca sincronizou) |
-
-```json
-[
-  {
-    "id": "remessa-7-EM_TRANSPORTE",
-    "tipo": "REMESSA",
-    "ubsId": 1,
-    "ubsNome": "UBS Benedito Bentes I",
-    "medicamentoId": 3,
-    "medicamentoNome": "Metformina",
-    "medicamentoConcentracao": "850 mg",
-    "quantidade": 300,
-    "etapa": "EM_TRANSPORTE",
-    "previsaoChegada": "2026-11-25",
-    "ocorridoEm": "2026-11-23T09:00:00Z"
-  }
-]
-```
-
-O `id` é estável para o mesmo acontecimento, para o frontend guardar o que já foi lido: `disponivel-{ubs}-{medicamento}`, `remessa-{remessa}-{etapa}` (muda quando a remessa avança) e `sincronizacao-{ubs}-{segundos da última sincronização}` (muda a cada novo atraso). Campos sem valor não aparecem no JSON.
-
-| Situação | Resposta |
-| --- | --- |
-| Sem `ubsId`, `ubsId` não positivo, id de medicamento não numérico ou não positivo, ou mais de 50 medicamentos | `400` |
-| UBS inexistente | `404` com `title: "Recurso não encontrado"` |
 
 ## Exemplos
 

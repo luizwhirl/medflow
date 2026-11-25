@@ -56,6 +56,7 @@ interface Resultado {
             <app-chip [(selecionado)]="ateCincoKm">Até {{ raio }} km</app-chip>
           }
           <app-chip [(selecionado)]="soDisponiveis">Só disponíveis</app-chip>
+          <app-chip [(selecionado)]="abertasAgora">Abertas agora</app-chip>
           @for (c of categorias(); track c) {
             <app-chip
               [selecionado]="categoriaAtual() === c"
@@ -92,6 +93,12 @@ interface Resultado {
                 <span class="block text-lg font-semibold">
                   {{ r.medicamento.nome }} {{ r.medicamento.concentracao }}
                 </span>
+                @if (preferencias.remediosContinuos().includes(r.medicamento.id)) {
+                  <span
+                    class="mt-1 inline-block rounded-full bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-600"
+                    >Na minha lista</span
+                  >
+                }
                 <span class="block capitalize text-content-muted">{{
                   r.medicamento.formaFarmaceutica
                 }}</span>
@@ -100,15 +107,19 @@ interface Resultado {
                   [class]="r.disponiveis ? 'text-brand-600' : 'text-status-falta'"
                 >
                   @if (r.total === 0) {
-                    {{
-                      raioAtivo()
-                        ? 'Nenhuma UBS a até ' + raio + ' km'
-                        : 'Nenhuma UBS informou estoque'
-                    }}
+                    @if (abertasAgora()) {
+                      Nenhuma UBS{{ raioAtivo() ? ' a até ' + raio + ' km' : '' }} aberta agora
+                    } @else {
+                      {{
+                        raioAtivo()
+                          ? 'Nenhuma UBS a até ' + raio + ' km'
+                          : 'Nenhuma UBS informou estoque'
+                      }}
+                    }
                   } @else if (r.disponiveis) {
-                    Em {{ r.disponiveis }} de {{ r.total }} UBS{{ raioAtivo() ? ' próximas' : '' }}
+                    Em {{ r.disponiveis }} de {{ r.total }} UBS{{ sufixoUbs() }}
                   } @else {
-                    Em falta nas UBS{{ raioAtivo() ? ' próximas' : '' }}
+                    Em falta nas UBS{{ sufixoUbs() }}
                   }
                 </span>
               </a>
@@ -159,6 +170,7 @@ export class MedicamentoSearchPage {
   protected readonly categoriaAtual = linkedSignal(() => this.categoria() ?? '');
   protected readonly ateCincoKm = signal(true);
   protected readonly soDisponiveis = signal(false);
+  protected readonly abertasAgora = signal(false);
   protected readonly posicao = signal<Coordenadas | null>(null);
 
   protected readonly raioAtivo = computed(() => this.ateCincoKm() && this.posicao() !== null);
@@ -179,6 +191,29 @@ export class MedicamentoSearchPage {
       ),
     ),
     { initialValue: null },
+  );
+
+  /**
+   * Ids das UBS abertas agora, segundo a API (uma chamada ao ligar o chip);
+   * `null` com o chip desligado. UBS sem horário cadastrado não entram.
+   */
+  private readonly idsAbertos = toSignal(
+    toObservable(this.abertasAgora).pipe(
+      switchMap((ligado) =>
+        ligado
+          ? this.ubsService.listar({ abertas: true }).pipe(
+              map((ubs) => new Set(ubs.map((u) => u.id))),
+              catchError(() => of(null)),
+            )
+          : of(null),
+      ),
+    ),
+    { initialValue: null },
+  );
+
+  /** Complemento de "Em X de Y UBS": " próximas", " abertas" ou " próximas abertas". */
+  protected readonly sufixoUbs = computed(
+    () => `${this.raioAtivo() ? ' próximas' : ''}${this.abertasAgora() ? ' abertas' : ''}`,
   );
 
   protected readonly selecionado = computed(() => {
@@ -226,11 +261,12 @@ export class MedicamentoSearchPage {
 
   protected readonly visiveis = computed((): Resultado[] => {
     const noRaio = this.idsNoRaio();
+    const abertos = this.idsAbertos();
     return this.encontrados()
       .itens.map(({ medicamento, disponibilidade }) => {
-        const consideradas = noRaio
-          ? disponibilidade.filter((d) => noRaio.has(d.ubs.id))
-          : disponibilidade;
+        const consideradas = disponibilidade.filter(
+          (d) => (!noRaio || noRaio.has(d.ubs.id)) && (!abertos || abertos.has(d.ubs.id)),
+        );
         return {
           medicamento,
           total: consideradas.length,
