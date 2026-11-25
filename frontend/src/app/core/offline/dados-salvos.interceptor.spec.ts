@@ -11,7 +11,11 @@ import { provideRouter } from '@angular/router';
 
 import { ConexaoService } from './conexao.service';
 import { chaveDe, dadosSalvosInterceptor } from './dados-salvos.interceptor';
-import { DadosSalvosService, PREFIXO_DADOS_SALVOS } from './dados-salvos.service';
+import {
+  DadosSalvosService,
+  MAX_BUSCAS_SALVAS,
+  PREFIXO_DADOS_SALVOS,
+} from './dados-salvos.service';
 
 describe('dadosSalvosInterceptor', () => {
   let http: HttpClient;
@@ -109,6 +113,36 @@ describe('dadosSalvosInterceptor', () => {
     http.get('/icons/marca.svg', { responseType: 'text' }).subscribe();
     api.expectOne('/icons/marca.svg').flush('<svg/>');
     expect(Object.keys(localStorage).some((k) => k.startsWith(PREFIXO_DADOS_SALVOS))).toBeFalse();
+  });
+
+  it('não salva nem usa dados salvos da gestão e da autenticação (dependem de quem está logado)', () => {
+    http.get('/api/gestao/indicadores').subscribe();
+    api.expectOne('/api/gestao/indicadores').flush({ ubsComEstoqueBaixo: 3 });
+    http.get('/api/auth/eu').subscribe();
+    api.expectOne('/api/auth/eu').flush({ email: 'gestor@ubs.br' });
+    expect(Object.keys(localStorage).some((k) => k.startsWith(PREFIXO_DADOS_SALVOS))).toBeFalse();
+
+    // Mesmo que algo tenha ficado salvo, sem conexão o erro chega à tela.
+    salvos.salvar('/api/gestao/indicadores', { ubsComEstoqueBaixo: 9 });
+    let erro: unknown;
+    http.get('/api/gestao/indicadores').subscribe({ error: (e) => (erro = e) });
+    api.expectOne('/api/gestao/indicadores').error(new ProgressEvent('error'));
+    expect(erro).toBeDefined();
+    expect(conexao.dadosSalvosEm()).toBeNull();
+  });
+
+  it('guarda só as buscas mais recentes', () => {
+    for (let i = 0; i < MAX_BUSCAS_SALVAS + 2; i++) {
+      salvos.salvar(`/api/medicamentos?busca=termo${i}`, [], 1_000 + i);
+    }
+    salvos.salvar('/api/medicamentos/categorias', [], 1);
+
+    expect(salvos.ler('/api/medicamentos?busca=termo0')).toBeNull();
+    expect(salvos.ler('/api/medicamentos?busca=termo1')).toBeNull();
+    expect(salvos.ler('/api/medicamentos?busca=termo2')).not.toBeNull();
+    expect(salvos.ler(`/api/medicamentos?busca=termo${MAX_BUSCAS_SALVAS + 1}`)).not.toBeNull();
+    // O que não é busca não entra na conta, mesmo sendo mais antigo.
+    expect(salvos.ler('/api/medicamentos/categorias')).not.toBeNull();
   });
 
   it('a chave ordena os parâmetros e ignora as coordenadas', () => {

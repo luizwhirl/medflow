@@ -3,6 +3,14 @@ import { Injectable } from '@angular/core';
 /** Prefixo das respostas salvas no navegador (o "v1" permite descartar tudo se o formato mudar). */
 export const PREFIXO_DADOS_SALVOS = 'medflow.dados.v1:';
 
+/**
+ * Cada termo digitado vira uma chave (`/api/medicamentos?busca=…`); guarda só as mais recentes,
+ * para o armazenamento não crescer até a cota e o descarte em massa não levar o que ainda é usado.
+ */
+export const MAX_BUSCAS_SALVAS = 50;
+
+const ehBusca = (chave: string) => /[?&]busca=/.test(chave);
+
 export interface DadoSalvo {
   /** Quando a resposta chegou da API (ms desde 1970). */
   em: number;
@@ -41,6 +49,7 @@ export class DadosSalvosService {
         // Sem armazenamento (aba privada ou cota esgotada): segue sem salvar.
       }
     }
+    if (ehBusca(chave)) this.limitarBuscas();
   }
 
   /** Remove as respostas de `recurso` e de tudo abaixo dele (`/api/x`, `/api/x?…`, `/api/x/1`). */
@@ -49,6 +58,19 @@ export class DadosSalvosService {
       this.chaves().filter(
         (c) => c === recurso || c.startsWith(`${recurso}/`) || c.startsWith(`${recurso}?`),
       ),
+    );
+  }
+
+  /** Mantém só as {@link MAX_BUSCAS_SALVAS} buscas salvas mais recentes. */
+  private limitarBuscas(): void {
+    const buscas = this.chaves().filter(ehBusca);
+    if (buscas.length <= MAX_BUSCAS_SALVAS) return;
+    this.remover(
+      buscas
+        .map((chave) => ({ chave, em: this.ler(chave)?.em ?? 0 }))
+        .sort((a, b) => b.em - a.em)
+        .slice(MAX_BUSCAS_SALVAS)
+        .map(({ chave }) => chave),
     );
   }
 

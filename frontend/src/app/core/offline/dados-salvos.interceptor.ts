@@ -21,13 +21,21 @@ const PARAMETROS_IGNORADOS = new Set(['lat', 'lng']);
 const STATUS_SEM_CONEXAO = new Set([0, 502, 503, 504]);
 
 /**
- * Guarda a resposta de cada leitura da API e, quando a API não responde, devolve a última resposta
- * salva no lugar do erro, avisando o {@link ConexaoService} (que mostra o banner com o horário).
+ * Rotas que dependem de quem está logado: não vão para o navegador, que sobrevive ao logout e não
+ * separa contas (o gestor de uma UBS veria, sem internet, os números salvos por outro gestor).
+ * Sem internet, essas telas mostram o erro padrão.
+ */
+const ROTAS_NAO_SALVAS = ['gestao', 'auth'].map((r) => `${environment.apiUrl}/${r}`);
+
+/**
+ * Guarda a resposta de cada leitura pública da API (e da lista de desejos do aparelho) e, quando a
+ * API não responde, devolve a última resposta salva no lugar do erro, avisando o
+ * {@link ConexaoService} (que mostra o banner com o horário).
  * Uma escrita bem-sucedida (POST/PATCH/DELETE) descarta o que estava salvo daquele recurso, para
  * não mostrar depois uma versão anterior à alteração.
  */
 export const dadosSalvosInterceptor: HttpInterceptorFn = (req, next) => {
-  if (!req.url.startsWith(environment.apiUrl)) return next(req);
+  if (!req.url.startsWith(environment.apiUrl) || naoSalva(req.url)) return next(req);
   const salvos = inject(DadosSalvosService);
 
   if (req.method !== 'GET') {
@@ -68,6 +76,11 @@ export function chaveDe(req: HttpRequest<unknown>): string {
     .sort(([a, va], [b, vb]) => a.localeCompare(b) || va.localeCompare(vb))
     .map(([nome, valor]) => `${nome}=${valor}`);
   return pares.length ? `${caminho}?${pares.join('&')}` : caminho;
+}
+
+function naoSalva(url: string): boolean {
+  const caminho = url.split('?')[0];
+  return ROTAS_NAO_SALVAS.some((r) => caminho === r || caminho.startsWith(`${r}/`));
 }
 
 /** `/api/lista-desejos/7` → `/api/lista-desejos`. */
