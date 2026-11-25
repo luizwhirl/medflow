@@ -63,6 +63,15 @@ npm run format        # Prettier
 
 Se não tiver Chrome instalado, aponte `CHROME_BIN` para outro navegador Chromium (ex.: Edge).
 
+### Testar a busca por voz no celular
+
+O microfone só funciona em contexto seguro (HTTPS ou `localhost`). Abrir `http://<ip-da-máquina>:4200` no celular não serve: o botão de microfone nem aparece. Duas saídas, com o `npm start` rodando:
+
+- **Android (Chrome):** ligue a depuração USB no celular, conecte no computador e abra `chrome://inspect` no Chrome do computador. Em **Port forwarding**, encaminhe a porta `4200` para `localhost:4200`. No celular, abra `http://localhost:4200`: para o navegador é `localhost`, então o microfone funciona. Não precisa de túnel nem de certificado.
+- **iPhone (Safari) e qualquer outro aparelho:** use a homologação com HTTPS (PDS-25), quando existir, ou um túnel HTTPS para a porta 4200 da sua máquina (por exemplo, `cloudflared tunnel --url http://localhost:4200`). O `/api` passa pelo proxy do `npm start`, então basta expor a 4200. Se o Angular recusar o endereço do túnel ("Blocked request"), acrescente o domínio em `allowedHosts` nas opções do `serve` no `angular.json`, só na sua máquina.
+
+O roteiro do teste (navegadores, permissões e frases) está na PDS-54. O que é enviado e as mensagens de erro estão em [busca-por-voz.md](busca-por-voz.md).
+
 ## 5. Tudo em containers (opcional)
 
 Serve para quem não tem JDK ou Node, ou está com problema no Gradle local. Só o Docker é necessário:

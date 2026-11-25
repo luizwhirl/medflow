@@ -70,8 +70,9 @@ export class ReconhecimentoVozService {
    * Componentes devem passar seu próprio DestroyRef para cancelar
    * a escuta automaticamente ao navegar ou destruir a tela.
    * O serviço é compartilhado e possui ciclo de vida da aplicação.
+   * Com `local`, pede o reconhecimento no aparelho (veja `reconhecimentoLocalDisponivel`).
    */
-  ouvir(dono?: DestroyRef): Promise<ResultadoVoz | null> {
+  ouvir(dono?: DestroyRef, opcoes: { local?: boolean } = {}): Promise<ResultadoVoz | null> {
     this.cancelar();
 
     this.erroInterno.set(null);
@@ -93,6 +94,7 @@ export class ReconhecimentoVozService {
       reconhecimento.continuous = false;
       reconhecimento.interimResults = true;
       reconhecimento.maxAlternatives = 3;
+      if (opcoes.local) reconhecimento.processLocally = true;
     } catch (erro) {
       this.erroInterno.set(this.mapearExcecao(erro));
       this.estadoInterno.set('erro');
@@ -169,6 +171,22 @@ export class ReconhecimentoVozService {
         this.finalizar(escuta, null, this.mapearExcecao(erro), true);
       }
     });
+  }
+
+  /**
+   * Se o navegador reconhece pt-BR no próprio aparelho, sem mandar o áudio para fora. Não baixa
+   * o pacote de idioma (`install()`, ~60 MB): só usa o que já estiver instalado.
+   */
+  async reconhecimentoLocalDisponivel(): Promise<boolean> {
+    try {
+      const disponivel = await this.construtor?.available?.({
+        langs: ['pt-BR'],
+        processLocally: true,
+      });
+      return disponivel === 'available';
+    } catch {
+      return false;
+    }
   }
 
   /** Para de captar áudio, permitindo receber o resultado final. */

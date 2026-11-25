@@ -21,6 +21,8 @@ export interface ReconhecimentoVoz {
   continuous: boolean;
   interimResults: boolean;
   maxAlternatives: number;
+  /** Reconhecimento no próprio aparelho, sem mandar o áudio para fora (Chrome 139+). */
+  processLocally?: boolean;
 
   onstart: (() => void) | null;
   onspeechend: (() => void) | null;
@@ -34,8 +36,16 @@ export interface ReconhecimentoVoz {
   abort(): void;
 }
 
+export type DisponibilidadeReconhecimento =
+  'available' | 'downloadable' | 'downloading' | 'unavailable';
+
 export interface ConstrutorReconhecimentoVoz {
   new (): ReconhecimentoVoz;
+  /** Diz se o idioma pode ser reconhecido no aparelho; só existe nos navegadores mais novos. */
+  available?(opcoes: {
+    langs: string[];
+    processLocally: boolean;
+  }): Promise<DisponibilidadeReconhecimento>;
 }
 
 export interface AmbienteReconhecimentoVoz {

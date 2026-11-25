@@ -8,6 +8,7 @@ import { Disponibilidade, temEstoque } from '../../core/models/estoque.model';
 import { Medicamento } from '../../core/models/medicamento.model';
 import { MedicamentoService } from '../../core/services/medicamento.service';
 import { PreferenciasService } from '../../core/services/preferencias.service';
+import { ResultadoVoz } from '../../core/services/reconhecimento-voz.service';
 import { UbsService } from '../../core/services/ubs.service';
 import { Chip } from '../../shared/components/chip';
 import { SearchField } from '../../shared/components/search-field';
@@ -46,6 +47,7 @@ interface Resultado {
           [valor]="termo()"
           (valorChange)="termo.set($event)"
           (buscar)="preferencias.registrarBusca($event)"
+          (voz)="voz.set($event)"
         />
         <div
           class="-mx-4 mt-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] md:-mx-7 md:px-7"
@@ -226,14 +228,30 @@ export class MedicamentoSearchPage {
     { initialValue: [] as string[] },
   );
 
+  /** Última busca por voz; as alternativas valem enquanto o campo tiver o texto reconhecido. */
+  protected readonly voz = signal<ResultadoVoz | null>(null);
+  private readonly alternativas = computed(() => {
+    const v = this.voz();
+    return v && v.texto.trim() === this.termo().trim() ? v.alternativas : [];
+  });
+
   protected readonly encontrados = toSignal(
     toObservable(
-      computed(() => ({ termo: this.termo().trim(), categoria: this.categoriaAtual() })),
+      computed(() => ({
+        termo: this.termo().trim(),
+        categoria: this.categoriaAtual(),
+        alternativas: this.alternativas(),
+      })),
     ).pipe(
       debounceTime(250),
-      distinctUntilChanged((a, b) => a.termo === b.termo && a.categoria === b.categoria),
-      switchMap(({ termo, categoria }) =>
-        this.medicamentoService.buscar(termo, categoria).pipe(
+      distinctUntilChanged(
+        (a, b) =>
+          a.termo === b.termo &&
+          a.categoria === b.categoria &&
+          a.alternativas.join('|') === b.alternativas.join('|'),
+      ),
+      switchMap(({ termo, categoria, alternativas }) =>
+        this.medicamentoService.buscar(termo, categoria, undefined, alternativas).pipe(
           map((pagina) => ({ meds: pagina.itens, total: pagina.totalItens })),
           catchError(() => of({ meds: [] as Medicamento[], total: 0 })),
           switchMap(({ meds, total }) =>
