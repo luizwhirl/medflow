@@ -13,8 +13,13 @@ object ClassificacaoUnidade {
         "\\b(SECRETARIA|ALMOXARIFADO|CAF|CAPS|UPA|HOSPITAL|MATERNIDADE|SAMU|LABORATORIO|VIGILANCIA)\\b|" +
             "CENTRAL DE ABASTECIMENTO|CENTRO ESPECIALIZADO|APOIO PSICOSSOCIAL",
     )
-    private val SAUDE_DA_FAMILIA = Regex("\\b(USF|ESF|PSF)\\b|SAUDE DA FAMILIA")
-    private val UNIDADE_BASICA = Regex("\\bUBS\\b|UNIDADE BASICA|UNIDADE DE SAUDE|CENTRO DE SAUDE|\\bPOSTO\\b|FARMACIA")
+    private val SAUDE_DA_FAMILIA = Regex("\\b(USF|ESF|PSF)\\b|SAUDE DA FAMILIA|\\bUS DA FAMILIA\\b|CLINICA DA FAMILIA")
+
+    /** A BNAFAR abrevia à vontade: "UNID BASICA", "US FREI DAMIAO", "C S ROLAND SIMON", "UNIDADE DE S JOSE...", "UDA". */
+    private val UNIDADE_BASICA = Regex(
+        "\\bUBS\\b|UNID(ADE)? BASICA|UNID(ADE)? DE SAUDE|UNIDADE DE S\\b|CENTRO DE SAUDE|\\bC S\\b|\\bUS\\b|" +
+            "\\bUDA\\b|UNIDADE DOCENTE ASSISTENCIAL|\\bPOSTO\\b|FARMACIA",
+    )
 
     /** Devolve o tipo da unidade, ou null se ela não é um ponto de atendimento ao cidadão. */
     fun tipo(nome: String?): TipoUnidade? {

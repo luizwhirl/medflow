@@ -20,7 +20,7 @@ import kotlin.test.assertEquals
 /** Cada teste cria a própria UBS e o próprio medicamento, dentro da sua transação, então nada depende do seed. */
 @SpringBootTest
 @AutoConfigureMockMvc
-@ActiveProfiles("dev")
+@ActiveProfiles("dev", "demo")
 @Import(TestcontainersConfiguration::class)
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional

@@ -8,9 +8,16 @@ import br.ufal.medflow.estoque.LoteEstoqueRepository
 import br.ufal.medflow.estoque.RegraStatusEstoque
 import br.ufal.medflow.estoque.StatusEstoque
 import br.ufal.medflow.integracao.FonteEstoque
+import br.ufal.medflow.integracao.Geocodificador
+import br.ufal.medflow.integracao.LimiteMunicipio
+import br.ufal.medflow.integracao.LocalEncontrado
+import br.ufal.medflow.integracao.NomesParaBusca
+import br.ufal.medflow.integracao.LimitesMunicipais
+import br.ufal.medflow.integracao.Ponto
 import br.ufal.medflow.integracao.PosicaoEstoque
 import br.ufal.medflow.medicamento.Medicamento
 import br.ufal.medflow.medicamento.MedicamentoRepository
+import br.ufal.medflow.ubs.OrigemLocalizacao
 import br.ufal.medflow.ubs.TipoUnidade
 import br.ufal.medflow.ubs.Ubs
 import br.ufal.medflow.ubs.UbsRepository
@@ -36,17 +43,77 @@ class SincronizacaoEstoqueService(
     private val loteRepository: LoteEstoqueRepository,
     private val regraStatus: RegraStatusEstoque,
     private val geracaoAvisos: GeracaoAvisoService,
+    private val limites: LimitesMunicipais,
+    private val geocodificador: Geocodificador,
+    private val props: SincronizacaoProperties,
     transactionManager: PlatformTransactionManager,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val transacao = TransactionTemplate(transactionManager)
 
-    /** @throws br.ufal.medflow.integracao.FonteEstoqueIndisponivelException se a fonte falhar (nada é gravado) */
+    /**
+     * @throws br.ufal.medflow.integracao.FonteEstoqueIndisponivelException se a fonte falhar (nada é gravado)
+     * @throws br.ufal.medflow.integracao.LimiteMunicipioIndisponivelException se não der para obter o contorno do
+     *   município no IBGE (nada é gravado: sem ele não há como conferir as coordenadas)
+     */
     fun sincronizar(codigoIbge: String): ResultadoSincronizacao {
-        val posicoes = fonte.buscarPosicoes(codigoIbge) // fora da transação: a chamada HTTP pode demorar
-        val resultado = transacao.execute { gravar(codigoIbge, posicoes) }
+        // fora da transação: as chamadas HTTP podem demorar
+        val limite = limites.limite(codigoIbge)
+        val posicoes = fonte.buscarPosicoes(codigoIbge)
+        val conferencia = conferirLocalizacoes(posicoes, limite)
+        val resultado = transacao.execute { gravar(codigoIbge, posicoes, conferencia) }
         log.info("Sincronização {}: {}", codigoIbge, resultado)
         return resultado
+    }
+
+    /** CNES cuja coordenada da fonte está errada, e onde (prédio ou bairro) as que precisavam foram achadas. */
+    private class Conferencia(val erradas: Set<String>, val achadas: Map<String, LocalEncontrado>)
+
+    /**
+     * A coordenada da fonte está errada quando cai fora do município ou longe do bairro informado (se o bairro for
+     * achado no mapa). As erradas são procuradas no mapa (prédio ou bairro), menos as que já têm localização própria:
+     * correção do gestor (MANUAL) ou achada antes (LUGAR, BAIRRO).
+     */
+    private fun conferirLocalizacoes(posicoes: List<PosicaoEstoque>, limite: LimiteMunicipio): Conferencia {
+        val unidades = posicoes
+            .filter { it.latitude != null && it.longitude != null && ClassificacaoUnidade.tipo(it.nomeUnidade) != null }
+            .groupBy { it.cnes }
+            .mapValues { (_, lista) -> lista.maxBy { it.dataPosicao } }
+
+        // Bairro digitado errado na fonte ("OURO PREO") não é achado no mapa: tenta o bairro de outra unidade com
+        // nome quase igual ("OURO PRETO"). O resultado vale para a conferência e para a busca da unidade.
+        val bairrosDaFonte = unidades.values.mapNotNull { it.bairro }
+        val centros = HashMap<String?, Pair<String?, Ponto?>>()
+        fun centroDoBairro(bairro: String?): Pair<String?, Ponto?> = centros.getOrPut(bairro) {
+            geocodificador.centroDoBairro(bairro, limite, props.toleranciaLimiteKm)?.let { bairro to it }
+                ?: NomesParaBusca.parecido(bairro, bairrosDaFonte)
+                    ?.let { outro -> outro to geocodificador.centroDoBairro(outro, limite, props.toleranciaLimiteKm) }
+                    ?.takeIf { it.second != null }
+                ?: (bairro to null)
+        }
+
+        val erradas = unidades.filterValues { p ->
+            val daFonte = Ponto(p.latitude!!, p.longitude!!)
+            if (!limite.contem(daFonte, props.toleranciaLimiteKm)) return@filterValues true
+            val centro = centroDoBairro(p.bairro).second ?: return@filterValues false
+            val distancia = daFonte.distanciaKm(centro)
+            (distancia > props.distanciaMaximaDoBairroKm).also { longe ->
+                if (longe) log.info("UBS {} ({}): coordenada da fonte a {} km do bairro {}", p.cnes, p.nomeUnidade, "%.1f".format(distancia), p.bairro)
+            }
+        }
+        if (erradas.isEmpty()) return Conferencia(emptySet(), emptyMap())
+
+        val jaLocalizadas = ubsRepository.findByCnesIn(erradas.keys)
+            .filter { it.localizacaoOrigem in LOCALIZACAO_PROPRIA }
+            .map { it.cnes }
+            .toSet()
+        val achadas = HashMap<String, LocalEncontrado>()
+        for ((cnes, p) in erradas) {
+            if (cnes in jaLocalizadas) continue
+            geocodificador.localizar(p.nomeUnidade ?: continue, centroDoBairro(p.bairro).first, limite, props.toleranciaLimiteKm)
+                ?.let { achadas[cnes] = it }
+        }
+        return Conferencia(erradas.keys, achadas)
     }
 
     private data class Valida(
@@ -56,7 +123,11 @@ class SincronizacaoEstoqueService(
         val catmat: String,
     )
 
-    private fun gravar(codigoIbge: String, posicoes: List<PosicaoEstoque>): ResultadoSincronizacao {
+    private fun gravar(
+        codigoIbge: String,
+        posicoes: List<PosicaoEstoque>,
+        conferencia: Conferencia,
+    ): ResultadoSincronizacao {
         var naoUbs = 0
         var semCoordenadas = 0
         var naoMedicamento = 0
@@ -81,7 +152,7 @@ class SincronizacaoEstoqueService(
         val referenciaPorUbs = validas.groupBy { it.posicao.cnes }
             .mapValues { (_, lista) -> lista.maxOf { it.posicao.dataPosicao }.comoInstante() }
 
-        val ubsPorCnes = gravarUnidades(validas)
+        val ubsPorCnes = gravarUnidades(validas, conferencia)
         val medicamentoPorCatmat = gravarMedicamentos(validas)
         val itens = gravarItens(porItem, referenciaPorUbs, ubsPorCnes, medicamentoPorCatmat)
         val lotes = gravarLotes(porItem, itens.porChave)
@@ -91,6 +162,7 @@ class SincronizacaoEstoqueService(
             posicoesLidas = posicoes.size,
             descartes = Descartes(naoUbs, semCoordenadas, naoMedicamento),
             unidades = ubsPorCnes.contagem,
+            localizacoes = ubsPorCnes.porChave.values.groupingBy { it.localizacaoOrigem }.eachCount(),
             medicamentos = medicamentoPorCatmat.contagem,
             itens = itens.contagem,
             lotes = lotes,
@@ -99,7 +171,7 @@ class SincronizacaoEstoqueService(
 
     private class Gravados<K, T>(val porChave: Map<K, T>, val contagem: Contagem)
 
-    private fun gravarUnidades(validas: List<Valida>): Gravados<String, Ubs> {
+    private fun gravarUnidades(validas: List<Valida>, conferencia: Conferencia): Gravados<String, Ubs> {
         val porCnes = validas.groupBy { it.posicao.cnes }
         val existentes = ubsRepository.findByCnesIn(porCnes.keys).associateBy { it.cnes }
         val resultado = HashMap<String, Ubs>()
@@ -108,8 +180,9 @@ class SincronizacaoEstoqueService(
 
         for ((cnes, lista) in porCnes) {
             val maisRecente = lista.maxBy { it.posicao.dataPosicao }
-            val candidata = novaUbs(maisRecente, lista.maxOf { it.posicao.dataPosicao }.comoInstante())
             val existente = existentes[cnes]
+            val local = resolverLocal(maisRecente.posicao, existente, cnes in conferencia.erradas, conferencia.achadas[cnes])
+            val candidata = novaUbs(maisRecente, lista.maxOf { it.posicao.dataPosicao }.comoInstante(), local)
             if (existente == null) {
                 novas += candidata
             } else {
@@ -121,7 +194,33 @@ class SincronizacaoEstoqueService(
         return Gravados(resultado, Contagem(criados = novas.size, atualizados = atualizadas))
     }
 
-    private fun novaUbs(v: Valida, ultimaSincronizacao: Instant): Ubs {
+    private data class Local(val ponto: Ponto, val origem: OrigemLocalizacao)
+
+    /**
+     * Ordem: correção do gestor; coordenada da fonte, se passou na conferência; localização achada antes (prédio ou
+     * bairro); a achada agora no mapa. Sem nada disso, fica a da fonte marcada como INVALIDA (não aparece para o cidadão).
+     */
+    private fun resolverLocal(p: PosicaoEstoque, existente: Ubs?, fonteErrada: Boolean, achada: LocalEncontrado?): Local {
+        if (existente?.localizacaoOrigem == OrigemLocalizacao.MANUAL) {
+            return Local(Ponto(existente.latitude, existente.longitude), OrigemLocalizacao.MANUAL)
+        }
+        val daFonte = Ponto(p.latitude!!, p.longitude!!)
+        if (!fonteErrada) return Local(daFonte, OrigemLocalizacao.FONTE)
+        if (existente != null && existente.localizacaoOrigem in LOCALIZACAO_PROPRIA) {
+            return Local(Ponto(existente.latitude, existente.longitude), existente.localizacaoOrigem)
+        }
+        if (achada != null) {
+            log.info("UBS {} ({}): coordenada da fonte errada; usando {} {}", p.cnes, p.nomeUnidade, achada.origem, achada.ponto)
+            return Local(achada.ponto, achada.origem)
+        }
+        log.warn(
+            "UBS {} ({}) com coordenada errada no município {} ({}, {}) e não achada no mapa: fica fora da lista até o gestor corrigir o pino",
+            p.cnes, p.nomeUnidade, p.codigoIbgeMunicipio, p.latitude, p.longitude,
+        )
+        return Local(daFonte, OrigemLocalizacao.INVALIDA)
+    }
+
+    private fun novaUbs(v: Valida, ultimaSincronizacao: Instant, local: Local): Ubs {
         val p = v.posicao
         return Ubs(
             cnes = p.cnes,
@@ -131,8 +230,9 @@ class SincronizacaoEstoqueService(
             endereco = enderecoDe(p).limitar(200),
             telefone = p.telefone?.limitar(20),
             codigoIbgeMunicipio = p.codigoIbgeMunicipio,
-            latitude = p.latitude!!,
-            longitude = p.longitude!!,
+            latitude = local.ponto.latitude,
+            longitude = local.ponto.longitude,
+            localizacaoOrigem = local.origem,
             ultimaSincronizacao = ultimaSincronizacao,
         )
     }
@@ -146,11 +246,12 @@ class SincronizacaoEstoqueService(
     private fun Ubs.atualizarCom(n: Ubs): Boolean {
         val mudou = nome != n.nome || tipo != n.tipo || bairro != n.bairro || endereco != n.endereco ||
             telefone != n.telefone || codigoIbgeMunicipio != n.codigoIbgeMunicipio || latitude != n.latitude ||
-            longitude != n.longitude || ultimaSincronizacao != n.ultimaSincronizacao
+            longitude != n.longitude || localizacaoOrigem != n.localizacaoOrigem ||
+            ultimaSincronizacao != n.ultimaSincronizacao
         if (mudou) {
             nome = n.nome; tipo = n.tipo; bairro = n.bairro; endereco = n.endereco; telefone = n.telefone
             codigoIbgeMunicipio = n.codigoIbgeMunicipio; latitude = n.latitude; longitude = n.longitude
-            ultimaSincronizacao = n.ultimaSincronizacao
+            localizacaoOrigem = n.localizacaoOrigem; ultimaSincronizacao = n.ultimaSincronizacao
         }
         return mudou
     }
@@ -308,5 +409,8 @@ class SincronizacaoEstoqueService(
 
     private companion object {
         val FUSO: ZoneId = ZoneId.of("America/Maceio")
+
+        /** Localizações que não vieram da fonte e valem até a fonte mandar uma coordenada boa (ou, MANUAL, sempre). */
+        val LOCALIZACAO_PROPRIA = setOf(OrigemLocalizacao.MANUAL, OrigemLocalizacao.LUGAR, OrigemLocalizacao.BAIRRO)
     }
 }

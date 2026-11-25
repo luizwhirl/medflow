@@ -12,9 +12,9 @@ import org.testcontainers.junit.jupiter.Testcontainers
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-/** Perfil "dev": o seed precisa ter dados para todas as telas (PDS-17). */
+/** Perfis "dev" e "demo": o seed precisa ter dados para todas as telas (PDS-17). */
 @SpringBootTest
-@ActiveProfiles("dev")
+@ActiveProfiles("dev", "demo")
 @Import(TestcontainersConfiguration::class)
 @Testcontainers(disabledWithoutDocker = true)
 class SeedDevIntegrationTests(

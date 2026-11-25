@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 
+import { gestorGuard } from './core/auth/gestor.guard';
 import { exigirBoasVindas } from './core/guards/boas-vindas.guard';
 import { Shell } from './layout/shell';
 
@@ -7,8 +8,14 @@ const emBreve = () => import('./features/em-breve/em-breve.page').then((m) => m.
 
 export const routes: Routes = [
   {
-    // Área da farmácia (gestão), com menu próprio. TODO(L6): restringir ao papel GESTOR.
+    path: 'gestao/entrar',
+    title: 'Entrar · Gestão · UBS Conecta',
+    loadComponent: () => import('./features/gestao/entrar.page').then((m) => m.EntrarPage),
+  },
+  {
+    // Área da farmácia (gestão), com menu próprio: só com sessão de gestor.
     path: 'gestao',
+    canActivate: [gestorGuard],
     loadComponent: () => import('./layout/gestao-shell').then((m) => m.GestaoShell),
     children: [
       {

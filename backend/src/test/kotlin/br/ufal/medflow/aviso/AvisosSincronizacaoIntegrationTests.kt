@@ -2,7 +2,10 @@ package br.ufal.medflow.aviso
 
 import br.ufal.medflow.TestcontainersConfiguration
 import br.ufal.medflow.integracao.FonteEstoque
+import br.ufal.medflow.integracao.Geocodificador
+import br.ufal.medflow.integracao.LimitesMunicipais
 import br.ufal.medflow.integracao.PosicaoEstoque
+import br.ufal.medflow.integracao.QUALQUER_LUGAR
 import br.ufal.medflow.medicamento.Medicamento
 import br.ufal.medflow.medicamento.MedicamentoRepository
 import br.ufal.medflow.sincronizacao.SincronizacaoEstoqueService
@@ -10,8 +13,16 @@ import br.ufal.medflow.ubs.TipoUnidade
 import br.ufal.medflow.ubs.Ubs
 import br.ufal.medflow.ubs.UbsRepository
 import jakarta.persistence.EntityManager
+import java.math.BigDecimal
+import java.time.LocalDate
+import java.util.UUID
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentMatchers.anyString
 import org.mockito.BDDMockito.given
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
@@ -21,13 +32,6 @@ import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.transaction.annotation.Transactional
 import org.testcontainers.junit.jupiter.Testcontainers
-import java.math.BigDecimal
-import java.time.LocalDate
-import java.util.UUID
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertNotEquals
-import kotlin.test.assertTrue
 
 /** Verifica a geração de avisos durante a sincronização real com PostgreSQL. */
 @SpringBootTest
@@ -46,6 +50,19 @@ class AvisosSincronizacaoIntegrationTests(
 
     @MockitoBean
     private lateinit var fonte: FonteEstoque
+
+    /** Sem chamar o IBGE: aceita qualquer coordenada, a não ser que o teste troque. */
+    @MockitoBean
+    private lateinit var limites: LimitesMunicipais
+
+    /** Sem chamar o OpenStreetMap: sem bairro achado, vale só o contorno do município. */
+    @MockitoBean
+    private lateinit var geocodificador: Geocodificador
+
+    @BeforeEach
+    fun contornoQueAceitaTudo() {
+        given(limites.limite(anyString())).willReturn(QUALQUER_LUGAR)
+    }
 
     private val ibge = "2702405"
     private val dia = LocalDate.of(2026, 11, 3)

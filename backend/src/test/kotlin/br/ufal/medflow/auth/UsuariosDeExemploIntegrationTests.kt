@@ -17,7 +17,7 @@ import kotlin.test.assertEquals
 /** Perfil "dev": sobe com as duas contas de exemplo (e o seed). */
 @SpringBootTest
 @AutoConfigureMockMvc
-@ActiveProfiles("dev")
+@ActiveProfiles("dev", "demo")
 @Import(TestcontainersConfiguration::class)
 @Testcontainers(disabledWithoutDocker = true)
 class UsuariosDeExemploIntegrationTests(

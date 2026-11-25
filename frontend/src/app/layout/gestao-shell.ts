@@ -1,5 +1,12 @@
-import { Component } from '@angular/core';
-import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { HttpClient } from '@angular/common/http';
+import { Component, inject } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { catchError, of } from 'rxjs';
+
+import { environment } from '../../environments/environment';
+import { SessaoService } from '../core/auth/sessao.service';
+import { UbsEscopo } from '../core/models/gestao.model';
 
 import { BannerOffline } from '../shared/components/banner-offline';
 import { IconeSvg } from '../shared/components/icone-svg';
@@ -63,9 +70,23 @@ import { GESTAO_NAV_ITEMS, ICONE_MARCA_GESTAO } from './gestao-nav-items';
         <div class="hidden flex-1 xl:block"></div>
 
         <div class="hidden rounded-xl bg-sidebar-ativo p-3 text-[0.8125rem] xl:block">
-          <p class="font-semibold text-white">{{ servidor.nome }}</p>
-          <p class="truncate">{{ servidor.lotacao }}</p>
+          <p class="font-semibold text-white">{{ conta()?.nome ?? 'Gestão' }}</p>
+          <p class="truncate">{{ lotacao() }}</p>
+          <button
+            type="button"
+            class="mt-2 text-xs font-semibold text-white underline"
+            (click)="sair()"
+          >
+            Sair
+          </button>
         </div>
+        <button
+          type="button"
+          class="mx-4 mb-3 self-start text-xs font-semibold text-white underline sm:mx-auto xl:hidden"
+          (click)="sair()"
+        >
+          Sair
+        </button>
       </aside>
 
       <div class="flex min-w-0 flex-1 flex-col">
@@ -82,6 +103,28 @@ import { GESTAO_NAV_ITEMS, ICONE_MARCA_GESTAO } from './gestao-nav-items';
 export class GestaoShell {
   protected readonly nav = GESTAO_NAV_ITEMS;
   protected readonly marca = ICONE_MARCA_GESTAO;
-  // TODO(L6): vir do usuário autenticado (papel GESTOR).
-  protected readonly servidor = { nome: 'Seu Carlos', lotacao: 'Farmácia · UBS Benedito Bentes I' };
+
+  private readonly sessao = inject(SessaoService);
+  private readonly router = inject(Router);
+
+  protected readonly conta = toSignal(this.sessao.conta().pipe(catchError(() => of(null))), {
+    initialValue: null,
+  });
+  private readonly escopo = toSignal(
+    inject(HttpClient)
+      .get<{ ubs: UbsEscopo | null; restrito: boolean }>(`${environment.apiUrl}/gestao/escopo`)
+      .pipe(catchError(() => of(null))),
+    { initialValue: null },
+  );
+
+  protected lotacao(): string {
+    const e = this.escopo();
+    if (!e) return 'Farmácia';
+    return e.ubs ? `Farmácia · ${e.ubs.nome}` : 'Rede municipal';
+  }
+
+  protected sair(): void {
+    this.sessao.sair();
+    void this.router.navigateByUrl('/gestao/entrar');
+  }
 }

@@ -32,11 +32,11 @@ services:
     depends_on:
       - db
 
-  # Aplica migrations + seed sem subir a API (usado por scripts/db-reset).
+  # Aplica as migrations (e, no db-reset --demo, o seed) sem subir a API (usado por scripts/db-reset).
   # Mantenha igual ao backend, senão o db-reset monta um banco diferente do que a API monta:
   # - imagem: a versão do flyway-core que o Spring Boot traz (backend/build.gradle.kts; confira com
   #   ./gradlew dependencies --configuration runtimeClasspath | grep flyway-core);
-  # - FLYWAY_LOCATIONS e FLYWAY_OUT_OF_ORDER: o perfil dev do backend/src/main/resources/application.yml.
+  # - FLYWAY_LOCATIONS e FLYWAY_OUT_OF_ORDER: os perfis dev e demo do backend/src/main/resources/application.yml.
   flyway:
     image: flyway/flyway:12.4.0-alpine
     profiles: [migracao] # não sobe com o up; roda com docker compose run --rm flyway
@@ -44,7 +44,8 @@ services:
       FLYWAY_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-medflow}
       FLYWAY_USER: ${POSTGRES_USER:-medflow}
       FLYWAY_PASSWORD: ${POSTGRES_PASSWORD:-medflow}
-      FLYWAY_LOCATIONS: filesystem:/flyway/db/migration,filesystem:/flyway/db/seed
+      # Só as migrations; o db-reset com --demo / -Demo acrescenta o seed (perfil demo da API).
+      FLYWAY_LOCATIONS: filesystem:/flyway/db/migration
       FLYWAY_OUT_OF_ORDER: "true"
     volumes:
       - ./backend/src/main/resources/db:/flyway/db:ro
@@ -61,14 +62,18 @@ services:
       - DB_USER=${POSTGRES_USER:-medflow}
       - DB_PASSWORD=${POSTGRES_PASSWORD:-medflow}
       - CORS_ALLOWED_ORIGINS=http://localhost:${WEB_PORT:-4200}
-      # dev por padrão: carrega os dados de exemplo e usa o segredo JWT de desenvolvimento.
-      # Para outro ambiente, use API_PROFILE=prod (sem seed) e defina JWT_SECRET.
+      # dev por padrão: sincroniza os dados reais da BNAFAR (Maceió) ao subir e usa o segredo JWT de desenvolvimento.
+      # Para os dados fictícios de demonstração, use API_PROFILE=dev,demo. Para outro ambiente, API_PROFILE=prod e JWT_SECRET.
       # Nome só do compose, de propósito: uma SPRING_PROFILES_ACTIVE exportada no terminal (para o bootRun) não vaza para cá.
       - SPRING_PROFILES_ACTIVE=${API_PROFILE:-dev}
       # Sem valor: só chegam ao container se estiverem definidos no ambiente ou no .env
       # (um valor vazio no dev derrubaria o segredo padrão).
       - JWT_SECRET
       - JWT_EXPIRACAO
+      - SYNC_ATIVO
+      - SYNC_MUNICIPIOS
+      - SYNC_CRON
+      - SYNC_AO_INICIAR
     ports:
       - "127.0.0.1:${API_PORT:-8080}:8080" # em dev a API tem segredo JWT público e conta de gestor de exemplo
     depends_on:

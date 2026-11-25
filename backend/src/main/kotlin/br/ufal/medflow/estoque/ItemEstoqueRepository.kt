@@ -80,6 +80,7 @@ interface ItemEstoqueRepository : JpaRepository<ItemEstoque, Long> {
         where i.medicamento.id = :medicamentoId
           and i.status = :status
           and i.quantidade > 0
+          and i.ubs.localizacaoOrigem <> br.ufal.medflow.ubs.OrigemLocalizacao.INVALIDA
         """,
     )
     fun contarUnidadesDisponiveis(
@@ -94,6 +95,7 @@ interface ItemEstoqueRepository : JpaRepository<ItemEstoque, Long> {
           and i.ubs.codigoIbgeMunicipio = :ibge
           and i.status = :status
           and i.quantidade > 0
+          and i.ubs.localizacaoOrigem <> br.ufal.medflow.ubs.OrigemLocalizacao.INVALIDA
         """,
     )
     fun contarUnidadesDisponiveisPorMunicipio(
@@ -106,6 +108,7 @@ interface ItemEstoqueRepository : JpaRepository<ItemEstoque, Long> {
         """
         select i from ItemEstoque i join fetch i.ubs u
         where i.medicamento.id = :medicamentoId
+          and u.localizacaoOrigem <> br.ufal.medflow.ubs.OrigemLocalizacao.INVALIDA
         order by case i.status when 'DISPONIVEL' then 0 when 'RESERVADO' then 1 else 2 end, u.nome
         """,
     )

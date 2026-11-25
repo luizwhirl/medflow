@@ -19,6 +19,30 @@ class ClassificacaoUnidadeTest {
         ).forEach { assertEquals(TipoUnidade.UBS, ClassificacaoUnidade.tipo(it), it) }
     }
 
+    /** Nomes abreviados de unidades de Maceió na BNAFAR (25/11/2026) que ficavam de fora. */
+    @Test
+    fun `nomes abreviados da BNAFAR tambem entram`() {
+        listOf(
+            "UNID BASICA DE SAUDE MARIA TEREZA HOLANDA COSTA 3 DS",
+            "US FREI DAMIAO 6 DS",
+            "C S ROLAND SIMON PAM VERGEL 2 DS",
+            "UNIDADE DE S JOSE TENORIO DE A LINS 5 DS",
+            "UNID DE SAUDE DOCENTE ASSIST JOSE LAJES FILHO UNIT 8 DS",
+            "UDA DIVALDO SURUAGY 5 DS",
+            "UNIDADE DOCENTE ASSISTENCIAL PROF EVA FARIAS",
+        ).forEach { assertEquals(TipoUnidade.UBS, ClassificacaoUnidade.tipo(it), it) }
+        listOf(
+            "US DA FAMILIA SELMA BANDEIRA 6 DS",
+            "CLINICA DA FAMILIA VILLAGE CAMPESTRE II",
+        ).forEach { assertEquals(TipoUnidade.USF, ClassificacaoUnidade.tipo(it), it) }
+    }
+
+    @Test
+    fun `telessaude, CAIC e unidades de referencia continuam de fora`() {
+        listOf("UNIDADE DE TELESSAUDE CAETES", "CAPS II DR ROSTAND SILVESTRE", "UPA TRAPICHE DA BARRA")
+            .forEach { assertNull(ClassificacaoUnidade.tipo(it), it) }
+    }
+
     @Test
     fun `saude da familia e USF`() {
         listOf(

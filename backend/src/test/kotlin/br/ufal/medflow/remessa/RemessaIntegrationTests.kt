@@ -17,7 +17,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 @SpringBootTest
-@ActiveProfiles("dev")
+@ActiveProfiles("dev", "demo")
 @Import(TestcontainersConfiguration::class)
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional

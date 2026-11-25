@@ -14,7 +14,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 @SpringBootTest
-@ActiveProfiles("dev")
+@ActiveProfiles("dev", "demo")
 @Import(TestcontainersConfiguration::class)
 @Testcontainers(disabledWithoutDocker = true)
 class LoteEstoqueIntegrationTests(

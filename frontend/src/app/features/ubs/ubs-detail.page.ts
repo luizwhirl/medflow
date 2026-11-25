@@ -3,13 +3,18 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, input, numberAttribute, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { catchError, forkJoin, map, of, startWith, switchMap } from 'rxjs';
+import { catchError, forkJoin, interval, map, of, scan, startWith, switchMap } from 'rxjs';
 
 import { linkRota } from '../../core/geo';
 import { ItemEstoque, statusExibido } from '../../core/models/estoque.model';
 import { STATUS_LABEL, StatusEstoque } from '../../core/models/status-estoque';
 import { Ubs } from '../../core/models/ubs.model';
-import { minutosDesde, nivelSincronizacao, tempoDesde } from '../../core/sincronizacao';
+import {
+  ATUALIZAR_DADOS_A_CADA_MS,
+  minutosDesde,
+  nivelSincronizacao,
+  tempoDesde,
+} from '../../core/sincronizacao';
 import { PreferenciasService } from '../../core/services/preferencias.service';
 import { UbsService } from '../../core/services/ubs.service';
 import { Button } from '../../shared/components/button';
@@ -125,7 +130,17 @@ const ICONE = {
                     <span class="sr-only">Endereço</span>
                     <ng-container *ngTemplateOutlet="icone; context: { $implicit: icones.local }" />
                   </dt>
-                  <dd>{{ u.endereco }} · {{ u.bairro }}</dd>
+                  <dd>
+                    {{ u.endereco }} · {{ u.bairro }}
+                    @if (u.localizacaoAproximada) {
+                      <span
+                        class="mt-1 block text-sm text-status-alerta"
+                        data-teste="local-aproximado"
+                      >
+                        Localização no mapa aproximada (centro do bairro). Confira o endereço.
+                      </span>
+                    }
+                  </dd>
                 </div>
                 <div class="flex gap-3">
                   <dt class="text-content-muted">
@@ -323,19 +338,30 @@ export class UbsDetailPage {
 
   protected readonly estado = toSignal(
     toObservable(computed(() => ({ id: this.id(), tentativa: this.tentativa() }))).pipe(
+      // Recarrega a cada ATUALIZAR_DADOS_A_CADA_MS enquanto a tela está aberta; se uma recarga falhar, fica o último estoque.
       switchMap(({ id }) =>
-        forkJoin({
-          ubs: this.ubsService.buscarPorId(id),
-          estoque: this.ubsService.estoque(id),
-        }).pipe(
-          map(({ ubs, estoque }): Estado => ({ tipo: 'ok', ubs, estoque })),
-          catchError((erro: unknown) =>
-            of<Estado>({
-              tipo:
-                erro instanceof HttpErrorResponse && erro.status === 404
-                  ? 'nao-encontrada'
-                  : 'erro',
-            }),
+        interval(ATUALIZAR_DADOS_A_CADA_MS).pipe(
+          startWith(0),
+          switchMap(() =>
+            forkJoin({
+              ubs: this.ubsService.buscarPorId(id),
+              estoque: this.ubsService.estoque(id),
+            }).pipe(
+              map(({ ubs, estoque }): Estado => ({ tipo: 'ok', ubs, estoque })),
+              catchError((erro: unknown) =>
+                of<Estado>({
+                  tipo:
+                    erro instanceof HttpErrorResponse && erro.status === 404
+                      ? 'nao-encontrada'
+                      : 'erro',
+                }),
+              ),
+            ),
+          ),
+          scan(
+            (anterior: Estado, novo: Estado): Estado =>
+              novo.tipo === 'erro' && anterior.tipo === 'ok' ? anterior : novo,
+            { tipo: 'carregando' } as Estado,
           ),
           startWith<Estado>({ tipo: 'carregando' }),
         ),

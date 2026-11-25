@@ -16,6 +16,8 @@ data class UbsResponse(
     val horario: String?,
     val latitude: Double,
     val longitude: Double,
+    /** `true` quando o pino é o centro do bairro: a coordenada da fonte estava errada e a unidade não foi achada no mapa. */
+    val localizacaoAproximada: Boolean = false,
     val ultimaSincronizacao: Instant?,
     /** Turnos por dia da semana; vazio quando a UBS não tem horário cadastrado. */
     val horarios: List<HorarioResponse> = emptyList(),
@@ -43,5 +45,6 @@ fun Ubs.toResponse() = UbsResponse(
     horario = horario,
     latitude = latitude,
     longitude = longitude,
+    localizacaoAproximada = localizacaoOrigem.aproximada,
     ultimaSincronizacao = ultimaSincronizacao,
 )

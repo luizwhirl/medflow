@@ -46,10 +46,11 @@ No Windows use `gradlew.bat` (ou `./gradlew` no Git Bash).
 
 Perfis:
 
-- `dev` (padrão): carrega `db/migration` + `db/seed` (dados fictícios), log DEBUG.
+- `dev` (padrão): dados reais. Só `db/migration`; ao subir, sincroniza Maceió (`SYNC_MUNICIPIOS=2704302`) com a BNAFAR e repete de hora em hora. Log DEBUG.
+- `demo` (junto com o dev: `SPRING_PROFILES_ACTIVE=dev,demo`): acrescenta os dados fictícios de `db/seed` e desliga a sincronização. As UBS do seed não existem de verdade; não use para mostrar o mapa a quem vai à unidade.
 - `prod`: só `db/migration`, Swagger desligado. Ative com `SPRING_PROFILES_ACTIVE=prod` (é o padrão da imagem Docker do backend; o `docker-compose.yml` troca para `dev`; nele o perfil se escolhe com `API_PROFILE`). **Exige `JWT_SECRET`** (pelo menos 32 caracteres); sem ele a aplicação não sobe.
 
-Contas de exemplo no perfil `dev` (senha `medflow-dev-123`): `rita@medflow.local` (cidadã), `carlos@medflow.local` (gestor da UBS Benedito Bentes I) e `marta@medflow.local` (gestora sem vínculo). Veja [api.md](api.md#autenticação).
+Contas de exemplo no perfil `dev` (senha `medflow-dev-123`): `rita@medflow.local` (cidadã), `carlos@medflow.local` (gestor da UBS Benedito Bentes I, fictícia: só tem vínculo com o perfil `demo`; sem ele, vê a rede toda) e `marta@medflow.local` (gestora sem vínculo). A área da gestão (`/gestao`) pede entrar com uma conta de gestor. Veja [api.md](api.md#autenticação).
 
 ## 4. Frontend
 

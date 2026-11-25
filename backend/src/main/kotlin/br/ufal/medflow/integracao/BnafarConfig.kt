@@ -8,7 +8,7 @@ import org.springframework.web.client.RestClient
 import java.net.http.HttpClient
 
 @Configuration
-@EnableConfigurationProperties(BnafarProperties::class)
+@EnableConfigurationProperties(BnafarProperties::class, IbgeProperties::class, GeocodificacaoProperties::class)
 class BnafarConfig {
 
     @Bean

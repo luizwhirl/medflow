@@ -12,6 +12,7 @@ import {
 } from '@angular/router';
 
 import { routes } from './app.routes';
+import { authInterceptor } from './core/auth/auth.interceptor';
 import { dadosSalvosInterceptor } from './core/offline/dados-salvos.interceptor';
 
 export const appConfig: ApplicationConfig = {
@@ -21,6 +22,6 @@ export const appConfig: ApplicationConfig = {
     // Baixa o código de todas as telas logo após abrir o app: sem internet, trocar de tela
     // continua funcionando (com os dados salvos), em vez de falhar ao buscar o código da tela.
     provideRouter(routes, withComponentInputBinding(), withPreloading(PreloadAllModules)),
-    provideHttpClient(withFetch(), withInterceptors([dadosSalvosInterceptor])),
+    provideHttpClient(withFetch(), withInterceptors([authInterceptor, dadosSalvosInterceptor])),
   ],
 };

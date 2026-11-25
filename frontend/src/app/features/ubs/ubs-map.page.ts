@@ -254,6 +254,9 @@ interface LinhaUbs {
                 · {{ a.ubs.horario }}
               }
             </p>
+            @if (a.ubs.localizacaoAproximada) {
+              <p class="mt-1 text-sm text-status-alerta">Pino aproximado (centro do bairro)</p>
+            }
             <app-funcionamento class="mt-1 block" [ubs]="a.ubs" />
             @if (a.itens.length) {
               <ul class="mt-4 flex flex-wrap gap-2">

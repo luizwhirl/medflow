@@ -35,9 +35,9 @@ class MedicamentoDisponibilidadeService(
         }
 
         val totalUnidades = if (ibgeNormalizado == null) {
-            ubsRepository.count()
+            ubsRepository.contarVisiveis()
         } else {
-            ubsRepository.countByCodigoIbgeMunicipio(ibgeNormalizado)
+            ubsRepository.contarVisiveisDoMunicipio(ibgeNormalizado)
         }
 
         val unidadesDisponiveis = if (ibgeNormalizado == null) {
