@@ -254,4 +254,51 @@ describe('SearchField · busca por voz', () => {
       expect(el.querySelector('[data-aviso-voz]')).not.toBeNull();
     }));
   });
+
+  it('clique duplo enquanto confere o reconhecimento local abre uma escuta só', fakeAsync(() => {
+    montar(comSuporte());
+    microfone()!.click();
+    microfone()!.click();
+    flushMicrotasks();
+    fixture.detectChanges();
+    expect(ReconhecimentoFalso.instancias.length).toBe(1);
+    expect(microfone()!.getAttribute('aria-pressed')).toBe('true');
+  }));
+
+  it('se o reconhecimento no aparelho não aceitar pt-BR, volta para o do navegador', fakeAsync(() => {
+    ReconhecimentoFalso.disponivel = 'available';
+    montar(comSuporte());
+    clicarMicrofone();
+    expect(atual().processLocally).toBeTrue();
+
+    atual().onerror?.({ error: 'language-not-supported' });
+    atual().onend?.();
+    flushMicrotasks();
+    fixture.detectChanges();
+    // O aviso já foi aceito: tenta de novo sem o modo local, e o microfone continua na tela.
+    expect(ReconhecimentoFalso.instancias.length).toBe(2);
+    expect(atual().processLocally).toBeUndefined();
+    expect(microfone()).not.toBeNull();
+  }));
+
+  it('o aviso de privacidade recebe o foco e fecha com Esc', fakeAsync(() => {
+    localStorage.removeItem(CHAVE_AVISO_VOZ);
+    montar(comSuporte());
+    clicarMicrofone();
+    expect(document.activeElement).toBe(botao('Continuar'));
+
+    el.querySelector('[data-aviso-voz]')!.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape' }),
+    );
+    fixture.detectChanges();
+    expect(el.querySelector('[data-aviso-voz]')).toBeNull();
+    expect(document.activeElement).toBe(microfone());
+  }));
+
+  it('o rótulo aponta para o campo e o botão fica fora do rótulo', () => {
+    montar(comSuporte());
+    const rotulo = el.querySelector('label')!;
+    expect(rotulo.getAttribute('for')).toBe(campo().id);
+    expect(rotulo.querySelector('button')).toBeNull();
+  });
 });

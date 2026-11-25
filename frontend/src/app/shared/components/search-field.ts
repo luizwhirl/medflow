@@ -1,9 +1,12 @@
 import {
+  afterNextRender,
   Component,
   computed,
   DestroyRef,
+  effect,
   ElementRef,
   inject,
+  Injector,
   input,
   model,
   output,
@@ -30,6 +33,9 @@ const MENSAGENS: Record<Exclude<ErroVoz, 'idioma-nao-suportado'>, string> = {
   outro: 'Não foi possível usar a busca por voz agora. Digite o nome do remédio.',
 };
 
+/** Ids únicos para ligar o rótulo ao campo (a Início e a Buscar podem ter cada uma o seu). */
+let proximoId = 0;
+
 const ICONE_MICROFONE =
   'M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3';
 
@@ -45,12 +51,13 @@ const ICONE_MICROFONE =
 @Component({
   selector: 'app-search-field',
   template: `
-    <label class="block">
-      <span
+    <div class="block">
+      <label
+        [attr.for]="idCampo"
         [class]="rotuloVisivel() ? 'mb-2 block text-sm font-semibold text-content' : 'sr-only'"
-        >{{ rotulo() }}</span
+        >{{ rotulo() }}</label
       >
-      <span class="relative block">
+      <div class="relative">
         <svg
           class="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-content-muted"
           viewBox="0 0 24 24"
@@ -64,6 +71,7 @@ const ICONE_MICROFONE =
         </svg>
         <input
           #campo
+          [id]="idCampo"
           type="search"
           class="control h-12 w-full pl-12"
           [class.pr-14]="microfone()"
@@ -76,8 +84,12 @@ const ICONE_MICROFONE =
           <button
             #botaoVoz
             type="button"
-            class="absolute right-0.5 top-1/2 grid size-11 -translate-y-1/2 place-items-center rounded-control text-content-muted hover:text-brand-600"
-            [class]="ouvindo() ? 'bg-brand-50 text-brand-600 motion-safe:animate-pulse' : ''"
+            class="absolute right-0.5 top-1/2 grid size-11 -translate-y-1/2 place-items-center rounded-control"
+            [class]="
+              ouvindo()
+                ? 'bg-brand-50 text-brand-600 motion-safe:animate-pulse'
+                : 'text-content-muted hover:text-brand-600'
+            "
             [attr.aria-label]="ouvindo() ? 'Parar de ouvir' : 'Buscar por voz'"
             [attr.aria-pressed]="ouvindo()"
             (click)="alternarVoz()"
@@ -95,25 +107,29 @@ const ICONE_MICROFONE =
             </svg>
           </button>
         }
-      </span>
-    </label>
+      </div>
+    </div>
 
     @if (avisoAberto()) {
       <div
         class="mt-2 rounded-card border border-outline bg-surface p-4 text-sm"
         role="dialog"
-        aria-labelledby="aviso-voz-titulo"
-        aria-describedby="aviso-voz-texto"
+        [attr.aria-labelledby]="idCampo + '-aviso-titulo'"
+        [attr.aria-describedby]="idCampo + '-aviso-texto'"
         data-aviso-voz
+        (keydown.escape)="agoraNao()"
       >
-        <p id="aviso-voz-titulo" class="font-semibold text-content">Antes de buscar por voz</p>
-        <p id="aviso-voz-texto" class="mt-1 text-content-muted">
+        <p [id]="idCampo + '-aviso-titulo'" class="font-semibold text-content">
+          Antes de buscar por voz
+        </p>
+        <p [id]="idCampo + '-aviso-texto'" class="mt-1 text-content-muted">
           O áudio do que você falar vai para o serviço de reconhecimento de voz do seu navegador
           (Google no Chrome, Microsoft no Edge), que devolve o texto. O UBS Conecta não grava o
           áudio, e o texto serve só para buscar o remédio.
         </p>
         <div class="mt-3 flex gap-2">
           <button
+            #botaoContinuar
             type="button"
             class="rounded-control bg-brand-600 px-4 py-2 font-semibold text-white"
             (click)="continuar()"
@@ -131,11 +147,8 @@ const ICONE_MICROFONE =
       </div>
     }
 
-    <p
-      class="mt-1 text-sm empty:hidden"
-      [class]="mensagem() ? 'text-status-falta' : ''"
-      aria-live="polite"
-    >
+    <!-- A região fica sempre no DOM (sem display:none) para o leitor de tela anunciar as mudanças. -->
+    <p class="text-sm" [class]="mensagem() ? 'mt-1 text-status-falta' : ''" aria-live="polite">
       @if (mensagem(); as m) {
         {{ m }}
       } @else if (anuncio(); as a) {
@@ -153,10 +166,20 @@ export class SearchField {
   /** Resultado da busca por voz, com as alternativas do reconhecimento (emitido junto com `buscar`). */
   readonly voz = output<ResultadoVoz>();
 
+  protected readonly idCampo = 'campo-busca-' + ++proximoId;
+
   private readonly reconhecimento = inject(ReconhecimentoVozService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly injector = inject(Injector);
   private readonly campo = viewChild.required<ElementRef<HTMLInputElement>>('campo');
   private readonly botaoVoz = viewChild<ElementRef<HTMLButtonElement>>('botaoVoz');
+  private readonly botaoContinuar = viewChild<ElementRef<HTMLButtonElement>>('botaoContinuar');
+  /** Enquanto confere se há reconhecimento no aparelho, cliques no microfone não fazem nada. */
+  private readonly verificando = signal(false);
+  /** Cada escuta deste campo tem um número; a continuação de uma escuta antiga é ignorada. */
+  private sessao = 0;
+  /** Último texto parcial: segura o campo entre o resultado final e o fim da escuta. */
+  private readonly ultimoParcial = signal('');
 
   protected readonly iconeMicrofone = ICONE_MICROFONE;
   /** Some de vez se o navegador disser que não reconhece pt-BR. */
@@ -172,11 +195,17 @@ export class SearchField {
   protected readonly anuncio = signal('');
 
   /** Enquanto ouve, o campo mostra o que já foi reconhecido. */
-  protected readonly exibido = computed(() =>
-    this.escutando() && this.reconhecimento.parcial()
-      ? this.reconhecimento.parcial()
-      : this.valor(),
-  );
+  protected readonly exibido = computed(() => {
+    const parcial = this.reconhecimento.parcial() || this.ultimoParcial();
+    return this.escutando() && parcial ? parcial : this.valor();
+  });
+
+  constructor() {
+    effect(() => {
+      const parcial = this.reconhecimento.parcial();
+      if (parcial && this.escutando()) this.ultimoParcial.set(parcial);
+    });
+  }
 
   protected digitar(texto: string): void {
     this.mensagem.set(null);
@@ -188,13 +217,25 @@ export class SearchField {
       this.reconhecimento.parar();
       return;
     }
+    if (this.verificando() || this.escutando()) return;
     this.mensagem.set(null);
+    this.verificando.set(true);
     const local = await this.reconhecimento.reconhecimentoLocalDisponivel();
+    this.verificando.set(false);
+    if (this.destroyRef.destroyed) return;
     if (!local && !avisoAceito()) {
-      this.avisoAberto.set(true);
+      this.abrirAviso();
       return;
     }
     this.ouvir(local);
+  }
+
+  /** Abre o aviso de privacidade com o foco em "Continuar". */
+  private abrirAviso(): void {
+    this.avisoAberto.set(true);
+    afterNextRender(() => this.botaoContinuar()?.nativeElement.focus(), {
+      injector: this.injector,
+    });
   }
 
   protected continuar(): void {
@@ -203,6 +244,8 @@ export class SearchField {
     } catch {
       // Sem armazenamento (aba privada): o aviso volta na próxima visita.
     }
+    // O aviso some com o foco dentro dele: devolve o foco ao microfone antes de ouvir.
+    this.botaoVoz()?.nativeElement.focus();
     this.avisoAberto.set(false);
     this.ouvir(false);
   }
@@ -213,10 +256,15 @@ export class SearchField {
   }
 
   private async ouvir(local: boolean): Promise<void> {
+    const minha = ++this.sessao;
+    this.ultimoParcial.set('');
     this.escutando.set(true);
     this.anuncio.set('Ouvindo…');
     const resultado = await this.reconhecimento.ouvir(this.destroyRef, { local });
+    // Outra escuta começou depois desta: ela é quem cuida do estado agora.
+    if (minha !== this.sessao) return;
     this.escutando.set(false);
+    this.ultimoParcial.set('');
     if (this.destroyRef.destroyed) return;
     this.campo().nativeElement.focus();
 
@@ -229,7 +277,11 @@ export class SearchField {
     }
     this.anuncio.set('');
     const erro = this.reconhecimento.erro();
-    if (erro === 'idioma-nao-suportado') this.semIdioma.set(true);
+    if (erro === 'idioma-nao-suportado' && local) {
+      // O aparelho não reconhece pt-BR sozinho, mas o serviço do navegador pode reconhecer.
+      if (avisoAceito()) this.ouvir(false);
+      else this.abrirAviso();
+    } else if (erro === 'idioma-nao-suportado') this.semIdioma.set(true);
     else if (erro) this.mensagem.set(MENSAGENS[erro]);
   }
 }

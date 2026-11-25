@@ -1,6 +1,8 @@
 # Busca por voz
 
-O microfone fica dentro do campo de busca, na Início e em Buscar (`app-search-field`, PDS-52). Ele usa a Web Speech API do navegador por meio do `ReconhecimentoVozService` (PDS-50). O texto reconhecido vai para a busca tolerante (PDS-51), com até três alternativas numa chamada só (`busca` repetido).
+O microfone fica dentro do campo de busca, na Início e em Buscar (`app-search-field`, PDS-52). Ele usa a Web Speech API do navegador por meio do `ReconhecimentoVozService` (PDS-50). O texto reconhecido vai para a busca tolerante (PDS-51). Em Buscar, vão até três alternativas do reconhecimento numa chamada só (`busca` repetido); na Início, a busca por voz leva para Buscar só com o texto principal na URL (`?busca=`), sem as alternativas.
+
+Se o reconhecimento no aparelho não aceitar pt-BR, o app tenta de novo com o do navegador (passando pelo aviso de privacidade, se ainda não foi aceito); o microfone só some quando nem o do navegador reconhece pt-BR.
 
 O botão só aparece onde o navegador reconhece voz e a página está em contexto seguro (HTTPS ou `localhost`). No Firefox, e em navegadores que não reconhecem pt-BR, o campo fica igual ao de antes.
 
