@@ -62,6 +62,8 @@ Sem internet, o `dadosSalvosInterceptor` (`core/offline`) devolve a última resp
 Regras do cache:
 
 - só respostas de `GET` são guardadas, uma por URL (sem `lat`/`lng`, que mudam a cada leitura do GPS);
+- `/api/gestao/**` e `/api/auth/**` nunca são guardadas: dependem de quem está logado, e o `localStorage` não separa contas nem é limpo no logout. Sem internet, o painel da gestão mostra o erro padrão;
+- das buscas de medicamento (`?busca=`), ficam só as 50 mais recentes;
 - uma alteração bem-sucedida descarta as respostas salvas daquele recurso;
 - erros da API (400, 404) nunca são trocados por dados salvos; só falta de rede ou servidor fora do ar (0, 502, 503 e 504).
 
