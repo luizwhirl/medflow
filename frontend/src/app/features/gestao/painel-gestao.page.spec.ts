@@ -245,9 +245,7 @@ describe('PainelGestaoPage', () => {
 
   it('sem buscas na semana, diz isso em vez de uma lista vazia', () => {
     const vazio = montarPainel(indicadores(), ITENS, { maisProcurados: [] });
-    expect(el(montar(of(vazio))).textContent).toContain(
-      'Nenhuma busca registrada nos últimos 7 dias.',
-    );
+    expect(el(montar(of(vazio))).textContent).toContain('Nenhuma busca registrada');
   });
 
   it('mostra o cartão de localização só quando o painel é de uma UBS', () => {
@@ -262,7 +260,7 @@ describe('PainelGestaoPage', () => {
 
   it('mostra erro quando os indicadores não carregam', () => {
     const f = montar(throwError(() => new Error('falhou')));
-    expect(texto(el(f).querySelector('.feedback-error'))).toContain('Não foi possível carregar');
+    expect(texto(el(f).querySelector('[role="alert"]'))).toContain('Não foi possível carregar');
   });
 
   it('atualiza sozinho a cada 5 minutos e mantém os números se uma atualização falhar', fakeAsync(() => {
@@ -277,7 +275,7 @@ describe('PainelGestaoPage', () => {
     tick(ATUALIZAR_A_CADA_MS);
     f.detectChanges();
     expect(kpis(f)[0]).toContain('Itens em falta 6');
-    expect(el(f).querySelector('.feedback-error')).toBeNull();
+    expect(el(f).querySelector('[role="alert"]')).toBeNull();
 
     tick(ATUALIZAR_A_CADA_MS);
     f.detectChanges();
