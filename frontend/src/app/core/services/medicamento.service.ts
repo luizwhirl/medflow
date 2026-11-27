@@ -5,19 +5,55 @@ import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { Disponibilidade } from '../models/estoque.model';
 import { Medicamento } from '../models/medicamento.model';
+import { Pagina } from '../models/pagina.model';
+import { Rastreamento } from '../models/rastreamento.model';
 
 @Injectable({ providedIn: 'root' })
 export class MedicamentoService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = `${environment.apiUrl}/medicamentos`;
 
-  buscar(termo = ''): Observable<Medicamento[]> {
-    const params = termo ? new HttpParams().set('busca', termo) : undefined;
-    return this.http.get<Medicamento[]>(this.baseUrl, { params });
+  /**
+   * Primeira página da busca, em ordem de nome, com o total encontrado.
+   * Sem `tamanho`, a API devolve 20 itens (no máximo, `TAMANHO_MAXIMO_PAGINA`).
+   * `alternativas` são as outras transcrições da busca por voz: vão como `busca` repetido, e a API
+   * ordena pela que combinar melhor (até três no total).
+   */
+  buscar(
+    termo = '',
+    categoria = '',
+    tamanho?: number,
+    alternativas: string[] = [],
+  ): Observable<Pagina<Medicamento>> {
+    let params = new HttpParams();
+    if (termo) {
+      for (const t of [termo, ...alternativas].slice(0, 3)) params = params.append('busca', t);
+    }
+    if (categoria) params = params.set('categoria', categoria);
+    if (tamanho != null) params = params.set('tamanho', tamanho);
+    return this.http.get<Pagina<Medicamento>>(this.baseUrl, { params });
+  }
+
+  categorias(): Observable<string[]> {
+    return this.http.get<string[]>(`${this.baseUrl}/categorias`);
   }
 
   buscarPorId(id: number): Observable<Medicamento> {
     return this.http.get<Medicamento>(`${this.baseUrl}/${id}`);
+  }
+
+  /** Remessa do medicamento a caminho da UBS (etapas, datas e previsão). */
+  rastreamento(id: number, ubsId: number): Observable<Rastreamento> {
+    const params = new HttpParams().set('ubsId', ubsId);
+    return this.http.get<Rastreamento>(`${this.baseUrl}/${id}/rastreamento`, { params });
+  }
+
+  /**
+   * Conta uma procura do medicamento para o "mais procurados" da gestão. A API guarda só a contagem
+   * do dia por medicamento e UBS de referência, sem nada da pessoa.
+   */
+  registrarBusca(id: number, ubsId: number | null): Observable<void> {
+    return this.http.post<void>(`${this.baseUrl}/${id}/buscas`, ubsId ? { ubsId } : {});
   }
 
   disponibilidade(id: number): Observable<Disponibilidade[]> {

@@ -7,6 +7,9 @@ import java.time.LocalDate
 
 interface LoteEstoqueRepository : JpaRepository<LoteEstoque, Long> {
 
+    @Query("select l from LoteEstoque l join fetch l.itemEstoque where l.itemEstoque.id in :itemIds")
+    fun findDosItens(@Param("itemIds") itemIds: Collection<Long>): List<LoteEstoque>
+
     /** Lotes com saldo e validade até a data informada (inclui os já vencidos), do que vence primeiro. */
     @Query(
         """

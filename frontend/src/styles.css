@@ -19,6 +19,13 @@
   --color-content-muted: #475569;
   --color-content-subtle: #94a3b8;
   --color-outline: #e2e8f0;
+  --color-outline-strong: #cbd5e1;
+  --color-surface-muted: #f8fafc;
+
+  /* Menu escuro da área de gestão (farmácia). */
+  --color-sidebar: #0f172a;
+  --color-sidebar-ativo: #1e293b;
+  --color-sidebar-texto: #cbd5e1;
 
   --color-brand-50: #f0fdfa;
   --color-brand-100: #ccfbf1;
@@ -32,12 +39,15 @@
   --color-status-reservado-subtle: #fef3c7;
   --color-status-falta: #b91c1c;
   --color-status-falta-subtle: #fee2e2;
+  /* Alerta de gestão (abaixo do mínimo): âmbar mais escuro que o "reservado". */
+  --color-status-alerta: #92400e;
+  --color-status-alerta-subtle: #fef3c7;
   --color-status-info: #1d4ed8;
   --color-status-info-subtle: #dbeafe;
 
-  --radius-control: 0.75rem;
-  --radius-card: 0.875rem;
-  --shadow-card: 0 1px 2px rgb(15 23 42 / 6%), 0 1px 3px rgb(15 23 42 / 8%);
+  --radius-control: 0.625rem;
+  --radius-card: 1rem;
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 4%);
 }
 
 @layer base {
@@ -67,16 +77,12 @@
 }
 
 @layer components {
-  .app-shell {
-    @apply mx-auto flex min-h-dvh w-full max-w-7xl flex-col bg-canvas;
-  }
-
   .surface-card {
-    @apply rounded-card bg-surface shadow-card;
+    @apply rounded-card border border-outline bg-surface shadow-card;
   }
 
   .surface-list {
-    @apply divide-y divide-outline overflow-hidden rounded-card bg-surface shadow-card;
+    @apply divide-y divide-outline overflow-hidden rounded-card border border-outline bg-surface shadow-card;
   }
 
   .page-title {
@@ -88,14 +94,10 @@
   }
 
   .control {
-    @apply h-12 rounded-control border border-outline bg-surface px-4 text-content outline-none transition-colors placeholder:text-content-subtle focus:border-brand-500;
+    @apply h-12 rounded-control border border-outline bg-surface px-4 text-content outline-none transition-colors placeholder:text-content-muted focus:border-brand-600 focus:ring-1 focus:ring-brand-600;
   }
 
   .feedback-error {
     @apply rounded-control bg-status-falta-subtle p-4 text-sm text-status-falta;
-  }
-
-  .interactive-row {
-    @apply block transition-colors hover:bg-canvas focus-visible:relative;
   }
 }

@@ -1,7 +1,7 @@
 # Infraestrutura de desenvolvimento local.
 #   docker compose up -d                 -> só o PostgreSQL
 #   docker compose --profile tools up -d -> PostgreSQL + pgAdmin
-#   docker compose --profile full up -d  -> PostgreSQL + API + Web (tudo em container)
+#   docker compose --profile full up -d --build -> PostgreSQL + API + Web (tudo em container, com os dados de exemplo)
 name: medflow
 
 services:
@@ -12,7 +12,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-medflow}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-medflow}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432" # só no seu computador: a senha padrão é pública
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -28,20 +28,54 @@ services:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@medflow.local}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
     ports:
-      - "${PGADMIN_PORT:-5050}:80"
+      - "127.0.0.1:${PGADMIN_PORT:-5050}:80"
     depends_on:
       - db
+
+  # Aplica as migrations (e, no db-reset --demo, o seed) sem subir a API (usado por scripts/db-reset).
+  # Mantenha igual ao backend, senão o db-reset monta um banco diferente do que a API monta:
+  # - imagem: a versão do flyway-core que o Spring Boot traz (backend/build.gradle.kts; confira com
+  #   ./gradlew dependencies --configuration runtimeClasspath | grep flyway-core);
+  # - FLYWAY_LOCATIONS e FLYWAY_OUT_OF_ORDER: os perfis dev e demo do backend/src/main/resources/application.yml.
+  flyway:
+    image: flyway/flyway:12.4.0-alpine
+    profiles: [migracao] # não sobe com o up; roda com docker compose run --rm flyway
+    environment:
+      FLYWAY_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-medflow}
+      FLYWAY_USER: ${POSTGRES_USER:-medflow}
+      FLYWAY_PASSWORD: ${POSTGRES_PASSWORD:-medflow}
+      # Só as migrations; o db-reset com --demo / -Demo acrescenta o seed (perfil demo da API).
+      FLYWAY_LOCATIONS: filesystem:/flyway/db/migration
+      FLYWAY_OUT_OF_ORDER: "true"
+    volumes:
+      - ./backend/src/main/resources/db:/flyway/db:ro
+    command: migrate
+    depends_on:
+      db:
+        condition: service_healthy
 
   api:
     build: ./backend
     profiles: [full]
     environment:
-      DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-medflow}
-      DB_USER: ${POSTGRES_USER:-medflow}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-medflow}
-      CORS_ALLOWED_ORIGINS: http://localhost:4200
+      - DB_URL=jdbc:postgresql://db:5432/${POSTGRES_DB:-medflow}
+      - DB_USER=${POSTGRES_USER:-medflow}
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-medflow}
+      - CORS_ALLOWED_ORIGINS=http://localhost:${WEB_PORT:-4200}
+      # dev por padrão: sincroniza os dados reais da BNAFAR (Maceió) ao subir e usa o segredo JWT de desenvolvimento.
+      # Para os dados fictícios de demonstração, use API_PROFILE=dev,demo. Para outro ambiente, API_PROFILE=prod e JWT_SECRET.
+      # Nome só do compose, de propósito: uma SPRING_PROFILES_ACTIVE exportada no terminal (para o bootRun) não vaza para cá.
+      - SPRING_PROFILES_ACTIVE=${API_PROFILE:-dev}
+      # Sem valor: só chegam ao container se estiverem definidos no ambiente ou no .env
+      # (um valor vazio no dev derrubaria o segredo padrão).
+      - JWT_SECRET
+      - JWT_EXPIRACAO
+      - SYNC_ATIVO
+      - SYNC_MUNICIPIOS
+      - SYNC_CRON
+      - SYNC_AO_INICIAR
     ports:
-      - "8080:8080"
+      - "127.0.0.1:${API_PORT:-8080}:8080" # em dev a API tem segredo JWT público e conta de gestor de exemplo
     depends_on:
       db:
         condition: service_healthy
@@ -50,7 +84,7 @@ services:
     build: ./frontend
     profiles: [full]
     ports:
-      - "4200:80"
+      - "127.0.0.1:${WEB_PORT:-4200}:80"
     depends_on:
       - api
 

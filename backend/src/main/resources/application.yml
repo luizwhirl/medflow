@@ -3,6 +3,9 @@ spring:
     name: medflow-api
   profiles:
     default: dev
+  mvc:
+    problemdetails:
+      enabled: true
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/medflow}
     username: ${DB_USER:medflow}
@@ -24,8 +27,31 @@ server:
     include-message: always
 
 app:
+  estoque:
+    limite-reservado: 20 # limite padrão: com saldo até esta quantidade o item aparece como RESERVADO (o medicamento pode ter o seu)
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200}
+  jwt:
+    secret: ${JWT_SECRET:} # obrigatório fora do perfil dev, com pelo menos 32 caracteres
+    expiracao: ${JWT_EXPIRACAO:8h}
+  bnafar:
+    base-url: ${BNAFAR_BASE_URL:https://apidadosabertos.saude.gov.br}
+    tamanho-pagina: 1000 # máximo aceito pela API
+    max-paginas: 500
+    timeout-conexao: 5s
+    timeout-leitura: 30s
+  ibge: # contorno dos municípios, para conferir as coordenadas das UBS que vêm da BNAFAR
+    base-url: ${IBGE_BASE_URL:https://servicodados.ibge.gov.br}
+  buscas: # contagem de buscas para o "mais procurados" do painel (PDS-49)
+    retencao-meses: 12 # dias mais antigos que isso são apagados (LGPD)
+    cron-limpeza: ${BUSCAS_CRON_LIMPEZA:0 0 3 * * *} # todo dia às 3h (fuso de Maceió)
+  sync: # dados reais da BNAFAR; os perfis dev e prod ligam por padrão (ver abaixo)
+    ativo: ${SYNC_ATIVO:false}
+    municipios: ${SYNC_MUNICIPIOS:} # IBGE (6 ou 7 dígitos), separados por vírgula
+    cron: ${SYNC_CRON:0 0 * * * *} # de hora em hora (fuso de Maceió); a BNAFAR publica a posição uma vez por dia
+    executar-ao-iniciar: ${SYNC_AO_INICIAR:false}
+    tolerancia-limite-km: 3.5 # quanto a UBS pode ficar fora do contorno do município no IBGE (a malha é simplificada)
+    distancia-maxima-do-bairro-km: 8 # quanto a coordenada da fonte pode ficar do centro do bairro informado
 
 management:
   endpoints:
@@ -40,15 +66,42 @@ springdoc:
     path: /v3/api-docs
 
 ---
-# Desenvolvimento local: carrega também os dados de exemplo (db/seed)
+# Desenvolvimento local: dados reais. Ao subir, sincroniza Maceió com a BNAFAR (UBS que existem, no lugar certo).
+# Para os dados fictícios de demonstração (db/seed), some o perfil demo: SPRING_PROFILES_ACTIVE=dev,demo.
 spring:
   config:
     activate:
       on-profile: dev
-  flyway:
-    locations: classpath:db/migration,classpath:db/seed
+  flyway: # ao mudar, atualize também o serviço flyway do docker-compose.yml (usado por scripts/db-reset)
+    # db/dev só tem o callback que esconde as UBS fictícias de bancos criados quando o seed ainda era do dev.
+    locations: classpath:db/migration,classpath:db/dev
+    out-of-order: true # bancos que já têm os seeds V1000+ continuam aceitando migrations novas
+    ignore-migration-patterns: "*:missing" # ...e não acusam os seeds aplicados que agora são só do perfil demo
   jpa:
     show-sql: false
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:dev-apenas-para-desenvolvimento-nao-use-em-producao}
+  sync:
+    ativo: ${SYNC_ATIVO:true}
+    municipios: ${SYNC_MUNICIPIOS:2704302} # Maceió
+    executar-ao-iniciar: ${SYNC_AO_INICIAR:true}
+
+---
+# Demonstração: UBS, estoque, remessas e horários fictícios (db/seed), sem a BNAFAR.
+# Use junto com o dev (dev,demo). Não misture com a sincronização: as UBS fictícias não existem de verdade.
+spring:
+  config:
+    activate:
+      on-profile: demo
+  flyway:
+    locations: classpath:db/migration,classpath:db/seed
+    out-of-order: true # permite novas migrations após os seeds V1000 e V1001
+
+app:
+  sync:
+    ativo: false
 
 logging:
   level:
@@ -59,6 +112,12 @@ spring:
   config:
     activate:
       on-profile: prod
+
+app:
+  sync:
+    ativo: ${SYNC_ATIVO:true}
+    municipios: ${SYNC_MUNICIPIOS:2704302} # Maceió
+    executar-ao-iniciar: ${SYNC_AO_INICIAR:true}
 
 springdoc:
   swagger-ui:

@@ -12,11 +12,11 @@ import org.testcontainers.junit.jupiter.Testcontainers
 
 /**
  * Sobe a aplicação inteira contra um PostgreSQL real (Testcontainers), com as migrations
- * e os dados de exemplo do perfil "dev". É ignorado automaticamente se o Docker não estiver rodando.
+ * e os dados de exemplo do perfil "demo". É ignorado automaticamente se o Docker não estiver rodando.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-@ActiveProfiles("dev")
+@ActiveProfiles("dev", "demo")
 @Import(TestcontainersConfiguration::class)
 @Testcontainers(disabledWithoutDocker = true)
 class MedflowApiIntegrationTests(@Autowired private val mockMvc: MockMvc) {
@@ -33,7 +33,7 @@ class MedflowApiIntegrationTests(@Autowired private val mockMvc: MockMvc) {
     fun `busca medicamento por nome sem diferenciar maiusculas`() {
         mockMvc.get("/api/medicamentos") { param("busca", "metFORmina") }.andExpect {
             status { isOk() }
-            jsonPath("$[0].catmat") { value("BR0267690") }
+            jsonPath("$.itens[0].catmat") { value("BR0267690") }
         }
     }
 

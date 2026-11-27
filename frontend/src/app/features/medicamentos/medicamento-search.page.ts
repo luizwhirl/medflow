@@ -1,56 +1,367 @@
-import { Component, inject, input, linkedSignal } from '@angular/core';
+import { Component, computed, inject, input, linkedSignal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
-import { catchError, debounceTime, distinctUntilChanged, of, switchMap } from 'rxjs';
+import { Router, RouterLink } from '@angular/router';
+import { catchError, debounceTime, distinctUntilChanged, forkJoin, map, of, switchMap } from 'rxjs';
 
+import { Coordenadas, posicaoAtual } from '../../core/geo';
+import { Disponibilidade, temEstoque } from '../../core/models/estoque.model';
 import { Medicamento } from '../../core/models/medicamento.model';
+import { CARREGANDO, carregar, dadosOu, manterAnterior, Recurso } from '../../core/recurso';
 import { MedicamentoService } from '../../core/services/medicamento.service';
+import { PreferenciasService } from '../../core/services/preferencias.service';
+import { ResultadoVoz } from '../../core/services/reconhecimento-voz.service';
+import { UbsService } from '../../core/services/ubs.service';
+import { Chip } from '../../shared/components/chip';
+import { Esqueleto } from '../../shared/components/esqueleto';
+import { EstadoVazio, ICONES_VAZIO } from '../../shared/components/estado-vazio';
+import { MensagemErro } from '../../shared/components/mensagem-erro';
+import { SearchField } from '../../shared/components/search-field';
+import { RastreioMedicamento } from './rastreio-medicamento';
 
+/** Raio do filtro "Até 5 km". */
+export const RAIO_PROXIMAS_KM = 5;
+/** Máximo de resultados para os quais buscamos a disponibilidade. */
+const MAX_RESULTADOS = 20;
+
+interface Encontrado {
+  medicamento: Medicamento;
+  disponibilidade: Disponibilidade[];
+}
+
+interface Resultado {
+  medicamento: Medicamento;
+  /** Unidades consideradas (todas, ou só as do raio quando o filtro está ligado). */
+  total: number;
+  disponiveis: number;
+}
+
+/**
+ * Buscar e rastrear (Figma: "Desktop · Buscar e rastrear").
+ * Desktop/tablet paisagem: lista à esquerda e detalhe à direita;
+ * celular e tablet retrato: o detalhe substitui a lista (com "Voltar").
+ */
 @Component({
   selector: 'app-medicamento-search-page',
-  imports: [FormsModule, RouterLink],
+  imports: [
+    RouterLink,
+    SearchField,
+    Chip,
+    Esqueleto,
+    EstadoVazio,
+    MensagemErro,
+    RastreioMedicamento,
+  ],
   template: `
-    <h1 class="page-title mb-3">Medicamentos</h1>
-    <input
-      type="search"
-      [ngModel]="termo()"
-      (ngModelChange)="termo.set($event)"
-      placeholder="Buscar por nome ou categoria"
-      aria-label="Buscar medicamento"
-      class="control w-full"
-    />
-    <ul class="surface-list mt-3">
-      @for (m of resultados(); track m.id) {
-        <li>
-          <a [routerLink]="['/medicamentos', m.id]" class="interactive-row px-4 py-3">
-            <div class="font-semibold">{{ m.nome }} {{ m.concentracao }}</div>
-            <div class="body-muted">
-              {{ m.formaFarmaceutica }} · {{ m.categoria }} · CATMAT {{ m.catmat }}
-            </div>
-          </a>
-        </li>
-      } @empty {
-        <li class="body-muted p-4">Nenhum medicamento encontrado.</li>
-      }
-    </ul>
+    <div class="md:-my-8 md:grid md:min-h-dvh md:grid-cols-[21rem_minmax(0,1fr)] xl:-ml-14">
+      <section
+        class="min-w-0 md:-ml-8 md:border-r md:border-outline md:bg-surface md:px-7 md:py-8 xl:ml-0"
+        [class]="selecionado() ? 'max-md:hidden' : ''"
+      >
+        <app-search-field
+          rotulo="Buscar medicamento"
+          [rotuloVisivel]="true"
+          placeholder="Ex.: Metformina"
+          [valor]="termo()"
+          (valorChange)="termo.set($event)"
+          (buscar)="preferencias.registrarBusca($event)"
+          (voz)="voz.set($event)"
+        />
+        <div
+          class="-mx-4 mt-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] md:-mx-7 md:px-7"
+          role="group"
+          aria-label="Filtros"
+        >
+          @if (posicao()) {
+            <app-chip [(selecionado)]="ateCincoKm">Até {{ raio }} km</app-chip>
+          }
+          <app-chip [(selecionado)]="soDisponiveis">Só disponíveis</app-chip>
+          <app-chip [(selecionado)]="abertasAgora">Abertas agora</app-chip>
+          @for (c of categorias(); track c) {
+            <app-chip
+              [selecionado]="categoriaAtual() === c"
+              (selecionadoChange)="filtrarCategoria($event ? c : '')"
+              >{{ c }}</app-chip
+            >
+          }
+        </div>
+
+        <!-- Região viva fixa: recriá-la a cada busca faria o leitor de tela não anunciar a contagem. -->
+        <p class="sr-only" aria-live="polite">{{ anuncioResultados() }}</p>
+        @let busca = resultado();
+        @if (busca.estado === 'carregando') {
+          <app-esqueleto
+            formato="linha"
+            [quantidade]="4"
+            rotulo="Buscando medicamentos"
+            class="mt-4 flex flex-col gap-3"
+          />
+        } @else if (busca.estado === 'erro') {
+          <app-mensagem-erro
+            class="mt-4"
+            titulo="Não foi possível buscar os medicamentos"
+            (tentarDeNovo)="recarregar()"
+          />
+        } @else {
+          <p class="mt-4 text-sm text-content-muted" aria-hidden="true">
+            {{ visiveis().length }} {{ visiveis().length === 1 ? 'resultado' : 'resultados' }}
+            @if (busca.dados.total > busca.dados.itens.length) {
+              · mostrando os {{ busca.dados.itens.length }} primeiros de {{ busca.dados.total }};
+              refine a busca
+            }
+          </p>
+
+          <ul class="mt-3 flex flex-col gap-3" aria-label="Resultados">
+            @for (r of visiveis(); track r.medicamento.id) {
+              @let ativo = selecionado() === r.medicamento.id;
+              <li>
+                <a
+                  [routerLink]="[]"
+                  [queryParams]="{ id: r.medicamento.id }"
+                  queryParamsHandling="merge"
+                  [attr.aria-current]="ativo ? 'true' : null"
+                  class="block rounded-card border px-5 py-4 transition-colors"
+                  [class]="
+                    ativo
+                      ? 'border-2 border-brand-600 bg-brand-50'
+                      : 'border-outline bg-surface hover:border-brand-500'
+                  "
+                >
+                  <span class="block text-lg font-semibold">
+                    {{ r.medicamento.nome }} {{ r.medicamento.concentracao }}
+                  </span>
+                  @if (preferencias.remediosContinuos().includes(r.medicamento.id)) {
+                    <span
+                      class="mt-1 inline-block rounded-full bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-600"
+                      >Na minha lista</span
+                    >
+                  }
+                  <span class="block capitalize text-content-muted">{{
+                    r.medicamento.formaFarmaceutica
+                  }}</span>
+                  <span
+                    class="mt-1 block font-semibold"
+                    [class]="r.disponiveis ? 'text-brand-600' : 'text-status-falta'"
+                  >
+                    @if (r.total === 0) {
+                      @if (abertasAgora()) {
+                        Nenhuma UBS{{ raioAtivo() ? ' a até ' + raio + ' km' : '' }} aberta agora
+                      } @else {
+                        {{
+                          raioAtivo()
+                            ? 'Nenhuma UBS a até ' + raio + ' km'
+                            : 'Nenhuma UBS informou estoque'
+                        }}
+                      }
+                    } @else if (r.disponiveis) {
+                      Em {{ r.disponiveis }} de {{ r.total }} UBS{{ sufixoUbs() }}
+                    } @else {
+                      Em falta nas UBS{{ sufixoUbs() }}
+                    }
+                  </span>
+                </a>
+              </li>
+            } @empty {
+              <li>
+                <app-estado-vazio
+                  [compacto]="true"
+                  titulo="Nenhum medicamento encontrado"
+                  [texto]="
+                    soDisponiveis() && busca.dados.itens.length
+                      ? 'Nenhum resultado tem estoque agora. Desligue “Só disponíveis” para ver todos.'
+                      : 'Confira o nome ou tente outro termo (ex.: Metformina).'
+                  "
+                />
+              </li>
+            }
+          </ul>
+        }
+      </section>
+
+      <section
+        class="min-w-0 md:px-8 md:py-8 xl:px-12"
+        [class]="selecionado() ? '' : 'max-md:hidden'"
+      >
+        @if (selecionado(); as id) {
+          <a
+            [routerLink]="[]"
+            [queryParams]="{ id: null }"
+            queryParamsHandling="merge"
+            class="mb-3 inline-block text-sm font-semibold text-brand-600 md:hidden"
+            >← Voltar à busca</a
+          >
+          <app-rastreio-medicamento [id]="id" />
+        } @else {
+          <app-estado-vazio
+            titulo="Escolha um medicamento"
+            texto="Veja onde encontrar e o andamento da remessa."
+            [icone]="iconesVazio.pilula"
+          />
+        }
+      </section>
+    </div>
   `,
 })
 export class MedicamentoSearchPage {
   private readonly medicamentoService = inject(MedicamentoService);
+  private readonly ubsService = inject(UbsService);
+  private readonly router = inject(Router);
+  protected readonly preferencias = inject(PreferenciasService);
 
-  /** Query param `?busca=` (withComponentInputBinding). */
+  /** Query params (withComponentInputBinding). */
   readonly busca = input<string>('');
-  protected readonly termo = linkedSignal(() => this.busca() ?? '');
+  readonly categoria = input<string>('');
+  readonly id = input<string | undefined>(undefined);
 
-  protected readonly resultados = toSignal(
-    toObservable(this.termo).pipe(
-      debounceTime(250),
-      distinctUntilChanged(),
-      switchMap((t) =>
-        this.medicamentoService.buscar(t.trim()).pipe(catchError(() => of<Medicamento[]>([]))),
+  protected readonly raio = RAIO_PROXIMAS_KM;
+  protected readonly iconesVazio = ICONES_VAZIO;
+  protected readonly termo = linkedSignal(() => this.busca() ?? '');
+  protected readonly categoriaAtual = linkedSignal(() => this.categoria() ?? '');
+  protected readonly ateCincoKm = signal(true);
+  protected readonly soDisponiveis = signal(false);
+  protected readonly abertasAgora = signal(false);
+  protected readonly posicao = signal<Coordenadas | null>(null);
+
+  protected readonly raioAtivo = computed(() => this.ateCincoKm() && this.posicao() !== null);
+
+  /**
+   * Ids das UBS a até 5 km, segundo a API (uma chamada ao ligar o filtro);
+   * `null` com o filtro desligado ou sem localização.
+   */
+  private readonly idsNoRaio = toSignal(
+    toObservable(computed(() => (this.raioAtivo() ? this.posicao() : null))).pipe(
+      switchMap((pos) =>
+        pos
+          ? this.ubsService.proximas(pos, { raioKm: RAIO_PROXIMAS_KM }).pipe(
+              map((ubs) => new Set(ubs.map((u) => u.id))),
+              catchError(() => of(null)),
+            )
+          : of(null),
       ),
     ),
-    { initialValue: [] as Medicamento[] },
+    { initialValue: null },
   );
+
+  /**
+   * Ids das UBS abertas agora, segundo a API (uma chamada ao ligar o chip);
+   * `null` com o chip desligado. UBS sem horário cadastrado não entram.
+   */
+  private readonly idsAbertos = toSignal(
+    toObservable(this.abertasAgora).pipe(
+      switchMap((ligado) =>
+        ligado
+          ? this.ubsService.listar({ abertas: true }).pipe(
+              map((ubs) => new Set(ubs.map((u) => u.id))),
+              catchError(() => of(null)),
+            )
+          : of(null),
+      ),
+    ),
+    { initialValue: null },
+  );
+
+  /** Complemento de "Em X de Y UBS": " próximas", " abertas" ou " próximas abertas". */
+  protected readonly sufixoUbs = computed(
+    () => `${this.raioAtivo() ? ' próximas' : ''}${this.abertasAgora() ? ' abertas' : ''}`,
+  );
+
+  protected readonly selecionado = computed(() => {
+    const n = Number(this.id());
+    return Number.isInteger(n) && n > 0 ? n : null;
+  });
+
+  protected readonly categorias = toSignal(
+    this.medicamentoService.categorias().pipe(catchError(() => of([]))),
+    { initialValue: [] as string[] },
+  );
+
+  private readonly tentativa = signal(0);
+
+  /** Última busca por voz; as alternativas valem enquanto o campo tiver o texto reconhecido. */
+  protected readonly voz = signal<ResultadoVoz | null>(null);
+  private readonly alternativas = computed(() => {
+    const v = this.voz();
+    return v && v.texto.trim() === this.termo().trim() ? v.alternativas : [];
+  });
+
+  /** Busca na API e a disponibilidade dos primeiros resultados. */
+  protected readonly resultado = toSignal(
+    toObservable(
+      computed(() => ({
+        termo: this.termo().trim(),
+        categoria: this.categoriaAtual(),
+        alternativas: this.alternativas(),
+        tentativa: this.tentativa(),
+      })),
+    ).pipe(
+      debounceTime(250),
+      distinctUntilChanged(
+        (a, b) =>
+          a.termo === b.termo &&
+          a.categoria === b.categoria &&
+          a.alternativas.join('|') === b.alternativas.join('|') &&
+          a.tentativa === b.tentativa,
+      ),
+      switchMap(({ termo, categoria, alternativas }) =>
+        carregar(
+          this.medicamentoService.buscar(termo, categoria, undefined, alternativas).pipe(
+            switchMap((pagina) =>
+              pagina.itens.length === 0
+                ? of({ itens: [] as Encontrado[], total: 0 })
+                : forkJoin(
+                    pagina.itens.slice(0, MAX_RESULTADOS).map((medicamento) =>
+                      this.medicamentoService.disponibilidade(medicamento.id).pipe(
+                        // Sem a disponibilidade de um item, ele aparece sem estoque informado.
+                        catchError(() => of<Disponibilidade[]>([])),
+                        map((disponibilidade): Encontrado => ({ medicamento, disponibilidade })),
+                      ),
+                    ),
+                  ).pipe(map((itens) => ({ itens, total: pagina.totalItens }))),
+            ),
+          ),
+        ),
+      ),
+      manterAnterior(),
+    ),
+    { initialValue: CARREGANDO as Recurso<{ itens: Encontrado[]; total: number }> },
+  );
+
+  protected readonly anuncioResultados = computed(() => {
+    if (this.resultado().estado !== 'pronto') return '';
+    const n = this.visiveis().length;
+    return `${n} ${n === 1 ? 'resultado' : 'resultados'}`;
+  });
+
+  protected readonly visiveis = computed((): Resultado[] => {
+    const noRaio = this.idsNoRaio();
+    const abertos = this.idsAbertos();
+    return dadosOu(this.resultado(), { itens: [] as Encontrado[], total: 0 })
+      .itens.map(({ medicamento, disponibilidade }) => {
+        const consideradas = disponibilidade.filter(
+          (d) => (!noRaio || noRaio.has(d.ubs.id)) && (!abertos || abertos.has(d.ubs.id)),
+        );
+        return {
+          medicamento,
+          total: consideradas.length,
+          disponiveis: consideradas.filter(temEstoque).length,
+        };
+      })
+      .filter((r) => !this.soDisponiveis() || r.disponiveis > 0);
+  });
+
+  constructor() {
+    posicaoAtual().then((p) => this.posicao.set(p));
+  }
+
+  protected recarregar(): void {
+    this.tentativa.update((n) => n + 1);
+  }
+
+  protected filtrarCategoria(categoria: string): void {
+    this.categoriaAtual.set(categoria);
+    this.router.navigate([], {
+      queryParams: { categoria: categoria || null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
 }

@@ -30,6 +30,10 @@ class Medicamento(
     @Column(nullable = false)
     var rename: Boolean = true,
 
+    /** Com saldo até este valor o item fica RESERVADO. Nulo usa o limite global (`app.estoque.limite-reservado`). */
+    @Column(name = "limite_reservado")
+    var limiteReservado: Int? = null,
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     var id: Long? = null,

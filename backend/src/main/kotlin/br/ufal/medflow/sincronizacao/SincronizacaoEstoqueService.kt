@@ -1,0 +1,416 @@
+package br.ufal.medflow.sincronizacao
+
+import br.ufal.medflow.aviso.GeracaoAvisoService
+import br.ufal.medflow.estoque.ItemEstoque
+import br.ufal.medflow.estoque.ItemEstoqueRepository
+import br.ufal.medflow.estoque.LoteEstoque
+import br.ufal.medflow.estoque.LoteEstoqueRepository
+import br.ufal.medflow.estoque.RegraStatusEstoque
+import br.ufal.medflow.estoque.StatusEstoque
+import br.ufal.medflow.integracao.FonteEstoque
+import br.ufal.medflow.integracao.Geocodificador
+import br.ufal.medflow.integracao.LimiteMunicipio
+import br.ufal.medflow.integracao.LocalEncontrado
+import br.ufal.medflow.integracao.NomesParaBusca
+import br.ufal.medflow.integracao.LimitesMunicipais
+import br.ufal.medflow.integracao.Ponto
+import br.ufal.medflow.integracao.PosicaoEstoque
+import br.ufal.medflow.medicamento.Medicamento
+import br.ufal.medflow.medicamento.MedicamentoRepository
+import br.ufal.medflow.ubs.OrigemLocalizacao
+import br.ufal.medflow.ubs.TipoUnidade
+import br.ufal.medflow.ubs.Ubs
+import br.ufal.medflow.ubs.UbsRepository
+import org.slf4j.LoggerFactory
+import org.springframework.stereotype.Service
+import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.support.TransactionTemplate
+import java.math.RoundingMode
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+
+/**
+ * Traz o estoque de um município da fonte (BNAFAR) para o banco: UBS, medicamentos, itens e lotes.
+ * Idempotente: rodar de novo com os mesmos dados não muda nada.
+ */
+@Service
+class SincronizacaoEstoqueService(
+    private val fonte: FonteEstoque,
+    private val ubsRepository: UbsRepository,
+    private val medicamentoRepository: MedicamentoRepository,
+    private val itemRepository: ItemEstoqueRepository,
+    private val loteRepository: LoteEstoqueRepository,
+    private val regraStatus: RegraStatusEstoque,
+    private val geracaoAvisos: GeracaoAvisoService,
+    private val limites: LimitesMunicipais,
+    private val geocodificador: Geocodificador,
+    private val props: SincronizacaoProperties,
+    transactionManager: PlatformTransactionManager,
+) {
+    private val log = LoggerFactory.getLogger(javaClass)
+    private val transacao = TransactionTemplate(transactionManager)
+
+    /**
+     * @throws br.ufal.medflow.integracao.FonteEstoqueIndisponivelException se a fonte falhar (nada é gravado)
+     * @throws br.ufal.medflow.integracao.LimiteMunicipioIndisponivelException se não der para obter o contorno do
+     *   município no IBGE (nada é gravado: sem ele não há como conferir as coordenadas)
+     */
+    fun sincronizar(codigoIbge: String): ResultadoSincronizacao {
+        // fora da transação: as chamadas HTTP podem demorar
+        val limite = limites.limite(codigoIbge)
+        val posicoes = fonte.buscarPosicoes(codigoIbge)
+        val conferencia = conferirLocalizacoes(posicoes, limite)
+        val resultado = transacao.execute { gravar(codigoIbge, posicoes, conferencia) }
+        log.info("Sincronização {}: {}", codigoIbge, resultado)
+        return resultado
+    }
+
+    /** CNES cuja coordenada da fonte está errada, e onde (prédio ou bairro) as que precisavam foram achadas. */
+    private class Conferencia(val erradas: Set<String>, val achadas: Map<String, LocalEncontrado>)
+
+    /**
+     * A coordenada da fonte está errada quando cai fora do município ou longe do bairro informado (se o bairro for
+     * achado no mapa). As erradas são procuradas no mapa (prédio ou bairro), menos as que já têm localização própria:
+     * correção do gestor (MANUAL) ou achada antes (LUGAR, BAIRRO).
+     */
+    private fun conferirLocalizacoes(posicoes: List<PosicaoEstoque>, limite: LimiteMunicipio): Conferencia {
+        val unidades = posicoes
+            .filter { it.latitude != null && it.longitude != null && ClassificacaoUnidade.tipo(it.nomeUnidade) != null }
+            .groupBy { it.cnes }
+            .mapValues { (_, lista) -> lista.maxBy { it.dataPosicao } }
+
+        // Bairro digitado errado na fonte ("OURO PREO") não é achado no mapa: tenta o bairro de outra unidade com
+        // nome quase igual ("OURO PRETO"). O resultado vale para a conferência e para a busca da unidade.
+        val bairrosDaFonte = unidades.values.mapNotNull { it.bairro }
+        val centros = HashMap<String?, Pair<String?, Ponto?>>()
+        fun centroDoBairro(bairro: String?): Pair<String?, Ponto?> = centros.getOrPut(bairro) {
+            geocodificador.centroDoBairro(bairro, limite, props.toleranciaLimiteKm)?.let { bairro to it }
+                ?: NomesParaBusca.parecido(bairro, bairrosDaFonte)
+                    ?.let { outro -> outro to geocodificador.centroDoBairro(outro, limite, props.toleranciaLimiteKm) }
+                    ?.takeIf { it.second != null }
+                ?: (bairro to null)
+        }
+
+        val erradas = unidades.filterValues { p ->
+            val daFonte = Ponto(p.latitude!!, p.longitude!!)
+            if (!limite.contem(daFonte, props.toleranciaLimiteKm)) return@filterValues true
+            val centro = centroDoBairro(p.bairro).second ?: return@filterValues false
+            val distancia = daFonte.distanciaKm(centro)
+            (distancia > props.distanciaMaximaDoBairroKm).also { longe ->
+                if (longe) log.info("UBS {} ({}): coordenada da fonte a {} km do bairro {}", p.cnes, p.nomeUnidade, "%.1f".format(distancia), p.bairro)
+            }
+        }
+        if (erradas.isEmpty()) return Conferencia(emptySet(), emptyMap())
+
+        val jaLocalizadas = ubsRepository.findByCnesIn(erradas.keys)
+            .filter { it.localizacaoOrigem in LOCALIZACAO_PROPRIA }
+            .map { it.cnes }
+            .toSet()
+        val achadas = HashMap<String, LocalEncontrado>()
+        for ((cnes, p) in erradas) {
+            if (cnes in jaLocalizadas) continue
+            geocodificador.localizar(p.nomeUnidade ?: continue, centroDoBairro(p.bairro).first, limite, props.toleranciaLimiteKm)
+                ?.let { achadas[cnes] = it }
+        }
+        return Conferencia(erradas.keys, achadas)
+    }
+
+    private data class Valida(
+        val posicao: PosicaoEstoque,
+        val tipo: TipoUnidade,
+        val produto: ProdutoDescrito,
+        val catmat: String,
+    )
+
+    private fun gravar(
+        codigoIbge: String,
+        posicoes: List<PosicaoEstoque>,
+        conferencia: Conferencia,
+    ): ResultadoSincronizacao {
+        var naoUbs = 0
+        var semCoordenadas = 0
+        var naoMedicamento = 0
+        val validas = mutableListOf<Valida>()
+        for (p in posicoes) {
+            val tipo = ClassificacaoUnidade.tipo(p.nomeUnidade)
+            when {
+                tipo == null -> naoUbs++
+                p.latitude == null || p.longitude == null -> semCoordenadas++
+                else -> {
+                    val produto = DescricaoProduto.analisar(p.descricaoProduto)
+                    if (produto == null) naoMedicamento++ else validas += Valida(p, tipo, produto, Catmat.base(p.catmat))
+                }
+            }
+        }
+
+        // Por item vale só a posição mais recente: se a fonte devolver mais de um dia, não soma entre datas.
+        val porItem = validas.groupBy { it.posicao.cnes to it.catmat }.mapValues { (_, lista) ->
+            val maisRecente = lista.maxOf { it.posicao.dataPosicao }
+            lista.filter { it.posicao.dataPosicao == maisRecente }
+        }
+        val referenciaPorUbs = validas.groupBy { it.posicao.cnes }
+            .mapValues { (_, lista) -> lista.maxOf { it.posicao.dataPosicao }.comoInstante() }
+
+        val ubsPorCnes = gravarUnidades(validas, conferencia)
+        val medicamentoPorCatmat = gravarMedicamentos(validas)
+        val itens = gravarItens(porItem, referenciaPorUbs, ubsPorCnes, medicamentoPorCatmat)
+        val lotes = gravarLotes(porItem, itens.porChave)
+
+        return ResultadoSincronizacao(
+            codigoIbge = codigoIbge,
+            posicoesLidas = posicoes.size,
+            descartes = Descartes(naoUbs, semCoordenadas, naoMedicamento),
+            unidades = ubsPorCnes.contagem,
+            localizacoes = ubsPorCnes.porChave.values.groupingBy { it.localizacaoOrigem }.eachCount(),
+            medicamentos = medicamentoPorCatmat.contagem,
+            itens = itens.contagem,
+            lotes = lotes,
+        )
+    }
+
+    private class Gravados<K, T>(val porChave: Map<K, T>, val contagem: Contagem)
+
+    private fun gravarUnidades(validas: List<Valida>, conferencia: Conferencia): Gravados<String, Ubs> {
+        val porCnes = validas.groupBy { it.posicao.cnes }
+        val existentes = ubsRepository.findByCnesIn(porCnes.keys).associateBy { it.cnes }
+        val resultado = HashMap<String, Ubs>()
+        val novas = mutableListOf<Ubs>()
+        var atualizadas = 0
+
+        for ((cnes, lista) in porCnes) {
+            val maisRecente = lista.maxBy { it.posicao.dataPosicao }
+            val existente = existentes[cnes]
+            val local = resolverLocal(maisRecente.posicao, existente, cnes in conferencia.erradas, conferencia.achadas[cnes])
+            val candidata = novaUbs(maisRecente, lista.maxOf { it.posicao.dataPosicao }.comoInstante(), local)
+            if (existente == null) {
+                novas += candidata
+            } else {
+                if (existente.atualizarCom(candidata)) atualizadas++
+                resultado[cnes] = existente
+            }
+        }
+        ubsRepository.saveAll(novas).forEach { resultado[it.cnes] = it }
+        return Gravados(resultado, Contagem(criados = novas.size, atualizados = atualizadas))
+    }
+
+    private data class Local(val ponto: Ponto, val origem: OrigemLocalizacao)
+
+    /**
+     * Ordem: correção do gestor; coordenada da fonte, se passou na conferência; localização achada antes (prédio ou
+     * bairro); a achada agora no mapa. Sem nada disso, fica a da fonte marcada como INVALIDA (não aparece para o cidadão).
+     */
+    private fun resolverLocal(p: PosicaoEstoque, existente: Ubs?, fonteErrada: Boolean, achada: LocalEncontrado?): Local {
+        if (existente?.localizacaoOrigem == OrigemLocalizacao.MANUAL) {
+            return Local(Ponto(existente.latitude, existente.longitude), OrigemLocalizacao.MANUAL)
+        }
+        val daFonte = Ponto(p.latitude!!, p.longitude!!)
+        if (!fonteErrada) return Local(daFonte, OrigemLocalizacao.FONTE)
+        if (existente != null && existente.localizacaoOrigem in LOCALIZACAO_PROPRIA) {
+            return Local(Ponto(existente.latitude, existente.longitude), existente.localizacaoOrigem)
+        }
+        if (achada != null) {
+            log.info("UBS {} ({}): coordenada da fonte errada; usando {} {}", p.cnes, p.nomeUnidade, achada.origem, achada.ponto)
+            return Local(achada.ponto, achada.origem)
+        }
+        log.warn(
+            "UBS {} ({}) com coordenada errada no município {} ({}, {}) e não achada no mapa: fica fora da lista até o gestor corrigir o pino",
+            p.cnes, p.nomeUnidade, p.codigoIbgeMunicipio, p.latitude, p.longitude,
+        )
+        return Local(daFonte, OrigemLocalizacao.INVALIDA)
+    }
+
+    private fun novaUbs(v: Valida, ultimaSincronizacao: Instant, local: Local): Ubs {
+        val p = v.posicao
+        return Ubs(
+            cnes = p.cnes,
+            nome = Nomes.proprio(p.nomeUnidade ?: "Unidade ${p.cnes}").limitar(160),
+            tipo = v.tipo,
+            bairro = Nomes.proprio(p.bairro ?: "Não informado").limitar(120),
+            endereco = enderecoDe(p).limitar(200),
+            telefone = p.telefone?.limitar(20),
+            codigoIbgeMunicipio = p.codigoIbgeMunicipio,
+            latitude = local.ponto.latitude,
+            longitude = local.ponto.longitude,
+            localizacaoOrigem = local.origem,
+            ultimaSincronizacao = ultimaSincronizacao,
+        )
+    }
+
+    private fun enderecoDe(p: PosicaoEstoque): String {
+        val partes = listOfNotNull(p.logradouro?.takeIf { it.isNotBlank() }, p.numero?.takeIf { it.isNotBlank() }).map(Nomes::proprio)
+        return if (partes.isEmpty()) "Endereço não informado" else partes.joinToString(", ")
+    }
+
+    /** O horário de funcionamento não vem da fonte, então não é tocado. */
+    private fun Ubs.atualizarCom(n: Ubs): Boolean {
+        val mudou = nome != n.nome || tipo != n.tipo || bairro != n.bairro || endereco != n.endereco ||
+            telefone != n.telefone || codigoIbgeMunicipio != n.codigoIbgeMunicipio || latitude != n.latitude ||
+            longitude != n.longitude || localizacaoOrigem != n.localizacaoOrigem ||
+            ultimaSincronizacao != n.ultimaSincronizacao
+        if (mudou) {
+            nome = n.nome; tipo = n.tipo; bairro = n.bairro; endereco = n.endereco; telefone = n.telefone
+            codigoIbgeMunicipio = n.codigoIbgeMunicipio; latitude = n.latitude; longitude = n.longitude
+            localizacaoOrigem = n.localizacaoOrigem; ultimaSincronizacao = n.ultimaSincronizacao
+        }
+        return mudou
+    }
+
+    /** Medicamento que já existe (inclusive do seed) não é sobrescrito. */
+    private fun gravarMedicamentos(validas: List<Valida>): Gravados<String, Medicamento> {
+        val porCatmat = validas.groupBy { it.catmat }
+        val resultado = HashMap<String, Medicamento>()
+        medicamentoRepository.findByCatmatIn(porCatmat.keys).forEach { resultado[it.catmat] = it }
+
+        val novos = porCatmat.filterKeys { it !in resultado }.map { (catmat, lista) ->
+            val produto = lista.minBy { it.posicao.descricaoProduto.orEmpty() }.produto
+            Medicamento(
+                catmat = catmat.limitar(20),
+                nome = produto.nome.limitar(160),
+                concentracao = produto.concentracao.limitar(60),
+                formaFarmaceutica = produto.forma.limitar(60),
+                categoria = CategoriaMedicamento.de(produto.nome),
+                rename = false,
+            )
+        }
+        medicamentoRepository.saveAll(novos).forEach { resultado[it.catmat] = it }
+        return Gravados(resultado, Contagem(criados = novos.size))
+    }
+
+    private class Itens(val porChave: Map<Pair<String, String>, ItemEstoque>, val contagem: Contagem)
+
+    /**
+     * Item que a unidade deixou de informar (o estoque acabou) vai para 0 / EM_FALTA, em vez de ficar com o saldo
+     * antigo. Vale só para as unidades que vieram na resposta: unidade que sumiu inteira não é tocada, e a data de
+     * sincronização dela envelhece até aparecer como atrasada.
+     */
+    private fun gravarItens(
+        porItem: Map<Pair<String, String>, List<Valida>>,
+        referenciaPorUbs: Map<String, Instant>,
+        ubsPorCnes: Gravados<String, Ubs>,
+        medicamentoPorCatmat: Gravados<String, Medicamento>,
+    ): Itens {
+        val existentes = itemRepository.findDasUbs(ubsPorCnes.porChave.values.map { it.id!! })
+            .associateBy { it.ubs.cnes to it.medicamento.catmat }
+        val resultado = HashMap<Pair<String, String>, ItemEstoque>()
+        val novos = mutableListOf<ItemEstoque>()
+        val novasDisponibilidades = mutableListOf<Pair<Ubs, Medicamento>>()
+        var atualizados = 0
+
+        for ((chave, lista) in porItem) {
+            val quantidade = lista.sumOf { it.posicao.quantidadeInteira().toLong() }.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+            val medicamento = medicamentoPorCatmat.porChave.getValue(chave.second)
+
+            val status = regraStatus.calcular(quantidade, limiteDoMedicamento = medicamento.limiteReservado)
+
+            val atualizadoEm = lista.maxOf { it.posicao.dataPosicao }.comoInstante()
+
+            val existente = existentes[chave]
+            if (existente == null) {
+                val ubs = ubsPorCnes.porChave.getValue(chave.first)
+
+                novos += ItemEstoque(ubs, medicamento, status, quantidade, atualizadoEm)
+
+                // A primeira posição disponível também gera aviso.
+                if (status == StatusEstoque.DISPONIVEL) {
+                    novasDisponibilidades += ubs to medicamento
+                }
+            } else {
+                val ficouDisponivel = existente.status != StatusEstoque.DISPONIVEL &&
+                    status == StatusEstoque.DISPONIVEL
+
+                if (existente.quantidade != quantidade || existente.status != status || existente.atualizadoEm != atualizadoEm) {
+                    existente.quantidade = quantidade
+                    existente.status = status
+                    existente.atualizadoEm = atualizadoEm
+                    atualizados++
+                }
+
+                if (ficouDisponivel) {
+                    novasDisponibilidades += existente.ubs to existente.medicamento
+                }
+
+                resultado[chave] = existente
+            }
+        }
+
+        for ((chave, existente) in existentes) {
+            if (chave in porItem) continue
+            resultado[chave] = existente
+            if (existente.quantidade != 0 || existente.status != StatusEstoque.EM_FALTA) {
+                existente.quantidade = 0
+                existente.status = regraStatus.calcular(0)
+                existente.atualizadoEm = referenciaPorUbs.getValue(chave.first)
+                atualizados++
+            }
+        }
+
+        itemRepository.saveAll(novos).forEach { resultado[it.ubs.cnes to it.medicamento.catmat] = it }
+
+        // Gera avisos somente para transições reais, na mesma transação do estoque.
+        novasDisponibilidades.forEach { (ubs, medicamento) ->
+            geracaoAvisos.registrarDisponibilidade(ubs, medicamento)
+        }
+
+        return Itens(resultado, Contagem(criados = novos.size, atualizados = atualizados))
+    }
+
+    private data class LoteDesejado(val validade: LocalDate, val quantidade: Int)
+
+    /**
+     * Só vira lote o que tem validade e saldo; lotes repetidos no mesmo item somam e ficam com a menor validade.
+     * Item que sumiu da fonte (já zerado) perde todos os lotes. Por isso a soma dos lotes pode ser menor que a
+     * quantidade do item: posição sem validade conta no total, mas não vira lote.
+     */
+    private fun gravarLotes(
+        porItem: Map<Pair<String, String>, List<Valida>>,
+        itens: Map<Pair<String, String>, ItemEstoque>,
+    ): Contagem {
+        val existentes = loteRepository.findDosItens(itens.values.map { it.id!! }).groupBy { it.itemEstoque.id!! }
+        val novos = mutableListOf<LoteEstoque>()
+        val remover = mutableListOf<LoteEstoque>()
+        var atualizados = 0
+
+        for ((chave, item) in itens) {
+            val desejados = porItem[chave].orEmpty()
+                .filter { it.posicao.validade != null && it.posicao.quantidadeInteira() > 0 }
+                .groupBy { it.posicao.numeroLote?.trim()?.takeIf(String::isNotEmpty)?.limitar(40) ?: "S/L" }
+                .mapValues { (_, g) ->
+                    LoteDesejado(g.minOf { it.posicao.validade!! }, g.sumOf { it.posicao.quantidadeInteira() })
+                }
+            val atuais = existentes[item.id!!].orEmpty().associateBy { it.numeroLote }
+
+            desejados.forEach { (numero, d) ->
+                val atual = atuais[numero]
+                when {
+                    atual == null -> novos += LoteEstoque(item, numero, d.validade, d.quantidade)
+                    atual.validade != d.validade || atual.quantidade != d.quantidade -> {
+                        atual.validade = d.validade
+                        atual.quantidade = d.quantidade
+                        atualizados++
+                    }
+                }
+            }
+            remover += atuais.filterKeys { it !in desejados }.values
+        }
+
+        loteRepository.saveAll(novos)
+        loteRepository.deleteAll(remover)
+        return Contagem(criados = novos.size, atualizados = atualizados, removidos = remover.size)
+    }
+
+    private fun PosicaoEstoque.quantidadeInteira(): Int =
+        quantidade.setScale(0, RoundingMode.DOWN).toLong().coerceIn(0, Int.MAX_VALUE.toLong()).toInt()
+
+    /** O dia da posição vira o instante de início desse dia em Maceió. */
+    private fun LocalDate.comoInstante(): Instant = atStartOfDay(FUSO).toInstant()
+
+    private fun String.limitar(max: Int) = if (length <= max) this else take(max)
+
+    private companion object {
+        val FUSO: ZoneId = ZoneId.of("America/Maceio")
+
+        /** Localizações que não vieram da fonte e valem até a fonte mandar uma coordenada boa (ou, MANUAL, sempre). */
+        val LOCALIZACAO_PROPRIA = setOf(OrigemLocalizacao.MANUAL, OrigemLocalizacao.LUGAR, OrigemLocalizacao.BAIRRO)
+    }
+}

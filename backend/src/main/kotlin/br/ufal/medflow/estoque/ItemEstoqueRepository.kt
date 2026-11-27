@@ -1,8 +1,16 @@
 package br.ufal.medflow.estoque
 
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
+
+/** Contagem de itens agrupados por status. */
+data class ContagemEstoquePorStatus(
+    val status: StatusEstoque,
+    val total: Long,
+)
 
 interface ItemEstoqueRepository : JpaRepository<ItemEstoque, Long> {
 
@@ -17,8 +25,90 @@ interface ItemEstoqueRepository : JpaRepository<ItemEstoque, Long> {
 
     @Query(
         """
+        select i from ItemEstoque i join fetch i.medicamento m
+        where i.ubs.id = :ubsId
+          and i.status = :status
+        order by m.nome
+        """,
+    )
+    fun findByUbsEStatus(
+        @Param("ubsId") ubsId: Long,
+        @Param("status") status: StatusEstoque,
+    ): List<ItemEstoque>
+
+    /** Estoque paginado da UBS (a ordem vem do Pageable; a contagem não pode ter join fetch). */
+    @Query(
+        value = "select i from ItemEstoque i join fetch i.medicamento m where i.ubs.id = :ubsId",
+        countQuery = "select count(i) from ItemEstoque i where i.ubs.id = :ubsId",
+    )
+    fun findByUbs(@Param("ubsId") ubsId: Long, pagina: Pageable): Page<ItemEstoque>
+
+    @Query(
+        value = "select i from ItemEstoque i join fetch i.medicamento m where i.ubs.id = :ubsId and i.status = :status",
+        countQuery = "select count(i) from ItemEstoque i where i.ubs.id = :ubsId and i.status = :status",
+    )
+    fun findByUbsEStatus(
+        @Param("ubsId") ubsId: Long,
+        @Param("status") status: StatusEstoque,
+        pagina: Pageable,
+    ): Page<ItemEstoque>
+
+    @Query(
+        """
+        select new br.ufal.medflow.estoque.ContagemEstoquePorStatus(i.status, count(i))
+        from ItemEstoque i
+        where i.ubs.id = :ubsId
+        group by i.status
+        """,
+    )
+    fun contarPorStatusDaUbs(
+        @Param("ubsId") ubsId: Long,
+    ): List<ContagemEstoquePorStatus>
+
+    /** Todos os itens das unidades informadas, com UBS e medicamento carregados (usado na sincronização). */
+    @Query(
+        """
+        select i from ItemEstoque i join fetch i.ubs join fetch i.medicamento
+        where i.ubs.id in :ubsIds
+        """,
+    )
+    fun findDasUbs(@Param("ubsIds") ubsIds: Collection<Long>): List<ItemEstoque>
+
+    @Query(
+        """
+        select count(i) from ItemEstoque i
+        where i.medicamento.id = :medicamentoId
+          and i.status = :status
+          and i.quantidade > 0
+          and i.ubs.localizacaoOrigem <> br.ufal.medflow.ubs.OrigemLocalizacao.INVALIDA
+        """,
+    )
+    fun contarUnidadesDisponiveis(
+        @Param("medicamentoId") medicamentoId: Long,
+        @Param("status") status: StatusEstoque,
+    ): Long
+
+    @Query(
+        """
+        select count(i) from ItemEstoque i
+        where i.medicamento.id = :medicamentoId
+          and i.ubs.codigoIbgeMunicipio = :ibge
+          and i.status = :status
+          and i.quantidade > 0
+          and i.ubs.localizacaoOrigem <> br.ufal.medflow.ubs.OrigemLocalizacao.INVALIDA
+        """,
+    )
+    fun contarUnidadesDisponiveisPorMunicipio(
+        @Param("medicamentoId") medicamentoId: Long,
+        @Param("ibge") ibge: String,
+        @Param("status") status: StatusEstoque,
+    ): Long
+
+    @Query(
+        """
         select i from ItemEstoque i join fetch i.ubs u
         where i.medicamento.id = :medicamentoId
+          and u.localizacaoOrigem <> br.ufal.medflow.ubs.OrigemLocalizacao.INVALIDA
         order by case i.status when 'DISPONIVEL' then 0 when 'RESERVADO' then 1 else 2 end, u.nome
         """,
     )
